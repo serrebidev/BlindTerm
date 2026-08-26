@@ -1,0 +1,4 @@
+before vim
+[?1049h[H~ editor line 1
+~ editor line 2
+[?1049lafter vim

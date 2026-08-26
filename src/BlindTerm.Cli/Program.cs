@@ -16,6 +16,7 @@ internal static class Program
         return args[0] switch
         {
             "capture" => Capture.Run(args[1..]),
+            "replay" => Replay.Run(args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Unknown(args[0]),
         };
@@ -35,6 +36,7 @@ internal static class Program
 
             Usage:
               blindterm capture [options] -- <command line>
+              blindterm replay <capture file> [options]
 
             capture options:
               --out FILE        Write raw pty bytes to FILE (default: capture.raw)
@@ -45,9 +47,19 @@ internal static class Program
               --seconds N       Stop this long after the last --send (default: 3)
               --quiet           Do not echo decoded output to the console
 
+            replay options:
+              --cols N          Terminal width used for assembly (default: 120)
+              --rows N          Terminal height (default: 30)
+              --chunk N         Feed the capture in N-byte reads (default: 16384).
+                                Boundaries are not cosmetic: vary this to check that a
+                                sequence split across two reads is still handled.
+              --numbered        Prefix each transcript line with its index
+              --updates         Report each batch as it is assembled
+
             Examples:
-              blindterm capture --send "echo hello" -- powershell.exe -NoLogo
+              blindterm capture --send "echo hello" -- pwsh.exe -NoLogo
               blindterm capture --out ls.raw --send "ls -la" -- wsl.exe
+              blindterm replay ls.raw --numbered
             """);
         return 0;
     }

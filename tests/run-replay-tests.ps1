@@ -1,0 +1,80 @@
+<#
+    Replays every capture in tests/captures and compares the transcript it produces against
+    the .expected file beside it.
+
+    Each capture is replayed at several chunk sizes. Chunk boundaries are not cosmetic: a
+    screen wipe arriving in the same read as the output it is about to destroy, or an escape
+    sequence split across two reads, are exactly the cases the assembly has to get right, and
+    a single-read replay never exercises them.
+#>
+[CmdletBinding()]
+param(
+    [string]$Root = (Split-Path -Parent $PSScriptRoot),
+    [int[]]$ChunkSizes = @(16384, 7, 1)
+)
+
+$ErrorActionPreference = 'Stop'
+$captures = Join-Path $Root 'tests\captures'
+$cli = Join-Path $Root 'src\BlindTerm.Cli'
+
+# Per-capture terminal size. A recorded capture has to be replayed at the size it was
+# recorded at, or every wrapped line lands differently; those carry a .size file beside them.
+# Synthetic captures that need a particular width are listed here.
+$sizes = @{ 'wrapped' = @{ Cols = 20; Rows = 10 } }
+
+dotnet build $Root -v q --nologo | Out-Null
+
+$failed = 0
+$ran = 0
+
+foreach ($raw in Get-ChildItem $captures -Filter *.raw | Sort-Object Name) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($raw.Name)
+    $expectedPath = Join-Path $captures "$name.expected"
+    if (-not (Test-Path $expectedPath)) {
+        Write-Host "SKIP $name (no .expected)"
+        continue
+    }
+
+    $expected = (Get-Content $expectedPath -Raw) -replace "`r`n", "`n"
+    $cols = 120; $rows = 30
+    $sizePath = Join-Path $captures "$name.size"
+    if (Test-Path $sizePath) {
+        $recorded = Get-Content $sizePath -Raw | ConvertFrom-Json
+        $cols = $recorded.cols; $rows = $recorded.rows
+    }
+    elseif ($sizes.ContainsKey($name)) { $cols = $sizes[$name].Cols; $rows = $sizes[$name].Rows }
+
+    foreach ($chunk in $ChunkSizes) {
+        $ran++
+        $out = & dotnet run --project $cli --no-build -- replay $raw.FullName `
+            --cols $cols --rows $rows --chunk $chunk 2>$null
+
+        # Everything between the transcript marker and the next marker.
+        $lines = @($out) -split "`n"
+        $start = [Array]::IndexOf($lines, '--- transcript ---')
+        $end = [Array]::IndexOf($lines, '--- current line ---')
+        if ($start -lt 0 -or $end -lt 0) {
+            Write-Host "FAIL $name (chunk $chunk): no transcript in output"
+            $failed++
+            continue
+        }
+        $actual = (($lines[($start + 1)..($end - 1)] -join "`n").TrimEnd() + "`n")
+        $want = ($expected.TrimEnd() + "`n")
+
+        if ($actual -ceq $want) {
+            Write-Host "ok   $name (chunk $chunk)"
+        }
+        else {
+            Write-Host "FAIL $name (chunk $chunk)"
+            Write-Host "  expected:"
+            $want.TrimEnd()  -split "`n" | ForEach-Object { Write-Host "    |$_" }
+            Write-Host "  actual:"
+            $actual.TrimEnd() -split "`n" | ForEach-Object { Write-Host "    |$_" }
+            $failed++
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "$ran replays, $failed failed"
+exit ($failed -gt 0 ? 1 : 0)

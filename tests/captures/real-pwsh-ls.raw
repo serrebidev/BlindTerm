@@ -1,0 +1,13 @@
+[?9001h[?1004h[?25l[2J[m[HPS C:\Users\admin\git\BlindTerm>[1C]0;C:\Program Files\PowerShell\7\pwsh.exe[?25h[?25lGet-ChildItem src | Select-Object -First 3 Name,Length[?25h
+
+[?25lName           Length
+----           ------
+BlindTerm.Cli  
+BlindTerm.Core [8;1HPS C:\Users\admin\git\BlindTerm> [?25h[?25l1[?25h..3 | ForEach-Object { Write-Host -NoNewline "
+working $_   " ; Start-Sleep -Milliseconds 200 }; Write-Host "
+done.      "[?25l[12;1Hworking 1   [?25h
+working 2   
+working 3   
+done.      
+PS C:\Users\admin\git\BlindTerm> [?25lexit[?25h
+[?9001l[?1004l

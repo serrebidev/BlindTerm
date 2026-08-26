@@ -1,0 +1,16 @@
+PS C:\Users\admin\git\BlindTerm> Get-ChildItem src | Select-Object -First 3 Name,Length
+
+Name           Length
+----           ------
+BlindTerm.Cli
+BlindTerm.Core
+
+PS C:\Users\admin\git\BlindTerm> 1..3 | ForEach-Object { Write-Host -NoNewline "
+working $_   " ; Start-Sleep -Milliseconds 200 }; Write-Host "
+done.      "
+
+working 1
+working 2
+working 3
+done.
+PS C:\Users\admin\git\BlindTerm> exit
