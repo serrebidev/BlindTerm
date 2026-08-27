@@ -21,7 +21,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Tells the shells it starts that they are being read, so tools that can render plainly do: `ACCESSIBLE`, `TERM_A11Y`, and the flags GitHub CLI and Claude Code already understand.
 - Starts simple Codex, Claude Code, and OpenCode commands in the least repainting interface each CLI provides.
 - Sends the arrow keys, Escape and the Ctrl chords to whatever the shell is running, so an agent's model picker, level adjustment and menus can all be driven from the command line.
-- Speaks telnet itself, so a MUD loses none of its output and is told that a screen reader is reading it.
+- Speaks telnet itself, so a MUD loses none of its output and is told that a screen reader is reading it — including when the connection was asked for by typing `telnet host port` at the command line.
 - Plays MUD sounds through the MUD Sound Protocol, and keeps its triggers out of the text whether sounds are on or off.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
@@ -137,6 +137,8 @@ BlindTerm dials telnet hosts itself. **Terminal** &rarr; **Connect to a telnet h
 ```
 BlindTerm.App.exe --telnet coremud.org:4000
 ```
+
+Typing `telnet coremud.org 4000` at the command line does the same thing. A plain `telnet host`, `telnet host port` or `telnet host:port` is dialled by BlindTerm and opened in its own window instead of being handed to Windows' `telnet.exe`; the shell it was typed at is left at its prompt, and the transcript records where the connection went. Anything `telnet.exe` understands and BlindTerm does not — its switches, its service names, a bare `telnet` and its interactive prompt — still runs `telnet.exe`, as does a line the shell would act on for itself, such as one with a pipe or a redirection in it.
 
 It is a real connection rather than a wrapper around Windows' `telnet.exe`, and that is not a detail. `telnet.exe` repaints its window through the console API instead of writing a stream of lines, and a Windows pseudo console can only report what is on that window when it next redraws. Anything that scrolls past in between is overwritten before it can be reported: sending 200 lines to it and reading the transcript gives back 30, with the last one cut off mid-word. Those lines reach no terminal at all, whichever one you use. Reading the socket directly gives back all 200.
 

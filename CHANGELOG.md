@@ -4,6 +4,22 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.2.4 - 2026-08-27
+
+- Dial `telnet host port` typed at the command line with BlindTerm's own telnet. Windows'
+  `telnet.exe` paints a window through the console API rather
+  than writing lines, so through a pseudo console every scroll rewrites every row on screen:
+  the whole visible screen reads as new output and the last screenful is announced again from
+  the top on each line a MUD sends, while anything that went past between two repaints was
+  never anywhere to be read. The connection now opens in its own window over a real socket,
+  with the accessible terminal-type negotiation, the prompt and password handling, and the MUD
+  Sound Protocol that the Terminal menu's connection has always had. The shell it was typed at
+  stays at its prompt, and the transcript records where the connection went.
+- Leave `telnet.exe` in charge of everything BlindTerm cannot dial for itself: its switches, a
+  service name in place of a port, a bare `telnet` and its interactive prompt, and any line the
+  shell would act on for itself. A line typed at a MUD, at `ssh`, or at any other running
+  program is still that program's to interpret.
+
 ## v0.2.3 - 2026-08-27
 
 - Keep remote output as the complete transcript. `Shift+Tab` focuses that full output at the first line of the latest command response, so the newest result is ready to read without making older output unavailable.

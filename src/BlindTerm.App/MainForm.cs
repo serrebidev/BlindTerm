@@ -993,6 +993,14 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (DialledOurselves(text))
+        {
+            if (_history.Count == 0 || _history[^1] != text) _history.Add(text);
+            _historyIndex = _history.Count;
+            _command.Clear();
+            return;
+        }
+
         // A line typed at a MUD is that MUD's to interpret. Rewriting "codex" into a command
         // line with flags on it would be nonsense there.
         string accessible = _host.Kind == TerminalSessionKind.Remote
@@ -1004,6 +1012,37 @@ public sealed class MainForm : Form
         if (text.Length > 0 && (_history.Count == 0 || _history[^1] != text)) _history.Add(text);
         _historyIndex = _history.Count;
         _command.Clear();
+    }
+
+    /// <summary>
+    /// Takes "telnet host 4000" away from Windows' telnet.exe and dials it over BlindTerm's
+    /// own telnet instead. See <see cref="TelnetCommand"/> for why: telnet.exe repaints a
+    /// window rather than writing lines, so through a pseudo console every scroll reads as a
+    /// whole new screenful of output and whatever went past between two repaints was never
+    /// readable at all.
+    ///
+    /// Only an idle shell prompt is answered this way. Inside ssh, a Python prompt or a MUD,
+    /// the line was typed at something else and is that program's to interpret.
+    /// </summary>
+    private bool DialledOurselves(string text)
+    {
+        if (_host.Kind == TerminalSessionKind.Remote) return false;
+        if (_foregroundProgram.Active) return false;
+        if (TelnetRequested is null) return false;
+        if (TelnetCommand.Parse(text) is not var (host, port)) return false;
+
+        // Said through the transcript rather than spoken over the top of it, so that the
+        // answer to "what just happened to my command" is still there to read afterwards.
+        // The command itself is written back the way a shell would echo it, and suppressed
+        // for speech the same way, having just been read out as it was typed.
+        _news.SuppressCommandEcho(text);
+        _host.AppendExternal([
+            text,
+            $"Connecting to {TelnetAddress.Format(host, port)} in a new BlindTerm window."
+            + " BlindTerm speaks telnet itself, so the conversation arrives as lines.",
+        ]);
+        TelnetRequested.Invoke(host, port);
+        return true;
     }
 
     private void StepHistory(int delta)
