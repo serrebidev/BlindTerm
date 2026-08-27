@@ -19,7 +19,7 @@ internal static class Telnet
     public static int Run(string[] args)
     {
         int cols = 120, rows = 30, seconds = 10, waitMs = 700;
-        bool quiet = false, numbered = false;
+        bool quiet = false, numbered = false, updates = false;
         string? address = null, outputPath = null, soundFolder = null;
         bool play = false;
         var send = new List<Step>();
@@ -37,6 +37,7 @@ internal static class Telnet
                 case "--out": outputPath = Next(args, ref i); break;
                 case "--play": play = true; soundFolder = Next(args, ref i); break;
                 case "--numbered": numbered = true; break;
+                case "--updates": updates = true; break;
                 case "--quiet": quiet = true; break;
                 default:
                     if (address is null) address = args[i];
@@ -65,7 +66,19 @@ internal static class Telnet
             : new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.Read);
 
         string live = string.Empty;
-        core.Updated += update => live = update.LiveText;
+        core.Updated += update =>
+        {
+            live = update.LiveText;
+            if (!updates) return;
+
+            Console.Error.WriteLine(
+                $"telnet: update +{update.NewLines.Count} lines, " +
+                $"{update.Edits.Count} rewritten, live={Describe(update.LiveText)}");
+            foreach (string line in update.NewLines)
+                Console.Error.WriteLine($"telnet:   + {line}");
+            foreach (Transcript.Edit edit in update.Edits)
+                Console.Error.WriteLine($"telnet:   ~ {edit.Line}: {edit.Text}");
+        };
 
         session.Output += memory =>
         {
@@ -171,6 +184,9 @@ internal static class Telnet
     }
 
     private readonly record struct Step(string Text, bool IsKey);
+
+    private static string Describe(string text)
+        => text.Length == 0 ? "<empty>" : text.Replace("\r", "\\r").Replace("\n", "\\n");
 
     private static string Next(string[] args, ref int i)
     {

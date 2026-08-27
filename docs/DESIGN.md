@@ -20,11 +20,16 @@ Line mode has three controls:
 - Current line: the prompt or unfinished output that has not ended in a newline.
 - Command line: a normal edit control whose text and Return are sent as separate PTY writes.
 
+The output edit control has two document views for a remote session. Its ordinary view begins
+at the transcript position recorded when the latest command is submitted, so a MUD response
+contains that response alone. Shift+Tab enters this latest-response view and Tab returns to
+input. Go, Transcript switches the same native control to the complete permanent history.
+
 The command line is buffered until Enter so ordinary shell commands retain native editing and
 can be adapted for an accessible agent interface before launch. Once an active inline program
 receives Tab for completion, the pending text is flushed and that program owns the live line:
 new characters and editing keys are streamed until Enter. Shift+Tab stays local and moves to
-the transcript; Tab in the transcript returns to input. Full-screen mode uses the same focus
+output; Tab in output returns to input. Full-screen mode uses the same focus
 contract between live input and frozen review output.
 
 New output is filtered by line and batched before it is sent to the reader. A redraw of an existing row revises the corresponding transcript line instead of appending another stale frame.

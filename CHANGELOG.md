@@ -4,6 +4,11 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.2.2 - 2026-08-27
+
+- Telnet output now shows only the complete response to the latest submitted command during ordinary use. Shift+Tab opens that response, Tab returns to input, and the full session history remains available through Go, Transcript.
+- The Telnet diagnostic command accepts `--updates` to report live response boundaries.
+
 ## v0.2.1 - 2026-08-27
 
 - Send an unmodified `Tab` from the input field to an active Claude Code, Codex, OpenCode,

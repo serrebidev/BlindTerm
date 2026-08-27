@@ -61,6 +61,7 @@ internal static class Program
               --out FILE        Also write the received text, less the protocol, to FILE
               --play FOLDER     Actually play the sounds a MUD asks for, from FOLDER
               --numbered        Prefix each transcript line with its index
+              --updates         Report each live transcript batch as it arrives
               --quiet           Print only the summary
 
             replay options:

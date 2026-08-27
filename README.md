@@ -109,6 +109,8 @@ Whether a program is running is decided by whether the shell has actually starte
 
 Focus decides which surface owns editing keys. In the transcript/output, standard Windows selection and clipboard commands remain local even while a program runs: `Ctrl+A`, `Ctrl+C`, `Ctrl+Shift+Home`, `Ctrl+Shift+End`, Shift with arrows or page keys, and the rest of the native edit-control behavior work with NVDA's system caret. Move to the command line with `Alt+2` when Ctrl chords should go to the program; return to output with `Alt+1` when you want to read, select, or copy.
 
+For a telnet session, the ordinary output view contains only the complete response to the latest command. A Core MUD `look`, for example, presents that room description, its exits, and its objects without putting the login banner or earlier rooms in the same field. `Shift+Tab` moves from the command line to this latest response and `Tab` returns to input. `Alt+1` deliberately opens the full transcript when older output is wanted.
+
 - `Alt+1`: focus the transcript.
 - `Alt+2`: focus the command line.
 - `Alt+3`: freeze or resume full-screen review.
@@ -172,7 +174,7 @@ dotnet run --project src\BlindTerm.Cli -- speak --probe
 dotnet run --project src\BlindTerm.Cli -- telnet coremud.org:4000 --seconds 8 --numbered
 ```
 
-The `telnet` verb runs a real connection through the same transcript assembly the window uses, and prints what it produced. That is how "nothing is lost" is checked: point it at a host that will send more lines than the terminal is tall and count them.
+The `telnet` verb runs a real connection through the same transcript assembly the window uses, and prints what it produced. That is how "nothing is lost" is checked: point it at a host that will send more lines than the terminal is tall and count them. Add `--updates` to print each response batch as it arrives.
 
 Replay tests deliberately feed captures at 16384, 7, and 1 byte chunks. Escape sequences split across reads are not an edge case in a real PTY; they are the test.
 
