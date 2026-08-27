@@ -1,7 +1,9 @@
+using System.Net.Sockets;
 using System.Runtime.Versioning;
 using BlindTerm.App.Defterm;
 using BlindTerm.Core;
 using BlindTerm.Core.DefaultTerminal;
+using BlindTerm.Core.Net;
 using BlindTerm.Core.Speech;
 
 namespace BlindTerm.App;
@@ -53,7 +55,11 @@ internal static class Program
         DefaultTerminalServer.Start(SynchronizationContext.Current!,
             handoff => windows.OpenHandoff(handoff, settings, settingsStore));
 
-        if (!embedding)
+        if (!embedding && TelnetArgument(args) is (string host, int port))
+        {
+            windows.OpenTelnet(host, port, settings, settingsStore);
+        }
+        else if (!embedding)
         {
             string shell = args.Length > 0 ? string.Join(' ', args) : ShellFor(settings.Shell);
             windows.OpenShell(shell, settings, settingsStore);
@@ -66,6 +72,28 @@ internal static class Program
 
         Application.Run(windows);
         DefaultTerminalServer.Stop();
+    }
+
+    /// <summary>
+    /// The host and port in "--telnet host[:port]" or "--telnet host port", or null when this
+    /// is an ordinary launch. Both spellings are accepted because both are what anyone types.
+    /// </summary>
+    internal static (string Host, int Port)? TelnetArgument(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        int at = Array.FindIndex(args, argument =>
+            argument.Equals("--telnet", StringComparison.OrdinalIgnoreCase));
+        if (at < 0 || at + 1 >= args.Length) return null;
+
+        if (!TelnetAddress.TryParse(args[at + 1], out string host, out int port)) return null;
+
+        // A port given as its own argument wins: "--telnet host 4000" is unambiguous, and a
+        // host that already carried one would not have left the default in place.
+        if (at + 2 < args.Length && int.TryParse(args[at + 2], out int separate)
+            && separate is >= 1 and <= 65535 && !args[at + 1].Contains(':'))
+            port = separate;
+
+        return (host, port);
     }
 
     /// <summary>
@@ -124,6 +152,7 @@ internal static class Program
 internal sealed class TerminalWindows : ApplicationContext
 {
     private const int HandoffWaitSeconds = 30;
+    private const int ConnectTimeoutSeconds = 20;
 
     private int _open;
     private bool _everOpened;
@@ -148,8 +177,62 @@ internal sealed class TerminalWindows : ApplicationContext
         var host = new TerminalHost(settings.Columns, settings.Rows, SynchronizationContext.Current!);
         var form = new MainForm(host, settings, store);
         form.Shown += (_, _) => host.Start(shell);
-        Track(form);
+        Track(form, settings, store);
         form.Show();
+    }
+
+    /// <summary>
+    /// Opens a window onto a telnet host, dialled by BlindTerm itself.
+    ///
+    /// Connecting happens before the window does. A host that cannot be reached should say so
+    /// in a dialog and leave nothing behind, rather than leaving an empty terminal to work out
+    /// what went wrong -- and a login banner that arrives in the first millisecond must not be
+    /// delivered before there is a window subscribed to receive it, which is why reading only
+    /// starts once the window is up.
+    /// </summary>
+    public async void OpenTelnet(string host, int port, AppSettings settings, SettingsStore store)
+    {
+        var terminal = new TerminalHost(settings.Columns, settings.Rows, SynchronizationContext.Current!);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(ConnectTimeoutSeconds));
+            await terminal.ConnectAsync(host, port, timeout.Token);
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException
+                                   or IOException or ArgumentException)
+        {
+            terminal.Dispose();
+            string reason = ex is OperationCanceledException
+                ? $"{host} did not answer within {ConnectTimeoutSeconds} seconds."
+                : ex.Message;
+            MessageBox.Show(
+                $"Could not connect to {TelnetAddress.Format(host, port)}."
+                + Environment.NewLine + Environment.NewLine + reason,
+                "BlindTerm could not connect", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            // Nothing opened, and nothing else is going to: a launch that was only ever this
+            // connection has no window to keep the process alive for.
+            if (!_everOpened) ExitThread();
+            return;
+        }
+
+        settings.RememberTelnetHost(TelnetAddress.Format(host, port));
+        TrySave(settings, store);
+
+        var form = new MainForm(terminal, settings, store)
+        {
+            Text = $"{TelnetAddress.Format(host, port)} — BlindTerm",
+        };
+        form.Shown += (_, _) => terminal.Begin();
+        Track(form, settings, store);
+        form.Show();
+    }
+
+    /// <summary>A remembered address is a convenience; failing to write one is not an error.</summary>
+    private static void TrySave(AppSettings settings, SettingsStore store)
+    {
+        try { store.Save(settings); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or ArgumentOutOfRangeException) { }
     }
 
     /// <summary>Opens a window onto a console Windows has just handed to BlindTerm.</summary>
@@ -172,15 +255,17 @@ internal sealed class TerminalWindows : ApplicationContext
             }
         };
 
-        Track(form);
+        Track(form, settings, store);
         form.Show();
     }
 
-    private void Track(Form form)
+    private void Track(MainForm form, AppSettings settings, SettingsStore store)
     {
         StopWaiting();
         _everOpened = true;
         _open++;
+        // A window cannot open another window, so the connection request comes back here.
+        form.TelnetRequested += (host, port) => OpenTelnet(host, port, settings, store);
         form.FormClosed += (_, _) =>
         {
             if (--_open <= 0) ExitThread();

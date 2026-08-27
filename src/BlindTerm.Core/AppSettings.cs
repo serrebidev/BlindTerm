@@ -19,10 +19,68 @@ public sealed class AppSettings
     /// </summary>
     public bool AskAboutDefaultTerminal { get; set; } = true;
 
+    /// <summary>
+    /// Telnet addresses that have been connected to, newest first, as "host" or "host:port".
+    ///
+    /// A MUD address is exactly the kind of thing nobody types correctly twice, and arrowing
+    /// to a remembered one reads it out.
+    /// </summary>
+    public List<string> RecentTelnetHosts { get; set; } = new();
+
+    /// <summary>
+    /// Whether a MUD may play sounds through the MUD Sound Protocol.
+    ///
+    /// Turning this off silences the sounds; it does not put the triggers back into the text,
+    /// which are lifted out either way. A line reading "exclamation exclamation SOUND left
+    /// paren sword dot wav" is not something anyone wants read to them.
+    /// </summary>
+    public bool MudSounds { get; set; } = true;
+
+    /// <summary>Where sound packs live. Blank means the default folder under %APPDATA%.</summary>
+    public string SoundDirectory { get; set; } = string.Empty;
+
+    /// <summary>Scales every MUD sound, 0 to 100.</summary>
+    public int SoundVolume { get; set; } = 100;
+
+    /// <summary>
+    /// Whether a sound a MUD offers may be downloaded when this machine does not have it.
+    ///
+    /// Off by default: the address comes from the server, and acting on it means fetching a
+    /// file it chose and writing it to this disk.
+    /// </summary>
+    public bool DownloadSounds { get; set; }
+
+    /// <summary>How many remembered addresses are kept.</summary>
+    public const int MaximumRecentTelnetHosts = 12;
+
+    /// <summary>Puts an address at the top of the list, without letting it appear twice.</summary>
+    public void RememberTelnetHost(string address)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(address);
+        RecentTelnetHosts.RemoveAll(entry => string.Equals(entry, address, StringComparison.OrdinalIgnoreCase));
+        RecentTelnetHosts.Insert(0, address);
+        Trim();
+    }
+
+    private void Trim()
+    {
+        if (RecentTelnetHosts.Count > MaximumRecentTelnetHosts)
+            RecentTelnetHosts.RemoveRange(MaximumRecentTelnetHosts,
+                                          RecentTelnetHosts.Count - MaximumRecentTelnetHosts);
+    }
+
     public void Validate()
     {
         TerminalSize.Validate(Columns, Rows);
         if (Shell is null || Shell.Length > 32_768) throw new ArgumentOutOfRangeException(nameof(Shell));
+        if (SoundDirectory is null || SoundDirectory.Length > 32_768)
+            throw new ArgumentOutOfRangeException(nameof(SoundDirectory));
+        SoundVolume = Math.Clamp(SoundVolume, 0, 100);
+        // A settings file edited by hand, or written by a later version, must not be able to
+        // make the menu unusable.
+        RecentTelnetHosts ??= new List<string>();
+        RecentTelnetHosts.RemoveAll(entry => string.IsNullOrWhiteSpace(entry) || entry.Length > 300);
+        Trim();
     }
 
     public AppSettings Copy() => new()
@@ -31,6 +89,11 @@ public sealed class AppSettings
         Columns = Columns,
         Rows = Rows,
         AskAboutDefaultTerminal = AskAboutDefaultTerminal,
+        RecentTelnetHosts = new List<string>(RecentTelnetHosts),
+        MudSounds = MudSounds,
+        SoundDirectory = SoundDirectory,
+        SoundVolume = SoundVolume,
+        DownloadSounds = DownloadSounds,
     };
 }
 

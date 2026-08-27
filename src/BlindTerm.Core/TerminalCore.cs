@@ -152,7 +152,18 @@ public sealed class TerminalCore
         Publish();
     }
 
-    public void Publish(bool beforeWipe = false) => Updated?.Invoke(Builder.Publish(beforeWipe));
+    /// <summary>
+    /// Turns what has been fed into transcript lines, and hands out what changed.
+    ///
+    /// The assembly happens whether or not anyone is listening. Folding it into the event
+    /// invocation would mean a core with no subscriber quietly never building a transcript at
+    /// all, and reading one from it later would return nothing with no sign of why.
+    /// </summary>
+    public void Publish(bool beforeWipe = false)
+    {
+        TerminalUpdate update = Builder.Publish(beforeWipe);
+        Updated?.Invoke(update);
+    }
 
     /// <summary>
     /// Where this chunk erases the screen (ED 2), the scrollback (ED 3) or the terminal (RIS),

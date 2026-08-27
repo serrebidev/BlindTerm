@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using BlindTerm.Core;
+using BlindTerm.Core.Sound;
 
 namespace BlindTerm.App;
 
@@ -9,6 +10,10 @@ internal sealed class SettingsForm : Form
     private readonly TextBox _shell = new();
     private readonly NumericUpDown _columns = new();
     private readonly NumericUpDown _rows = new();
+    private readonly CheckBox _mudSounds = new();
+    private readonly TextBox _soundDirectory = new();
+    private readonly NumericUpDown _soundVolume = new();
+    private readonly CheckBox _downloadSounds = new();
 
     public AppSettings Settings { get; private set; }
 
@@ -35,6 +40,39 @@ internal sealed class SettingsForm : Form
         AddField(fields, "Shell command line", _shell, "Shell command line. Leave blank for PowerShell 7, or Windows PowerShell.");
         AddField(fields, "Terminal columns", _columns, "Terminal width in columns.");
         AddField(fields, "Terminal rows", _rows, "Terminal height in rows.");
+
+        _mudSounds.Text = "Play MUD sounds";
+        _mudSounds.AutoSize = true;
+        _mudSounds.Checked = Settings.MudSounds;
+        _mudSounds.AccessibleName = "Play MUD sounds";
+        _mudSounds.AccessibleDescription =
+            "Whether a MUD may play sounds. Its sound triggers are kept out of the text either way.";
+
+        _soundDirectory.Text = Settings.SoundDirectory;
+        _soundDirectory.Width = 420;
+        _soundDirectory.AccessibleName = "Sound folder";
+        _soundDirectory.PlaceholderText = SoundLibrary.DefaultDirectory;
+
+        _soundVolume.Minimum = 0;
+        _soundVolume.Maximum = 100;
+        _soundVolume.Value = Math.Clamp(Settings.SoundVolume, 0, 100);
+        _soundVolume.Width = 100;
+        _soundVolume.AccessibleName = "Sound volume";
+
+        _downloadSounds.Text = "Download sounds a MUD offers";
+        _downloadSounds.AutoSize = true;
+        _downloadSounds.Checked = Settings.DownloadSounds;
+        _downloadSounds.AccessibleName = "Download sounds a MUD offers";
+        _downloadSounds.AccessibleDescription =
+            "Fetch a sound this machine does not have from the address the MUD gives. "
+            + "The address comes from the server, so this is off unless you turn it on.";
+
+        AddField(fields, "MUD sounds", _mudSounds, "Whether a MUD may play sounds.");
+        AddField(fields, "Sound folder", _soundDirectory,
+            "Where sound packs are unpacked. Leave blank for the default folder.");
+        AddField(fields, "Sound volume", _soundVolume, "Scales every MUD sound, 0 to 100.");
+        AddField(fields, "Download sounds", _downloadSounds,
+            "Whether a sound this machine does not have may be fetched from the MUD's address.");
 
         var save = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true, AccessibleName = "Save settings" };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, AccessibleName = "Cancel settings" };
@@ -76,6 +114,10 @@ internal sealed class SettingsForm : Form
             edited.Shell = _shell.Text.Trim();
             edited.Columns = (int)_columns.Value;
             edited.Rows = (int)_rows.Value;
+            edited.MudSounds = _mudSounds.Checked;
+            edited.SoundDirectory = _soundDirectory.Text.Trim();
+            edited.SoundVolume = (int)_soundVolume.Value;
+            edited.DownloadSounds = _downloadSounds.Checked;
             Settings = edited;
             try { Settings.Validate(); }
             catch (ArgumentOutOfRangeException ex)

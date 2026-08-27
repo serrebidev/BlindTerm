@@ -8,10 +8,11 @@ namespace BlindTerm.App;
 ///
 /// Environment variables cover Claude too, but its explicit flag is retained here because
 /// it takes precedence over settings and has survived regressions in environment detection.
-/// Codex currently has no screen-reader renderer; inline scrollback with animations disabled
-/// is its quietest supported TUI. OpenCode's minimal interface is its intended linear path.
-/// Freebuff exposes no corresponding switch, so BlindTerm's normal full-screen review remains
-/// its accessibility path and no unsupported argument is invented for it.
+/// Codex currently has no screen-reader renderer; raw scrollback with animations disabled
+/// is its copy-friendly linear TUI, and staying out of the alternate screen is what keeps the
+/// command line -- and therefore the keys its pickers are driven with -- on screen at all.
+/// OpenCode's minimal interface is its intended linear path. Freebuff exposes no corresponding
+/// switch and already renders inline, so no unsupported argument is invented for it.
 /// </summary>
 internal static partial class AccessibleAgentCommand
 {
@@ -43,9 +44,11 @@ internal static partial class AccessibleAgentCommand
         }
         else if (name.Equals("codex", StringComparison.OrdinalIgnoreCase))
         {
-            if (!HasOption(rest, "--no-alt-screen")) additions.Add("--no-alt-screen");
-            if (!Regex.IsMatch(rest, @"(?:^|\s)(?:-c|--config)(?:\s+|=)[^\r\n]*tui\.animations\s*=",
-                               RegexOptions.IgnoreCase))
+            if (!HasOption(rest, "--no-alt-screen") && !HasConfig(rest, "tui.alternate_screen"))
+                additions.Add("--no-alt-screen");
+            if (!HasConfig(rest, "tui.raw_output_mode"))
+                additions.Add("-c tui.raw_output_mode=true");
+            if (!HasConfig(rest, "tui.animations"))
                 additions.Add("-c tui.animations=false");
         }
         else if (name.Equals("opencode", StringComparison.OrdinalIgnoreCase))
@@ -63,6 +66,11 @@ internal static partial class AccessibleAgentCommand
 
     private static bool HasOption(string arguments, string option)
         => Regex.IsMatch(arguments, $@"(?:^|\s){Regex.Escape(option)}(?:\s|=|$)",
+                         RegexOptions.IgnoreCase);
+
+    private static bool HasConfig(string arguments, string key)
+        => Regex.IsMatch(arguments,
+                         $@"(?:^|\s)(?:-c|--config)(?:\s+|=)[^\r\n]*{Regex.Escape(key)}\s*=",
                          RegexOptions.IgnoreCase);
 
     private static IEnumerable<string> Arguments(string arguments)

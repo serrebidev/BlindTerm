@@ -20,6 +20,9 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Can be set as the Windows 11 default terminal, so command-line programs open in BlindTerm on their own.
 - Tells the shells it starts that they are being read, so tools that can render plainly do: `ACCESSIBLE`, `TERM_A11Y`, and the flags GitHub CLI and Claude Code already understand.
 - Starts simple Codex, Claude Code, and OpenCode commands in the least repainting interface each CLI provides.
+- Sends the arrow keys, Escape and the Ctrl chords to whatever the shell is running, so an agent's model picker, level adjustment and menus can all be driven from the command line.
+- Speaks telnet itself, so a MUD loses none of its output and is told that a screen reader is reading it.
+- Plays MUD sounds through the MUD Sound Protocol, and keeps its triggers out of the text whether sounds are on or off.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 
@@ -62,9 +65,9 @@ dotnet run --project src\BlindTerm.App -- wsl.exe
 When a command line consists of a simple `codex`, `claude`, or `opencode` launch, BlindTerm selects that program's accessible interface automatically:
 
 - Claude Code receives `--ax-screen-reader`, producing labelled, flat text without decorative borders or animations.
-- Codex receives `--no-alt-screen -c tui.animations=false`, preserving its output in readable terminal scrollback and stopping its visual animations. Codex does not currently provide a dedicated screen-reader renderer.
+- Codex receives `--no-alt-screen -c tui.raw_output_mode=true -c tui.animations=false`, using its copy-friendly scrollback renderer, keeping it out of the alternate screen, and stopping visual animations. This keeps `/model`, `/permissions`, `/keymap`, and the other interactive pickers readable as plain numbered text while retaining direct text selection. Codex does not currently provide a dedicated screen-reader renderer.
 - OpenCode receives `--mini --no-replay`, selecting its smaller interactive interface and preventing old sessions from repainting on startup and resize.
-- Freebuff currently provides no screen-reader or minimal-interface switch. BlindTerm runs it as a full-screen program: use `Alt+3` to freeze the current frame into the native review control, or `Alt+W` to speak the whole screen.
+- Freebuff currently provides no screen-reader or minimal-interface switch. It already renders inline, so BlindTerm invents no unsupported argument for it and drives it from the command line like the others.
 
 Explicit flags are respected, and subcommands such as `codex exec` or `opencode run` keep working. Compound shell expressions and executable paths are left exactly as typed rather than guessed at.
 
@@ -90,7 +93,17 @@ That restores whatever Windows would have chosen. In fact BlindTerm cannot lock 
 
 ## Reading and keyboard commands
 
-BlindTerm keeps its own commands under Alt. With the command line focused while a foreground command or application is running, Ctrl chords—including `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V`—go directly to that program whether it uses inline output or a full-screen interface. After it exits and the shell prompt returns, those keys resume their ordinary copy, cut, undo, and paste behavior in BlindTerm's native controls.
+BlindTerm keeps its own commands under Alt. With the command line focused while a foreground command or application is running, Ctrl chords—including `Ctrl+C`, `Ctrl+X`, and `Ctrl+Z`—go directly to that program whether it uses inline output or a full-screen interface. `Ctrl+V` is the exception and always pastes into the command line, because BlindTerm owns the line being typed and that is the only way to get a pasted path into the program at all. `Alt+C` sends the interrupt when `Ctrl+C` is wanted for something else. After the program exits and the shell prompt returns, those keys resume their ordinary copy, cut, undo, and paste behavior in BlindTerm's native controls.
+
+### Driving a program from the command line
+
+Codex, Claude Code, OpenCode, Freebuff and a MUD over telnet all ask questions no line of text can answer: a model list chosen with Up and Down, a reasoning level adjusted with Left and Right, a picker dismissed with Escape.
+
+**While a program is running, an empty command line is a remote control for it.** Up, Down, Left, Right, Home, End, Page Up, Page Down and Escape are sent straight to the program, and you hear what it does rather than a caret that has nowhere to go.
+
+**As soon as there is text in the command line, it is an ordinary edit box again.** Arrows move the caret through what you have typed, so a typo in a long prompt can still be fixed. Clear the line to get the remote control back, or use `Alt+P` to pass one key either way.
+
+Whether a program is running is decided by whether the shell has actually started one, so this turns itself on when you launch `codex` and off again the moment it exits—no shell configuration, and it works the same in PowerShell, `cmd.exe` and a handed-over console.
 
 Focus decides which surface owns editing keys. In the transcript/output, standard Windows selection and clipboard commands remain local even while a program runs: `Ctrl+A`, `Ctrl+C`, `Ctrl+Shift+Home`, `Ctrl+Shift+End`, Shift with arrows or page keys, and the rest of the native edit-control behavior work with NVDA's system caret. Move to the command line with `Alt+2` when Ctrl chords should go to the program; return to output with `Alt+1` when you want to read, select, or copy.
 
@@ -101,6 +114,7 @@ Focus decides which surface owns editing keys. In the transcript/output, standar
 - `Alt+L`: speak the current line.
 - `Alt+W`: speak the visible screen.
 - `Alt+S`: turn automatic output speech on or off.
+- `Alt+M`: turn MUD sounds on or off.
 - `Alt+C`: send Ctrl+C to interrupt the program.
 - `Alt+[`: send Escape.
 - `Alt+P`: pass the next supported key to the program, including an Alt chord.
@@ -108,8 +122,40 @@ Focus decides which surface owns editing keys. In the transcript/output, standar
 - `Alt+O`: copy the current command's output.
 - `Alt+Up` and `Alt+Down`: move through command output blocks.
 - `Alt+D`: change directory.
+- `Alt+N`: connect to a telnet host.
 
 The complete command list is also available from the menu bar. `Alt+T`, `Alt+R`, `Alt+G`, and `Alt+E` open its Terminal, Read, Go, and Edit menus, including while a full-screen program is running.
+
+## Telnet and MUDs
+
+BlindTerm dials telnet hosts itself. **Terminal** &rarr; **Connect to a telnet host...** (`Alt+N`) asks for a host and port, remembers the addresses you have used, and opens the connection in its own window. From a shortcut or a script:
+
+```
+BlindTerm.App.exe --telnet coremud.org:4000
+```
+
+It is a real connection rather than a wrapper around Windows' `telnet.exe`, and that is not a detail. `telnet.exe` repaints its window through the console API instead of writing a stream of lines, and a Windows pseudo console can only report what is on that window when it next redraws. Anything that scrolls past in between is overwritten before it can be reported: sending 200 lines to it and reading the transcript gives back 30, with the last one cut off mid-word. Those lines reach no terminal at all, whichever one you use. Reading the socket directly gives back all 200.
+
+Two other things follow from speaking the protocol rather than driving a program that speaks it:
+
+- **The host is told a screen reader is in use.** When it asks what terminal this is, BlindTerm answers with the MUD convention of a client name, then `ANSI`, then an MTTS bit vector — and bit 64 of MTTS means SCREEN READER. A server that honours it drops its room maps and ASCII art without anyone having to find the setting. The window width is sent too, so text wraps to the width being read.
+- **Nothing but text reaches the transcript.** Compression and the out-of-band data channels (MSDP, GMCP, ATCP, MSSP, MXP) are declined, so no markup ever lands in the middle of a sentence a screen reader is speaking.
+
+Typing works as it does anywhere else in BlindTerm, and with an empty command line the arrow keys, `Escape` and `Ctrl+]` reach the host, so a MUD's own history and menus behave. Nothing is sent on connect, so a plain TCP service — a mail server, a web server — can still be poked at the way people use a telnet client for.
+
+### MUD sounds
+
+BlindTerm speaks the MUD Sound Protocol, the way clients like Portal did: a MUD asks for a sound and BlindTerm plays it.
+
+**Sound packs go in `%APPDATA%\BlindTerm\sounds`**, or wherever you point **Sound folder** in **Terminal** &rarr; **Settings**. A MUD's `T=` parameter names a subfolder, so a pack that arrives with a `combat` folder in it should be unpacked keeping that shape. `Alt+M` turns sounds off and on, and **Sound volume** scales everything the MUD asks for. WAV, MP3, MIDI, WMA, AU and AIFF all play, several at once.
+
+The whole protocol is here: `V` volume, `L` loops (`-1` for as long as nothing stops it), `P` priority, `C` continue, `T` subfolder, `U` address, `!!SOUND(Off)` and `!!MUSIC(Off)`, and wildcards — a MUD asking for `hit*.wav` gets one of your hit sounds at random. Music plays one at a time and is left alone rather than restarted when the MUD names the same piece again. Eight sound effects play at once; past that, a trigger only interrupts something already playing if it arrives with a higher priority.
+
+Triggers are lifted out of the text **whether or not sounds are switched on**. That is the part that matters even to someone who never turns them on: left in, a trigger is a line read aloud as "exclamation exclamation SOUND left paren sword dot wav" in the middle of a fight. They are only recognised at the start of a line, which is also what stops a player typing `!!SOUND(scream.wav)` into a chat channel from making a noise on your machine — what the MUD echoes of that arrives after a name and a colon, and stays ordinary text.
+
+Some MUDs put their triggers in the text and some send them out of band, inside the telnet option, so that clients which do not speak the protocol never see them. Core MUD does the second. Both work.
+
+**Sounds are never downloaded unless you ask.** A trigger's `U` parameter is an address chosen by the server, so **Download sounds a MUD offers** is off by default. Turned on, the rules are narrow: an ordinary web address only, a plain sound file name with a playable extension, a destination inside your sound folder and nowhere else, a size cap, one attempt per address, and a file you already have is never overwritten.
 
 ## Diagnostic CLI
 
@@ -119,7 +165,10 @@ The core can be exercised without opening a window:
 dotnet run --project src\BlindTerm.Cli -- capture --out session.raw --send "Get-ChildItem" --send "exit" -- pwsh.exe -NoLogo
 dotnet run --project src\BlindTerm.Cli -- replay session.raw --numbered
 dotnet run --project src\BlindTerm.Cli -- speak --probe
+dotnet run --project src\BlindTerm.Cli -- telnet coremud.org:4000 --seconds 8 --numbered
 ```
+
+The `telnet` verb runs a real connection through the same transcript assembly the window uses, and prints what it produced. That is how "nothing is lost" is checked: point it at a host that will send more lines than the terminal is tall and count them.
 
 Replay tests deliberately feed captures at 16384, 7, and 1 byte chunks. Escape sequences split across reads are not an edge case in a real PTY; they are the test.
 

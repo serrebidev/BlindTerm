@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using BlindTerm.Core;
 using BlindTerm.Core.DefaultTerminal;
+using BlindTerm.Core.Net;
 using BlindTerm.Core.Pty;
 using BlindTerm.Core.Speech;
 using BlindTerm.Core.Vt;
@@ -18,14 +19,18 @@ namespace BlindTerm.App;
 [SupportedOSPlatform("windows")]
 public sealed class TerminalHost : IDisposable
 {
-    private readonly PtySession _session = new();
     private readonly SynchronizationContext _ui;
     private readonly TerminalCore _core;
+
+    /// <summary>
+    /// The far end. It is chosen when the window opens -- a shell, a console Windows handed
+    /// over, or a host on the network -- and nothing above this line can tell which.
+    /// </summary>
+    private ITerminalSession? _session;
 
     public TerminalCore Core => _core;
     public TerminalEngine Engine => _core.Engine;
     public Transcript Transcript => _core.Transcript;
-    public PtySession Session => _session;
 
     public ScreenReaderRouter Reader { get; }
     public Announcer Announcer { get; }
@@ -36,10 +41,23 @@ public sealed class TerminalHost : IDisposable
     /// <summary>The program rang the bell, already on the UI thread.</summary>
     public event Action? Bell;
 
+    /// <summary>A remote host asked for a sound, already on the UI thread.</summary>
+    public event Action<MspTrigger>? SoundRequested;
+
     public event Action<string>? TitleChanged;
     public event Action<int?>? Exited;
 
-    public bool IsRunning => _session.IsRunning;
+    public bool IsRunning => _session?.IsRunning ?? false;
+
+    /// <summary>What kind of far end this window is showing.</summary>
+    public TerminalSessionKind Kind => _session?.Kind ?? TerminalSessionKind.Shell;
+
+    /// <summary>
+    /// Whether something other than an idle shell prompt is reading what is typed. The
+    /// keyboard follows this: a running program gets the arrow keys and the Ctrl chords, and
+    /// a prompt keeps the ordinary editing keys Windows has always provided.
+    /// </summary>
+    public bool ProgramOwnsInput => _session?.ProgramOwnsInput ?? false;
 
     public TerminalHost(int columns, int rows, SynchronizationContext ui)
     {
@@ -54,31 +72,57 @@ public sealed class TerminalHost : IDisposable
 
         // Replies the terminal owes the program -- cursor position reports and the like --
         // go straight back without touching the UI thread.
-        _core.Engine.Respond += bytes => _session.Write(bytes);
+        _core.Engine.Respond += bytes => _session?.Write(bytes);
+    }
 
-        _session.Output += memory => _core.Feed(memory.Span);
-        _session.Exited += code =>
+    /// <summary>Takes ownership of a far end and starts feeding its bytes to the engine.</summary>
+    private T Attach<T>(T session) where T : ITerminalSession
+    {
+        if (_session is not null) throw new InvalidOperationException("This window already has a session.");
+        _session = session;
+        session.Output += memory => _core.Feed(memory.Span);
+        if (session is TelnetSession remote)
+            remote.SoundRequested += trigger => Post(() => SoundRequested?.Invoke(trigger));
+        session.Exited += code =>
         {
             _core.Flush();
             Post(() => Exited?.Invoke(code));
         };
+        return session;
     }
 
     private void Post(Action action) => _ui.Post(_ => action(), null);
 
     public void Start(string commandLine, string? workingDirectory = null)
-        => _session.Start(commandLine, Engine.Columns, Engine.Rows,
-                          TerminalEnvironment.ForChild(), workingDirectory);
+        => Attach(new PtySession()).Start(commandLine, Engine.Columns, Engine.Rows,
+                                          TerminalEnvironment.ForChild(), workingDirectory);
 
     /// <summary>
     /// Takes over a console Windows has already created for a program, because BlindTerm is
     /// the default terminal. Nothing above this line can tell the difference.
     /// </summary>
     public void Adopt(ConsoleHandoff handoff)
-        => _session.Adopt(handoff, Engine.Columns, Engine.Rows);
+        => Attach(new PtySession()).Adopt(handoff, Engine.Columns, Engine.Rows);
+
+    /// <summary>
+    /// Opens a telnet connection, without reading from it yet.
+    ///
+    /// Connecting and reading are separate so that a failure is reported before a window
+    /// exists to fail in, and so that a login banner arriving in the first millisecond is not
+    /// delivered before the window has subscribed. Call <see cref="Begin"/> once it has.
+    /// </summary>
+    public Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default)
+        => Attach(new TelnetSession()).ConnectAsync(host, port, Engine.Columns, Engine.Rows,
+                                                    cancellationToken);
+
+    /// <summary>Starts reading a connection that <see cref="ConnectAsync"/> opened.</summary>
+    public void Begin()
+    {
+        if (_session is TelnetSession telnet) telnet.Begin();
+    }
 
     /// <summary>Whether this window is showing a console Windows handed over.</summary>
-    public bool IsHandoff => _session.IsHandoff;
+    public bool IsHandoff => Kind == TerminalSessionKind.Handoff;
 
     /// <summary>
     /// Adds lines the app writes itself rather than the shell: the ready message at launch,
@@ -102,22 +146,26 @@ public sealed class TerminalHost : IDisposable
     }
 
     /// <summary>Sends a typed line, with the Return as a separate write. See PtySession.</summary>
-    public void SendLine(string text) => _ = _session.WriteLineSplit(text);
+    public void SendLine(string text)
+    {
+        if (_session is null) return;
+        _ = _session.WriteLineSplit(text, _session.LineTerminator, 20);
+    }
 
-    public void Send(ReadOnlySpan<byte> bytes) => _session.Write(bytes);
+    public void Send(ReadOnlySpan<byte> bytes) => _session?.Write(bytes);
 
     public void Resize(int columns, int rows)
     {
         TerminalSize size = TerminalSize.Validate(columns, rows);
         // Resize the child first. If ConPTY rejects it, the parser remains at its old size and
         // can continue consuming output consistently.
-        _session.Resize(size.Columns, size.Rows);
+        _session?.Resize(size.Columns, size.Rows);
         Engine.Resize(size.Columns, size.Rows);
     }
 
     public void Dispose()
     {
         Announcer.Dispose();
-        _session.Dispose();
+        _session?.Dispose();
     }
 }

@@ -7,8 +7,9 @@ public class AccessibleAgentCommandTests
     [Theory]
     [InlineData("claude", "claude --ax-screen-reader")]
     [InlineData("claude --resume abc", "claude --ax-screen-reader --resume abc")]
-    [InlineData("codex", "codex --no-alt-screen -c tui.animations=false")]
-    [InlineData("codex resume --last", "codex --no-alt-screen -c tui.animations=false resume --last")]
+    [InlineData("codex", "codex --no-alt-screen -c tui.raw_output_mode=true -c tui.animations=false")]
+    [InlineData("codex resume --last",
+        "codex --no-alt-screen -c tui.raw_output_mode=true -c tui.animations=false resume --last")]
     [InlineData("opencode", "opencode --mini --no-replay")]
     [InlineData("opencode -c", "opencode --mini --no-replay -c")]
     [InlineData("opencode .", "opencode --mini --no-replay .")]
@@ -17,7 +18,8 @@ public class AccessibleAgentCommandTests
 
     [Theory]
     [InlineData("claude --ax-screen-reader")]
-    [InlineData("codex --no-alt-screen -c tui.animations=true")]
+    [InlineData("codex --no-alt-screen -c tui.raw_output_mode=false -c tui.animations=true")]
+    [InlineData("codex -c tui.alternate_screen=true -c tui.raw_output_mode=true -c tui.animations=false")]
     [InlineData("opencode --mini --replay")]
     public void ExplicitChoicesAreRespected(string command)
         => Assert.Equal(command, AccessibleAgentCommand.Adapt(command));

@@ -17,6 +17,7 @@ internal static class Program
         {
             "capture" => Capture.Run(args[1..]),
             "replay" => Replay.Run(args[1..]),
+            "telnet" => Telnet.Run(args[1..]),
             "speak" => Speak.Run(args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Unknown(args[0]),
@@ -38,6 +39,7 @@ internal static class Program
             Usage:
               blindterm capture [options] -- <command line>
               blindterm replay <capture file> [options]
+              blindterm telnet <host[:port]> [options]
               blindterm speak [--probe] [--braille] [--batch] [--now] [text...]
 
             capture options:
@@ -48,6 +50,18 @@ internal static class Program
               --wait MS         Milliseconds to wait after each --send (default: 700)
               --seconds N       Stop this long after the last --send (default: 3)
               --quiet           Do not echo decoded output to the console
+
+            telnet options:
+              --cols N          Terminal width  (default: 120)
+              --rows N          Terminal height (default: 30)
+              --send TEXT       Type TEXT then Return. Repeatable, in order.
+              --key NAME        Send one named key, such as Up or C-]. Repeatable.
+              --wait MS         Milliseconds to wait before each --send (default: 700)
+              --seconds N       Stop this long after the last --send (default: 10)
+              --out FILE        Also write the received text, less the protocol, to FILE
+              --play FOLDER     Actually play the sounds a MUD asks for, from FOLDER
+              --numbered        Prefix each transcript line with its index
+              --quiet           Print only the summary
 
             replay options:
               --cols N          Terminal width used for assembly (default: 120)
@@ -61,6 +75,7 @@ internal static class Program
             Examples:
               blindterm capture --send "echo hello" -- pwsh.exe -NoLogo
               blindterm capture --out ls.raw --send "ls -la" -- wsl.exe
+              blindterm telnet coremud.org:4000 --seconds 8 --numbered
               blindterm replay ls.raw --numbered
             """);
         return 0;

@@ -5,6 +5,8 @@ using System.Text;
 using BlindTerm.App.Defterm;
 using BlindTerm.Core;
 using BlindTerm.Core.DefaultTerminal;
+using BlindTerm.Core.Net;
+using BlindTerm.Core.Sound;
 using BlindTerm.Core.Speech;
 using BlindTerm.Core.Updates;
 
@@ -38,9 +40,13 @@ public sealed class MainForm : Form
     private readonly MenuStrip _menu = new();
     private readonly ToolStripMenuItem _speakOutputItem = new("Speak &output");
     private readonly ToolStripMenuItem _speakOffCursorItem = new("Speak &background changes");
+    private readonly ToolStripMenuItem _mudSoundsItem = new("&MUD sounds");
     private readonly ToolStripMenuItem _checkUpdatesItem = new("Check for &updates...");
     private readonly ToolStripMenuItem _defaultTerminalItem = new("Use BlindTerm as the &default terminal");
     private readonly System.Windows.Forms.Timer _reviewFocusSpeechTimer = new() { Interval = 120 };
+    // Sounds repeat by being started again when they finish, so something has to notice that
+    // they have. Four times a second is under the gap anyone hears between two repeats.
+    private readonly System.Windows.Forms.Timer _soundTimer = new() { Interval = 250 };
 
     private readonly TerminalHost _host;
     private readonly AppSettings _settings;
@@ -48,7 +54,10 @@ public sealed class MainForm : Form
     private readonly UpdateClient _updates = new();
     private readonly LineNews _news = new();
     private readonly ScreenNews _screenNews = new();
-    private readonly ForegroundProgramState _foregroundProgram = new();
+    private readonly ForegroundProgramState _foregroundProgram;
+
+    private MspPlayer? _sounds;
+    private SoundDownloader? _soundDownloads;
 
     private readonly List<string> _history = new();
     private int _historyIndex;
@@ -90,6 +99,10 @@ public sealed class MainForm : Form
     public MainForm(TerminalHost host, AppSettings settings, SettingsStore settingsStore)
     {
         _host = host;
+        // Asked of the session rather than captured once: the window is built before the
+        // shell it will show has been started, and what counts as a running program differs
+        // between a shell, a handed-over console and a host on the network.
+        _foregroundProgram = new ForegroundProgramState(() => _host.ProgramOwnsInput);
         _screenKeyboard = new KeyboardEchoProxy();
         _settings = settings;
         _settingsStore = settingsStore;
@@ -114,8 +127,11 @@ public sealed class MainForm : Form
             else if (ScreenMode) Say("Back to the program");
         };
 
+        _soundTimer.Tick += (_, _) => _sounds?.Tick();
+
         _host.Updated += OnUpdated;
         _host.Bell += OnBell;
+        _host.SoundRequested += OnSoundRequested;
         _host.TitleChanged += title => Text = string.IsNullOrWhiteSpace(title) ? "BlindTerm" : $"{title} — BlindTerm";
         _host.Exited += OnExited;
     }
@@ -203,6 +219,8 @@ public sealed class MainForm : Form
         terminal.DropDownItems.Add(Item("Change &directory...", AppShortcuts.ChangeDirectory,
             ChangeDirectory));
         terminal.DropDownItems.Add(Item("&Settings...", Keys.None, ShowSettings));
+        terminal.DropDownItems.Add(Item("Connect to a telnet &host...", AppShortcuts.Connect,
+            ConnectToHost));
         _defaultTerminalItem.CheckOnClick = false;
         _defaultTerminalItem.Click += (_, _) => ToggleDefaultTerminal();
         _defaultTerminalItem.AccessibleDescription =
@@ -234,6 +252,12 @@ public sealed class MainForm : Form
         read.DropDownItems.Add(_speakOutputItem);
         _speakOffCursorItem.Click += (_, _) => ToggleOffCursor();
         read.DropDownItems.Add(_speakOffCursorItem);
+        _mudSoundsItem.Checked = _settings.MudSounds;
+        _mudSoundsItem.ShortcutKeys = AppShortcuts.ToggleMudSounds;
+        _mudSoundsItem.AccessibleDescription =
+            "Whether a MUD may play sounds. Its sound triggers are kept out of the text either way.";
+        _mudSoundsItem.Click += (_, _) => ToggleMudSounds();
+        read.DropDownItems.Add(_mudSoundsItem);
 
         var go = new ToolStripMenuItem("&Go");
         go.DropDownItems.Add(Item("&Transcript", AppShortcuts.FocusTranscript, FocusTranscript));
@@ -267,10 +291,6 @@ public sealed class MainForm : Form
         // its farewell line arrives just after. Appending to a disposed text box throws on the
         // UI thread, which ends the process rather than the window.
         if (IsDisposed || Disposing) return;
-
-        // An OSC 133 completed-command marker means the program returned control to the shell.
-        // Until then its Ctrl shortcuts must keep reaching it even when it uses inline output.
-        _foregroundProgram.Updated(_host.Core.CommandBlocks.Blocks.Count);
 
         if (update.AlternateScreen is not null)
         {
@@ -488,8 +508,16 @@ public sealed class MainForm : Form
 
         _foregroundProgram.Exited();
 
-        string what = _host.IsHandoff ? "Program" : "Shell";
-        string message = code is null ? $"[{what} exited]" : $"[{what} exited with code {code}]";
+        string message = _host.Kind switch
+        {
+            // A closed socket has no exit code, and "exited with code 0" would be a lie about
+            // a connection that simply ended.
+            TerminalSessionKind.Remote => "[Disconnected]",
+            TerminalSessionKind.Handoff when code is null => "[Program exited]",
+            TerminalSessionKind.Handoff => $"[Program exited with code {code}]",
+            _ when code is null => "[Shell exited]",
+            _ => $"[Shell exited with code {code}]",
+        };
         _host.AppendExternal([message]);
         _live.Text = message;
         _command.Enabled = false;
@@ -652,6 +680,63 @@ public sealed class MainForm : Form
         Say(_host.Announcer.Enabled ? "Speak output on" : "Speak output off");
     }
 
+    /// <summary>
+    /// Acts on a sound a MUD asked for.
+    ///
+    /// The player is built the first time one arrives rather than with the window: most
+    /// sessions are a shell and will never see one, and there is no reason for them to open
+    /// the multimedia layer at all.
+    /// </summary>
+    private void OnSoundRequested(MspTrigger trigger)
+    {
+        if (IsDisposed || Disposing || !_settings.MudSounds) return;
+
+        _sounds ??= BuildSoundPlayer();
+        _sounds.MasterVolume = _settings.SoundVolume;
+        if (_sounds.Handle(trigger) && !_soundTimer.Enabled) _soundTimer.Start();
+    }
+
+    private MspPlayer BuildSoundPlayer()
+    {
+        string folder = _settings.SoundDirectory.Length > 0
+            ? _settings.SoundDirectory
+            : SoundLibrary.DefaultDirectory;
+        var library = new SoundLibrary(folder);
+
+        // Only built when downloading is switched on, so nothing that could reach the network
+        // exists in a session that has not asked for it.
+        _soundDownloads = _settings.DownloadSounds ? new SoundDownloader(library) : null;
+        SoundDownloader? downloads = _soundDownloads;
+
+        return new MspPlayer(new MciSoundOutput(), library)
+        {
+            MasterVolume = _settings.SoundVolume,
+            Download = downloads is null ? null : downloads.Fetch,
+        };
+    }
+
+    private void ToggleMudSounds()
+    {
+        _settings.MudSounds = !_settings.MudSounds;
+        _mudSoundsItem.Checked = _settings.MudSounds;
+
+        if (!_settings.MudSounds)
+        {
+            // Silence means silence now, not once the current sound has finished.
+            _soundTimer.Stop();
+            _sounds?.Dispose();
+            _sounds = null;
+            _soundDownloads?.Dispose();
+            _soundDownloads = null;
+        }
+
+        try { _settingsStore.Save(_settings); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or ArgumentOutOfRangeException) { }
+
+        Say(_settings.MudSounds ? "MUD sounds on" : "MUD sounds off");
+    }
+
     private void ToggleOffCursor()
     {
         _screenNews.SpeakOffCursorChanges = !_screenNews.SpeakOffCursorChanges;
@@ -671,6 +756,11 @@ public sealed class MainForm : Form
     /// </summary>
     private void ChangeDirectory()
     {
+        if (_host.Kind == TerminalSessionKind.Remote)
+        {
+            Say("There is no local directory to change on a remote host");
+            return;
+        }
         if (ScreenMode)
         {
             Say("Not while a full-screen program is running");
@@ -723,12 +813,37 @@ public sealed class MainForm : Form
             _settings.Shell = next.Shell;
             _settings.Columns = next.Columns;
             _settings.Rows = next.Rows;
+            _settings.MudSounds = next.MudSounds;
+            _settings.SoundDirectory = next.SoundDirectory;
+            _settings.SoundVolume = next.SoundVolume;
+            _settings.DownloadSounds = next.DownloadSounds;
+            _mudSoundsItem.Checked = _settings.MudSounds;
+            // The player holds the old folder, volume and download choice, so it is built
+            // again from the new ones rather than asked to change its mind.
+            _soundTimer.Stop();
+            _sounds?.Dispose();
+            _sounds = null;
+            _soundDownloads?.Dispose();
+            _soundDownloads = null;
             Say(resized ? "Settings saved and terminal resized" : "Settings saved");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
         {
             MessageBox.Show(this, ex.Message, "Could not apply settings", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    /// <summary>
+    /// The user asked for a telnet connection. The window cannot open another window, so the
+    /// application does it, and a failure to connect is reported before an empty one appears.
+    /// </summary>
+    public event Action<string, int>? TelnetRequested;
+
+    private void ConnectToHost()
+    {
+        using var dialog = new TelnetConnectForm(_settings.RecentTelnetHosts);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        TelnetRequested?.Invoke(dialog.Host, dialog.Port);
     }
 
     private void PreviousCommand() => MoveCommand(-1);
@@ -838,8 +953,12 @@ public sealed class MainForm : Form
     private void Submit()
     {
         string text = _command.Text;
-        string accessible = AccessibleAgentCommand.Adapt(text);
-        _foregroundProgram.Submitted(text, _host.Core.CommandBlocks.Blocks.Count);
+        // A line typed at a MUD is that MUD's to interpret. Rewriting "codex" into a command
+        // line with flags on it would be nonsense there.
+        string accessible = _host.Kind == TerminalSessionKind.Remote
+            ? text
+            : AccessibleAgentCommand.Adapt(text);
+        _foregroundProgram.Submitted(text);
         _news.SuppressCommandEcho(accessible);
         _host.SendLine(accessible);
         if (text.Length > 0 && (_history.Count == 0 || _history[^1] != text)) _history.Add(text);
@@ -882,8 +1001,14 @@ public sealed class MainForm : Form
         // Ctrl+C, Ctrl+X, Ctrl+Z and other control commands belong to them until the shell's
         // completed-command marker says they exited. Output focus keeps native selection keys.
         // A handoff is itself the foreground app.
-        bool foregroundLineProgram = !ScreenMode && (_foregroundProgram.Active || _host.IsHandoff);
-        if (AppShortcuts.ShouldPassControlChord(keyData, foregroundLineProgram, _command.Focused))
+        bool foregroundLineProgram = !ScreenMode && _foregroundProgram.Active;
+        bool commandFocused = _command.Focused;
+        // An empty command line is a remote control for whatever is running; one with text in
+        // it is an edit box. Arrows drive a model picker in the first case and move the caret
+        // through what has been typed in the second.
+        if (AppShortcuts.ShouldPassControlChord(keyData, foregroundLineProgram, commandFocused)
+            || AppShortcuts.ShouldPassNavigationKey(keyData, foregroundLineProgram, commandFocused,
+                                                    _command.TextLength == 0))
         {
             byte[]? control = KeyTranslator.Translate(keyData, _host.Engine.ApplicationCursorKeys);
             if (control is not null)
@@ -966,6 +1091,9 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        _soundTimer.Dispose();
+        _sounds?.Dispose();
+        _soundDownloads?.Dispose();
         _reviewFocusSpeechTimer.Dispose();
         _updates.Dispose();
         _host.Dispose();

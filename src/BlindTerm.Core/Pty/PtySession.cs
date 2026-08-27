@@ -19,7 +19,7 @@ namespace BlindTerm.Core.Pty;
 /// landing between them would send the wrong thing.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class PtySession : IDisposable
+public sealed class PtySession : ITerminalSession
 {
     private IntPtr _handle = IntPtr.Zero;
     private SafeFileHandle? _inputWrite;
@@ -63,6 +63,23 @@ public sealed class PtySession : IDisposable
 
     /// <summary>Whether this session arrived from Windows rather than being started here.</summary>
     public bool IsHandoff => _handoff is not null;
+
+    public TerminalSessionKind Kind
+        => _handoff is not null ? TerminalSessionKind.Handoff : TerminalSessionKind.Shell;
+
+    /// <summary>
+    /// Whether something other than an idle shell prompt is reading what is typed.
+    ///
+    /// A shell that has started a program is not the one reading the keyboard any more, and a
+    /// process either exists or it does not. The alternative -- waiting for the shell's OSC 133
+    /// completed-command marker -- only works when the shell emits them, and a stock PowerShell
+    /// 7 prompt emits none. A handed-over console has no shell in front of it at all: the
+    /// program Windows started is the whole session.
+    /// </summary>
+    public bool ProgramOwnsInput => _handoff is not null || ProcessTree.HasChild(ProcessId);
+
+    /// <summary>A pseudo console's line discipline turns the Return into a new line itself.</summary>
+    public string LineTerminator => "\r";
 
     /// <summary>
     /// Starts <paramref name="commandLine"/> attached to a new pseudo console.

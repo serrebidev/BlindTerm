@@ -50,6 +50,26 @@ if (-not $iscc) { throw 'Inno Setup compiler was not found.' }
 & $iscc "/DAppVersion=$version" $iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
 
+# The one line the update dialog shows before anyone decides to install. Taken from this
+# version's first changelog bullet so that it cannot go stale: written down by hand, it was
+# still describing the release before last.
+$notes = 'A new version of BlindTerm is available.'
+$changelog = Join-Path $root 'CHANGELOG.md'
+if (Test-Path -LiteralPath $changelog) {
+    $pattern = '(?ms)^##\s+v' + [regex]::Escape($version) + '\b.*?\n\s*\n(?<body>.*?)(?=^##\s|\z)'
+    $entry = [regex]::Match((Get-Content -LiteralPath $changelog -Raw), $pattern)
+    if ($entry.Success) {
+        $first = $entry.Groups['body'].Value -split '\r?\n' |
+            Where-Object { $_ -match '^\s*-\s+' } | Select-Object -First 1
+        if ($first) {
+            $first = ($first -replace '^\s*-\s+', '') -replace '`', '' -replace '\*\*', ''
+            # One sentence is all the dialog has room to read out.
+            $stop = [regex]::Match($first, '^.*?[.!?](\s|$)')
+            $notes = if ($stop.Success) { $stop.Value.Trim() } else { $first.Trim() }
+        }
+    }
+}
+
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 $installer = Join-Path $dist "BlindTerm-Setup-v$version.exe"
 $installerHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -59,7 +79,7 @@ $manifest = [ordered]@{
     download_url = "https://github.com/serrebidev/BlindTerm/releases/download/v$version/$(Split-Path -Leaf $zip)"
     sha256 = $hash
     published_at = [DateTimeOffset]::UtcNow.ToString('o')
-    notes_summary = 'Native output selection and clipboard shortcuts while programs run.'
+    notes_summary = $notes
     installer = [ordered]@{
         asset = Split-Path -Leaf $installer
         download_url = "https://github.com/serrebidev/BlindTerm/releases/download/v$version/$(Split-Path -Leaf $installer)"
