@@ -4,6 +4,10 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.1.1 - 2026-08-27
+
+- Make the default terminal setting take effect after BlindTerm is installed over a copy that was being run from somewhere else, or moved. Windows goes on opening the executable it last used, whatever the setting now says, until the registration is replaced rather than edited.
+
 ## v0.1.0 - 2026-08-27
 
 - Add a Windows terminal window built for NVDA and JAWS.
