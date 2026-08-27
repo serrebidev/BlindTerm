@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using BlindTerm.Core.DefaultTerminal;
 using Microsoft.Win32.SafeHandles;
 using static BlindTerm.Core.Pty.NativeMethods;
 
@@ -29,6 +30,13 @@ public sealed class PtySession : IDisposable
     private IntPtr _thread = IntPtr.Zero;
     private IntPtr _attributes = IntPtr.Zero;
 
+    /// <summary>
+    /// Set when this session was handed to us by the console API server rather than started
+    /// by us. The pseudo console then belongs to that process, so there is no HPCON to resize
+    /// or close and the handoff owns the pipes.
+    /// </summary>
+    private ConsoleHandoff? _handoff;
+
     private readonly BlockingCollection<byte[]> _writes = new(new ConcurrentQueue<byte[]>());
     private readonly CancellationTokenSource _stopping = new();
     private Thread? _readThread;
@@ -53,6 +61,9 @@ public sealed class PtySession : IDisposable
     public bool IsRunning { get; private set; }
     public int ProcessId { get; private set; }
 
+    /// <summary>Whether this session arrived from Windows rather than being started here.</summary>
+    public bool IsHandoff => _handoff is not null;
+
     /// <summary>
     /// Starts <paramref name="commandLine"/> attached to a new pseudo console.
     /// </summary>
@@ -67,7 +78,7 @@ public sealed class PtySession : IDisposable
         string? workingDirectory = null)
     {
         if (IsRunning) throw new InvalidOperationException("Session is already running.");
-        if (columns <= 0 || rows <= 0) throw new ArgumentOutOfRangeException(nameof(columns));
+        TerminalSize.Validate(columns, rows);
 
         Columns = columns;
         Rows = rows;
@@ -109,6 +120,54 @@ public sealed class PtySession : IDisposable
         _readThread.Start();
         _writeThread.Start();
         _waitThread.Start();
+    }
+
+    /// <summary>
+    /// Adopts a console Windows has already created, because BlindTerm is the default
+    /// terminal and a command-line program was started without one.
+    ///
+    /// Everything after this point is identical to a session we started: the same VT bytes
+    /// arrive on <see cref="Output"/>, the same writes reach the program. What differs is
+    /// ownership -- the pseudo console lives in the console API server, so resizing goes down
+    /// the signal pipe and there is no child process of ours to wait on, only the program
+    /// that asked for the console in the first place.
+    /// </summary>
+    public void Adopt(ConsoleHandoff handoff, int columns, int rows)
+    {
+        ArgumentNullException.ThrowIfNull(handoff);
+        if (IsRunning) throw new InvalidOperationException("Session is already running.");
+        TerminalSize.Validate(columns, rows);
+
+        _handoff = handoff;
+        Columns = columns;
+        Rows = rows;
+
+        // A pipe each way, read and written by their own threads, exactly as for a session
+        // BlindTerm started itself.
+        _writer = new FileStream(handoff.Input, FileAccess.Write);
+        _reader = new FileStream(handoff.Output, FileAccess.Read);
+
+        _process = handoff.Client.DangerousGetHandle();
+        ProcessId = SafeProcessId(handoff.Client);
+        IsRunning = true;
+
+        // Tell the console API server what size we are before anything is drawn. It has been
+        // guessing until now, and a program that measured the console at startup would
+        // otherwise lay itself out for the wrong screen.
+        handoff.Resize(columns, rows);
+
+        _readThread = new Thread(ReadLoop) { IsBackground = true, Name = "BlindTerm PTY read" };
+        _writeThread = new Thread(WriteLoop) { IsBackground = true, Name = "BlindTerm PTY write" };
+        _waitThread = new Thread(WaitLoop) { IsBackground = true, Name = "BlindTerm PTY wait" };
+        _readThread.Start();
+        _writeThread.Start();
+        _waitThread.Start();
+    }
+
+    private static int SafeProcessId(SafeProcessHandle handle)
+    {
+        try { return GetProcessId(handle.DangerousGetHandle()); }
+        catch (EntryPointNotFoundException) { return 0; }
     }
 
     internal static readonly bool Debug =
@@ -233,7 +292,7 @@ public sealed class PtySession : IDisposable
         }
         catch (IOException)
         {
-            // The child closed its end.
+            // The program closed its end.
         }
     }
 
@@ -254,6 +313,7 @@ public sealed class PtySession : IDisposable
 
     private void WaitLoop()
     {
+        if (_process == IntPtr.Zero) return;
         WaitForSingleObject(_process, 0xFFFFFFFF);
         int? code = GetExitCodeProcess(_process, out int value) ? value : null;
         IsRunning = false;
@@ -291,14 +351,22 @@ public sealed class PtySession : IDisposable
     /// </summary>
     public void Resize(int columns, int rows)
     {
-        if (columns <= 0 || rows <= 0) throw new ArgumentOutOfRangeException(nameof(columns));
-        if (_handle == IntPtr.Zero) return;
+        TerminalSize size = TerminalSize.Validate(columns, rows);
         if (columns == Columns && rows == Rows) return;
 
-        int hr = ResizePseudoConsole(_handle, new COORD { X = (short)columns, Y = (short)rows });
-        if (hr != 0) throw new Win32Exception(hr, "ResizePseudoConsole failed.");
-        Columns = columns;
-        Rows = rows;
+        if (_handoff is not null)
+        {
+            _handoff.Resize(size.Columns, size.Rows);
+        }
+        else
+        {
+            if (_handle == IntPtr.Zero) return;
+            int hr = ResizePseudoConsole(_handle, new COORD { X = (short)size.Columns, Y = (short)size.Rows });
+            if (hr != 0) throw new Win32Exception(hr, "ResizePseudoConsole failed.");
+        }
+
+        Columns = size.Columns;
+        Rows = size.Rows;
     }
 
     public void Kill()
@@ -321,6 +389,15 @@ public sealed class PtySession : IDisposable
         _reader?.Dispose();
         _inputWrite?.Dispose();
         _outputRead?.Dispose();
+
+        // A handed-off session owns the process handles too, so the raw copy in _process is
+        // not ours to close below.
+        if (_handoff is not null)
+        {
+            _handoff.Dispose();
+            _handoff = null;
+            _process = IntPtr.Zero;
+        }
 
         if (_attributes != IntPtr.Zero)
         {

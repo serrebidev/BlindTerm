@@ -2,3 +2,6 @@ bin/
 obj/
 *.user
 capture*.raw
+
+# Build output. The ZIP and the installer are release assets, not repository files.
+dist/

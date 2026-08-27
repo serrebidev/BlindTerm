@@ -5,6 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- The window, the key translation and the COM handoff types all live in the app, and
+         all three are worth testing. WinForms has to be on for the test host to load them. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\BlindTerm.Core\BlindTerm.Core.csproj" />
+    <ProjectReference Include="..\..\src\BlindTerm.App\BlindTerm.App.csproj" />
   </ItemGroup>
 
 </Project>

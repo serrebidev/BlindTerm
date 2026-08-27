@@ -52,6 +52,13 @@ public sealed class TerminalEngine
     /// <summary>Whether the program has asked for pasted text to be bracketed.</summary>
     public bool BracketedPaste => _terminal.BracketedPasteMode;
 
+    /// <summary>
+    /// Whether the program has asked for application cursor keys. vim does. Sending the
+    /// ordinary shell form to a program in this mode makes the arrow keys insert letters
+    /// instead of moving, which is the classic broken-terminal symptom.
+    /// </summary>
+    public bool ApplicationCursorKeys => _terminal.ApplicationCursorKeys;
+
     public TerminalEngine(int columns = 120, int rows = 30, int scrollback = 100_000)
     {
         _terminal = new Terminal(new TerminalOptions
@@ -127,6 +134,13 @@ public sealed class TerminalEngine
     public int CursorRow => ScreenTop + _terminal.Buffer.Y;
 
     public int CursorColumn => _terminal.Buffer.X;
+
+    /// <summary>
+    /// The cursor's row counted from the top of the screen rather than from the first line
+    /// ever written. This is the one screen mode cares about: in a full-screen program the
+    /// screen is the document, and "which row am I on" is the question being asked.
+    /// </summary>
+    public int CursorScreenRow => _terminal.Buffer.Y;
 
     /// <summary>One past the last row on screen.</summary>
     public int ScreenEnd => ScreenTop + _terminal.Rows;

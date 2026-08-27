@@ -10,6 +10,11 @@ namespace BlindTerm.Core.Speech;
 public sealed class LineNews
 {
     private readonly Dictionary<int, string> _announced = new();
+    private string? _pendingCommandEcho;
+
+    /// <summary>Suppresses the shell's one-line echo of a command already spoken while typing.</summary>
+    public void SuppressCommandEcho(string command)
+        => _pendingCommandEcho = string.IsNullOrWhiteSpace(command) ? null : command.Trim();
 
     /// <summary>
     /// How many lines of announcement history to keep. The transcript can run to a hundred
@@ -33,6 +38,12 @@ public sealed class LineNews
         foreach (var (line, text) in byLine)
         {
             if (string.IsNullOrWhiteSpace(text)) continue;
+            if (_pendingCommandEcho is { } command && IsCommandEcho(text, command))
+            {
+                _pendingCommandEcho = null;
+                _announced[line] = text;
+                continue;
+            }
             if (_announced.TryGetValue(line, out string? was) && was == text) continue;
 
             _announced[line] = text;
@@ -41,6 +52,13 @@ public sealed class LineNews
 
         Forget(byLine.Count > 0 ? byLine.Keys.Max() : 0);
         return spoken;
+    }
+
+    private static bool IsCommandEcho(string line, string command)
+    {
+        string value = line.TrimEnd();
+        return value.Equals(command, StringComparison.Ordinal)
+               || value.EndsWith(" " + command, StringComparison.Ordinal);
     }
 
     private void Forget(int newest)

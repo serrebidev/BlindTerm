@@ -99,4 +99,14 @@ public class LineNewsTests
 
         Assert.Equal(new[] { "complete" }, news.News(update));
     }
+
+    [Fact]
+    public void SuppressesTheShellEchoOfACommandAlreadyTyped()
+    {
+        var news = new LineNews();
+        news.SuppressCommandEcho("ssh root@example.com");
+
+        Assert.Empty(news.News(Appending(0, "PS C:\\> ssh root@example.com")));
+        Assert.Equal(new[] { "connected" }, news.News(Appending(1, "connected")));
+    }
 }

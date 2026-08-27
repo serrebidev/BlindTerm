@@ -57,6 +57,9 @@ public sealed class TranscriptBuilder
     /// </summary>
     public event Action<int, int>? RowBecameLine;
 
+    /// <summary>Raised when buffer rows no longer identify the lines they identified before.</summary>
+    public event Action? RowsResynced;
+
     public TranscriptBuilder(TerminalEngine engine) => _engine = engine;
 
     /// <summary>
@@ -96,6 +99,7 @@ public sealed class TranscriptBuilder
         _extentRow = restart;
         _mappedFrom = restart;
         _frameStart = restart;
+        RowsResynced?.Invoke();
     }
 
     /// <summary>
@@ -108,7 +112,11 @@ public sealed class TranscriptBuilder
     /// </param>
     public TerminalUpdate Publish(bool beforeWipe = false)
     {
-        var update = new TerminalUpdate();
+        var update = new TerminalUpdate
+        {
+            CursorRow = _engine.CursorScreenRow,
+            CursorColumn = _engine.CursorColumn,
+        };
 
         // A full-screen program owns the screen. Build no lines: the screen is the document,
         // and the transcript waits where it was.

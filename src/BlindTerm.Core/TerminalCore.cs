@@ -15,6 +15,7 @@ public sealed class TerminalCore
     public TerminalEngine Engine { get; }
     public TranscriptBuilder Builder { get; }
     public Transcript Transcript => Builder.Transcript;
+    public CommandBlockTracker CommandBlocks { get; }
 
     /// <summary>A batch of changes is ready.</summary>
     public event Action<TerminalUpdate>? Updated;
@@ -23,6 +24,10 @@ public sealed class TerminalCore
     {
         Engine = new TerminalEngine(columns, rows, scrollback);
         Builder = new TranscriptBuilder(Engine);
+        CommandBlocks = new CommandBlockTracker();
+        Engine.MarkReceived += CommandBlocks.MarkReceived;
+        Builder.RowBecameLine += CommandBlocks.RowBecameLine;
+        Builder.RowsResynced += CommandBlocks.ResetRows;
     }
 
     /// <summary>

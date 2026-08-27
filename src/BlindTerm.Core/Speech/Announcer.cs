@@ -72,6 +72,21 @@ public sealed class Announcer : IDisposable
         Speak(text.Trim(), priority);
     }
 
+    /// <summary>
+    /// Drops queued line-mode output without cancelling speech that the reader is already
+    /// speaking. A full-screen program has taken over, so a delayed shell utterance would be
+    /// stale and would compete with the program's own screen speech.
+    /// </summary>
+    public void DiscardPending()
+    {
+        lock (_gate)
+        {
+            _pending.Clear();
+            _flushTimer?.Dispose();
+            _flushTimer = null;
+        }
+    }
+
     private void Flush()
     {
         string text;

@@ -23,7 +23,7 @@ public static class TerminalEnvironment
             ["TERM"] = "xterm-256color",
             ["COLORTERM"] = "truecolor",
             ["TERM_PROGRAM"] = TermProgram,
-            ["TERM_PROGRAM_VERSION"] = version ?? "0.1",
+            ["TERM_PROGRAM_VERSION"] = version ?? VersionInfo.Current,
 
             // Claude Code: flat, labelled output instead of a repainting frame.
             ["CLAUDE_AX_SCREEN_READER"] = "1",

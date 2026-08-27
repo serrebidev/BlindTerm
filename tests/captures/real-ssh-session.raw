@@ -1,0 +1,64 @@
+[?9001h[?1004h[?25l[2J[m[HLinux serrebiradio.com 6.12.101+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.101-1 (2026-08-05) x86_64[4;1HThe programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.[8;1HDebian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed Aug 26 17:55:48 2026 from 100.68.110.24
+]0;C:\WINDOWS\System32\OpenSSH\ssh.exe[?25h[?2004hroot@serrebiradio:~# hostname
+[?2004l[?2004hserrebiradio.com
+root@serrebiradio:~# nano /tmp/bt-ssh2.txt[?2004l
+[?2004h[?1049h[22;0;0t[?1h=[?1h=[2J[?12l[?25l[7m[H  GNU nano 8.4                              /tmp/bt-ssh2.txt                                        [27m
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[44X[7m[44C[ New File ][27m[K[7m
+^G[27m Help       [7m^O[27m Write Out  [7m^F[27m Where Is   [7m^K[27m Cut        [7m^T[27m Execute    [7m^C[27m Location   [7mM-U[27m Undo        [7m
+^X[27m Exit       [7m^R[27m Read File  [7m^\[27m Replace    [7m^U[27m Paste      [7m^J[27m Justify    [7m^/[27m Go To Line [7mM-E[27m Redo        [2;1H[?25h[?25l[?12l[7m[1;62H*[27m
+typed in[?25h[?12l[?25lside nano over ssh[23;1H[K[2;27H[?25h[?12l
+[?25l[?12l[7m[23;1HWrite to File: /tmp/bt-ssh2.txt                                                                     [27m[24;15H[11X[7m[11CM-D[27m DOS Format[11X[7m[11CM-A[27m Append[15X[7m[15CM-B[27m Backup File[K[7m[25;2HC[27m Cancel[16X[7m[16CM-M[27m Mac Format[11X[7m[11CM-P[27m Prepend[14X[7m[14C^T[27m Browse[K[23;32H[?25h[?25l[?12l[7m[1;62H [27m[23;1H                                         [41X[7m[ Wrote 2 lines ][27m                                          [7m[24;15H^O[27m Write Out  [7m^F[27m Where Is   [7m^K[27m Cut        [7m^T[27m Execute    [7m^C[27m Location   [7mM-U[27m Undo[7m[25;2HX[27m Exit       [7m^R[27m Read File  [7m^\[27m Replace    [7m^U[27m Paste      [7m^J[27m Justify    [7m^/[27m Go To Line [7mM-E[27m Redo[3;1H[?25h[?25l[?12l[23;1H                                                                                                    
+[K
+[K[?25h[?1049l[23;0;0t[?1l>[?2004l[?2004h[?25l[HLinux serrebiradio.com 6.12.101+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.101-1 (2026-08-05) x86_64[K
+[K
+The programs included with the Debian GNU/Linux system are free software;[K
+the exact distribution terms for each program are described in the[K
+individual files in /usr/share/doc/*/copyright.[K
+[K
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent[K
+permitted by applicable law.[K
+Last login: Wed Aug 26 17:55:48 2026 from 100.68.110.24[K
+root@serrebiradio:~# hostname[K
+serrebiradio.com[K
+root@serrebiradio:~# nano /tmp/bt-ssh2.txt[K
+root@serrebiradio:~#[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[14;22H[?25hcat /tmp/bt-ssh2.txt[?2004l
+[?2004h[?25ltyped inside nano over ssh[17;1Hroot@serrebiradio:~# [?25hexit[?2004l
+logout
+Connection to 100.103.9.33 closed.
+[?9001l[?1004l

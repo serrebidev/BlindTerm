@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\BlindTerm.Core\BlindTerm.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Key translation, the default-terminal prompt and the window's own logic are internal,
+         and are exactly the parts a test can reach without a user at the keyboard. -->
+    <InternalsVisibleTo Include="BlindTerm.Tests" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

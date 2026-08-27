@@ -49,7 +49,7 @@ public sealed class NvdaScreenReader : IScreenReader
             _ => "x64",
         };
 
-        string beside = Path.GetDirectoryName(assembly.Location) ?? AppContext.BaseDirectory;
+        string beside = AppContext.BaseDirectory;
         string full = Path.Combine(beside, "native", architecture, Library + ".dll");
 
         if (File.Exists(full) && NativeLibrary.TryLoad(full, out IntPtr handle)) return handle;

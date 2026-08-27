@@ -1,80 +1,132 @@
 # BlindTerm
 
-A Windows terminal built for screen reader users, working equally well with NVDA and JAWS.
+A screen-reader-friendly Windows terminal for NVDA and JAWS, built for ordinary shell work and the full-screen programs that usually make terminals inaccessible.
 
-Output is presented as an append-only list of logical lines in a real Win32 edit control, so
-the screen reader navigates it natively — by line, word and character, with braille following
-the caret — rather than as a grid it has to guess at. Full-screen programs (nano, vim, htop,
-over SSH) get a second mode where every keystroke passes through and reading follows the
-cursor.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-It follows [AccessTerm](https://github.com/allisonfm85/AccessTerm), which does this for macOS
-and VoiceOver. The design, and where it deliberately differs, is in [docs/DESIGN.md](docs/DESIGN.md).
+BlindTerm keeps ordinary output as a readable transcript in a native Windows edit control. NVDA and JAWS can navigate it by line, word, and character, follow it in braille, and use their normal reading commands. When nano, vim, htop, less, or an editor over SSH takes the alternate screen, BlindTerm changes mode: keys go to the program and speech follows the cursor instead of reading every repaint.
 
-**Status: the terminal core and the speech layer work; there is no window yet.**
+## Features
 
-Done: the pseudo console, the VT engine, the transcript assembly, the replay harness, and
-speech through NVDA and JAWS. nano, vim and htop all drive correctly through the pty and none
-of them leaks a frame into the transcript.
+- Runs Windows shells through ConPTY, with UTF-8 and xterm-compatible terminal behavior.
+- Presents shell output as logical lines instead of a guessed terminal grid.
+- Keeps prompts and unfinished output in a separately labelled current-line control.
+- Sends ordinary typed commands through a real command-line edit control with history.
+- Passes arrows, Tab, Escape, function keys, modifiers, and typing through to full-screen programs.
+- Reads the line the cursor moved onto instead of repeating status bars and screen furniture.
+- Freezes a full-screen frame for normal line, word, character, say-all, and braille navigation.
+- Speaks through NVDA's controller client and JAWS' documented COM interface, using the reader's own voice and settings.
+- Handles redraws, spinners, wrapped lines, screen wipes, alternate screens, and split UTF-8 input.
+- Can be set as the Windows 11 default terminal, so command-line programs open in BlindTerm on their own.
+- Includes a replay harness that turns raw PTY captures into repeatable regression tests.
+- Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 
-Next: the line mode window, then screen mode. See "Build order" in the design document.
+## Download and install
 
-The JAWS path is written but **unverified** — JAWS is not installed on the machine this was
-built on. NVDA is verified working, including braille and the batching path.
+Download the installer from the [latest release](https://github.com/serrebidev/BlindTerm/releases/latest) and run it, or download the ZIP and unpack it anywhere.
 
-## Building
+To build and install from source on Windows instead:
 
-Needs the .NET 9 SDK.
+```powershell
+.\build.bat install
+```
 
-    dotnet build
+The installer places BlindTerm in `C:\Program Files\BlindTerm` and adds a Start Menu entry. It leaves settings in `%APPDATA%\BlindTerm` so an application update does not remove them.
 
-## The diagnostic CLI
+To make a package without installing it:
 
-There is no window yet, so everything is driven through `blindterm`, which is also how the
-core is tested.
+```powershell
+.\build.bat build
+```
 
-### capture
+The ZIP, installer, and update manifest are written to `dist\`.
 
-Runs a command under a pseudo console and writes every byte it produces to a file, exactly as
-it arrived, escape sequences and all.
+## Run from source
 
-    dotnet run --project src/BlindTerm.Cli -- capture --out session.raw \
-        --send "Get-ChildItem" --send "exit" -- pwsh.exe -NoLogo
+Install the .NET 9 SDK, then run:
 
-### replay
+```powershell
+dotnet run --project src\BlindTerm.App
+```
 
-Runs a capture back through the transcript assembly and prints what it produced, with no
-window, no shell and no pty. This is how a program whose output comes out wrong becomes a
-repeatable check.
+BlindTerm prefers PowerShell 7 when `pwsh.exe` is available and falls back to Windows PowerShell. To launch another program directly:
 
-    dotnet run --project src/BlindTerm.Cli -- replay session.raw --numbered
+```powershell
+dotnet run --project src\BlindTerm.App -- wsl.exe
+```
 
-`--chunk N` feeds the capture in N-byte reads. Chunk boundaries are not cosmetic: an escape
-sequence split across two reads, or a screen wipe arriving in the same read as the output it
-is about to destroy, are exactly the cases the assembly has to get right. The test suite
-replays everything at 16384, 7 and 1 bytes for that reason.
+## Making BlindTerm your default terminal
 
-### speak
+Windows 11 lets you choose which terminal opens when a command-line program is started without one, so that `cmd.exe` from the Run dialog, a `.bat` file from File Explorer, or a tool that launches a console all open in BlindTerm.
 
-Reports which screen readers are running and speaks through the chosen one. `--probe` reports
-without speaking.
+BlindTerm offers this once, in a dialog at startup, with Yes and No buttons and a **Don't ask me again** checkbox that is already ticked. Answering either way is final unless you clear the checkbox. You can change your mind at any time from **Terminal** &rarr; **Use BlindTerm as the default terminal**, which shows a check mark when it is on.
 
-    dotnet run --project src/BlindTerm.Cli -- speak --probe
-    dotnet run --project src/BlindTerm.Cli -- speak "hello"
-    dotnet run --project src/BlindTerm.Cli -- speak --batch
+A window opened this way brings itself to the front and puts the caret on the command line, because a terminal that appears in the background is a terminal a screen reader never mentions.
 
-## Tests
+This needs Windows 11 and Windows Terminal installed. BlindTerm uses Windows Terminal's console host, which is the Microsoft-signed component that receives the console from Windows and hands it on; BlindTerm does not redistribute a copy of it. Nothing here needs administrator rights, and nothing is written outside your own user account.
 
-    dotnet test
-    pwsh -File tests/run-replay-tests.ps1
+If a terminal ever fails to open, you can put the setting back without a working terminal to type into:
 
-Every capture in `tests/captures` is replayed at several chunk sizes and compared against the
-`.expected` file beside it. The synthetic ones are generated by `make-synthetic.py` and each
-isolates a single behaviour — an in-place redraw, a spinner, a wrapped line, a screen wipe in
-both its ordinary and private forms, a full-screen program coming and going, tab-separated
-columns. Recorded captures carry a `.size` file, because a capture has to be replayed at the
-width it was recorded at.
+```
+BlindTerm.App.exe --reset-default-terminal
+```
+
+That restores whatever Windows would have chosen. In fact BlindTerm cannot lock you out: if the handoff fails for any reason, Windows falls back to the console host and the program still gets a terminal.
+
+## Reading and keyboard commands
+
+BlindTerm keeps its reserved commands under `Ctrl+Alt`, because Ctrl, Alt, function keys, Insert, and Caps Lock already belong to shells, terminal programs, and screen readers.
+
+- `Ctrl+Alt+1`: focus the transcript.
+- `Ctrl+Alt+2`: focus the command line.
+- `Ctrl+Alt+E`: move to the end of the transcript.
+- `F5`: freeze or resume full-screen review.
+- `Ctrl+Alt+L`: speak the current line.
+- `Ctrl+Alt+W`: speak the visible screen.
+- `Ctrl+Alt+C`: send Ctrl+C.
+- `Ctrl+Alt+P`: pass the next supported key to the program.
+- `Ctrl+Alt+A`: copy the transcript or current screen.
+
+The complete command list is also available from the menu bar, which is the discoverability path for NVDA and JAWS users.
+
+## Diagnostic CLI
+
+The core can be exercised without opening a window:
+
+```powershell
+dotnet run --project src\BlindTerm.Cli -- capture --out session.raw --send "Get-ChildItem" --send "exit" -- pwsh.exe -NoLogo
+dotnet run --project src\BlindTerm.Cli -- replay session.raw --numbered
+dotnet run --project src\BlindTerm.Cli -- speak --probe
+```
+
+Replay tests deliberately feed captures at 16384, 7, and 1 byte chunks. Escape sequences split across reads are not an edge case in a real PTY; they are the test.
+
+## Testing
+
+```powershell
+dotnet test
+pwsh -File tests\run-replay-tests.ps1
+```
+
+The test suite covers the VT engine, transcript assembly, screen speech, key translation and encoding, ConPTY captures, screen wipes, redraws, wrapping, alternate-screen programs, and the whole default-terminal path: the registry values Windows parses, the marshalling registration, the COM wrappers, and a complete inbound console handoff driven with real pipes and process handles. SSH captures are included as development corpus and are replayed by hand because their login banners and disconnect text are host-specific.
+
+## Updating
+
+The app contains an original update client designed for GitHub release manifests. It downloads `BlindTerm-update.json`, compares semantic versions, verifies the SHA-256 of the package, and hands the replacement to a short-lived update worker so the running executable is never overwritten in place.
+
+Releases are published on GitHub, and the manifest format is documented in [`docs/BUILD.md`](docs/BUILD.md).
+
+## Documentation
+
+- [`docs/DESIGN.md`](docs/DESIGN.md): architecture and accessibility decisions.
+- [`docs/BUILD.md`](docs/BUILD.md): local build, package, installer, and future release workflow.
+- [`tests/captures/SSH-CAPTURES.md`](tests/captures/SSH-CAPTURES.md): the real SSH capture corpus.
+- [`CHANGELOG.md`](CHANGELOG.md): readable release history.
+
+## Contributing
+
+Pull requests and accessibility testing are welcome. If something reads incorrectly under NVDA or JAWS, include the exact keystrokes and, when possible, the reader's speech or debug log. A short capture is much more useful than a description of a terminal repaint that happened once.
 
 ## License
 
-MIT.
+BlindTerm is under the [MIT license](LICENSE). The bundled NVDA controller client remains under its own LGPL license; its license travels in `native\nvdaControllerClient-LICENSE.txt`.

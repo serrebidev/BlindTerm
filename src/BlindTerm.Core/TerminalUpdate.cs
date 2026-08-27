@@ -28,4 +28,13 @@ public sealed class TerminalUpdate
     /// over ssh. The transcript is not built while this is set; the screen is what matters.
     /// </summary>
     public string[]? AlternateScreen { get; set; }
+
+    /// <summary>
+    /// Where the cursor is, counted from the top of the screen. Screen mode reads by
+    /// following it: the row it moves to is the line to speak, and a change to the row it is
+    /// already on is the text being typed or deleted under it.
+    /// </summary>
+    public int CursorRow { get; set; }
+
+    public int CursorColumn { get; set; }
 }
