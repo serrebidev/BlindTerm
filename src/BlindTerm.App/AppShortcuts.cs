@@ -54,12 +54,14 @@ internal static class AppShortcuts
         => (keyData & Keys.Alt) == Keys.Alt;
 
     /// <summary>
-    /// Ctrl chords belong to an interactive line-mode program while it is active. They stay
-    /// native Windows editing commands at the shell prompt, and Ctrl+Alt is never allowed to
-    /// bypass BlindTerm's Alt command namespace.
+    /// Ctrl chords belong to an interactive line-mode program while its input control has
+    /// focus. When the transcript has focus, Windows keeps its native caret and selection
+    /// commands for NVDA and JAWS. Ctrl+Alt never bypasses BlindTerm's Alt command namespace.
     /// </summary>
-    public static bool ShouldPassControlChord(Keys keyData, bool foregroundProgramActive)
+    public static bool ShouldPassControlChord(Keys keyData, bool foregroundProgramActive,
+        bool terminalInputFocused)
         => foregroundProgramActive
+            && terminalInputFocused
             && (keyData & Keys.Control) == Keys.Control
             && (keyData & Keys.Alt) != Keys.Alt;
 }

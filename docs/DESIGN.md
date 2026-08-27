@@ -6,6 +6,8 @@ BlindTerm is a Windows terminal for people who use NVDA or JAWS. The design is d
 
 The transcript is a real Win32 edit control. That gives the screen reader line, word, and character navigation, say-all, braille caret tracking, selection, copy, and the user's own punctuation settings without reimplementing any of them.
 
+Focus is also the input boundary in line mode. When the transcript has focus, BlindTerm leaves standard Windows caret, selection, and clipboard chords local, even while a foreground command is running. When the command field has focus, Ctrl chords are terminal input for that foreground program.
+
 The painted full-screen surface is not the reader's focus target while keys belong to nano, vim, htop, or another TUI. BlindTerm gives focus to a native multiline edit proxy containing only the editor body. That gives NVDA and JAWS a real caret and their normal keyboard echo/caret events without exposing nano's title or shortcut bars as document lines. `Alt+3` freezes a frame into the transcript control for detailed reading.
 
 ## Two modes

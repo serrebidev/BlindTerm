@@ -41,14 +41,28 @@ public class AppShortcutTests
     [InlineData(Keys.Z)]
     [InlineData(Keys.V)]
     public void ControlChordsReachAnyActiveInlineProgram(Keys key)
-        => Assert.True(AppShortcuts.ShouldPassControlChord(Keys.Control | key, true));
+        => Assert.True(AppShortcuts.ShouldPassControlChord(
+            Keys.Control | key, foregroundProgramActive: true, terminalInputFocused: true));
 
     [Fact]
     public void ControlChordsStayNativeWhenNoInlineProgramIsActive()
-        => Assert.False(AppShortcuts.ShouldPassControlChord(Keys.Control | Keys.C, false));
+        => Assert.False(AppShortcuts.ShouldPassControlChord(
+            Keys.Control | Keys.C, foregroundProgramActive: false, terminalInputFocused: true));
+
+    [Theory]
+    [InlineData(Keys.Control | Keys.A)]
+    [InlineData(Keys.Control | Keys.C)]
+    [InlineData(Keys.Control | Keys.V)]
+    [InlineData(Keys.Control | Keys.Shift | Keys.Home)]
+    [InlineData(Keys.Control | Keys.Shift | Keys.End)]
+    public void OutputFocusKeepsNativeCaretSelectionAndClipboardShortcuts(Keys shortcut)
+        => Assert.False(AppShortcuts.ShouldPassControlChord(
+            shortcut, foregroundProgramActive: true, terminalInputFocused: false));
 
     [Fact]
     public void ControlAltNeverBypassesTheAltCommandNamespace()
         => Assert.False(AppShortcuts.ShouldPassControlChord(
-            Keys.Control | Keys.Alt | Keys.C, true));
+            Keys.Control | Keys.Alt | Keys.C,
+            foregroundProgramActive: true,
+            terminalInputFocused: true));
 }

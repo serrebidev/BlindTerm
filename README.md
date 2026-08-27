@@ -90,7 +90,9 @@ That restores whatever Windows would have chosen. In fact BlindTerm cannot lock 
 
 ## Reading and keyboard commands
 
-BlindTerm keeps its own commands under Alt. While any foreground command or application is running, Ctrl chords—including `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V`—go directly to that program whether it uses inline output or a full-screen interface. After it exits and the shell prompt returns, those keys resume their ordinary copy, cut, undo, and paste behavior in BlindTerm's native controls.
+BlindTerm keeps its own commands under Alt. With the command line focused while a foreground command or application is running, Ctrl chords—including `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V`—go directly to that program whether it uses inline output or a full-screen interface. After it exits and the shell prompt returns, those keys resume their ordinary copy, cut, undo, and paste behavior in BlindTerm's native controls.
+
+Focus decides which surface owns editing keys. In the transcript/output, standard Windows selection and clipboard commands remain local even while a program runs: `Ctrl+A`, `Ctrl+C`, `Ctrl+Shift+Home`, `Ctrl+Shift+End`, Shift with arrows or page keys, and the rest of the native edit-control behavior work with NVDA's system caret. Move to the command line with `Alt+2` when Ctrl chords should go to the program; return to output with `Alt+1` when you want to read, select, or copy.
 
 - `Alt+1`: focus the transcript.
 - `Alt+2`: focus the command line.

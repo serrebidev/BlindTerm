@@ -132,6 +132,7 @@ public sealed class MainForm : Form
         _transcript.WordWrap = false;
         // Keep the selection visible when focus moves away, so a reader still reports it.
         _transcript.HideSelection = false;
+        _transcript.ShortcutsEnabled = true;
         _transcript.Font = font;
         _transcript.Dock = DockStyle.Fill;
         _transcript.AccessibleName = "Transcript";
@@ -550,7 +551,7 @@ public sealed class MainForm : Form
         if (edits.Count == 0 || ScreenMode) return;
 
         bool follow = FollowingOutput;
-        int selection = _transcript.SelectionStart;
+        var selection = new TextSelection(_transcript.SelectionStart, _transcript.SelectionLength);
 
         foreach (var edit in edits)
         {
@@ -561,13 +562,12 @@ public sealed class MainForm : Form
 
             _transcript.Select(start, end - start);
             _transcript.SelectedText = edit.Text;
-
-            int delta = edit.Text.Length - edit.OldLength;
-            if (selection >= end) selection += delta;
+            selection = selection.AfterReplacement(start, end - start, edit.Text.Length);
         }
 
-        _transcript.SelectionStart = Math.Min(selection, _transcript.TextLength);
-        _transcript.SelectionLength = 0;
+        int selectionStart = Math.Min(selection.Start, _transcript.TextLength);
+        int selectionLength = Math.Min(selection.Length, _transcript.TextLength - selectionStart);
+        _transcript.Select(selectionStart, selectionLength);
         if (follow) TextBoxScroll.ToBottom(_transcript);
     }
 
@@ -878,11 +878,12 @@ public sealed class MainForm : Form
         if (AppShortcuts.IsApplicationChord(keyData))
             return base.ProcessCmdKey(ref message, keyData);
 
-        // Inline programs never enter alternate-screen mode. Their Ctrl+C, Ctrl+X, Ctrl+Z and
-        // other control commands still belong to them until the shell's completed-command
-        // marker says the foreground command exited. A handoff is itself the foreground app.
+        // Inline programs never enter alternate-screen mode. With their input field focused,
+        // Ctrl+C, Ctrl+X, Ctrl+Z and other control commands belong to them until the shell's
+        // completed-command marker says they exited. Output focus keeps native selection keys.
+        // A handoff is itself the foreground app.
         bool foregroundLineProgram = !ScreenMode && (_foregroundProgram.Active || _host.IsHandoff);
-        if (AppShortcuts.ShouldPassControlChord(keyData, foregroundLineProgram))
+        if (AppShortcuts.ShouldPassControlChord(keyData, foregroundLineProgram, _command.Focused))
         {
             byte[]? control = KeyTranslator.Translate(keyData, _host.Engine.ApplicationCursorKeys);
             if (control is not null)

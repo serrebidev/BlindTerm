@@ -4,6 +4,10 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.1.5 - 2026-08-27
+
+- Keep standard selection, navigation, and clipboard shortcuts local whenever the transcript/output has focus, even while a foreground program is running. This includes `Ctrl+A`, `Ctrl+C`, `Ctrl+Shift+Home`, `Ctrl+Shift+End`, and the usual Shift navigation. Ctrl chords still reach the program when its command input has focus.
+
 ## v0.1.4 - 2026-08-27
 
 - Pass Ctrl chords, including `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V`, to any active foreground program even when it uses inline terminal output. The same keys retain their native copy, cut, undo, and paste behavior after the program exits and the shell prompt returns.
