@@ -6,7 +6,7 @@ earlier prototypes were something anyone could have run.
 
 ## v0.1.2 - 2026-08-27
 
-- Set `ACCESSIBLE=1` and `TERM_A11Y=1` for programs launched in BlindTerm, so command-line tools built with term-a11y, and anything else following the GNOME and Debian convention, render spinners, progress bars and tables as plain text without being configured to.
+- Set `ACCESSIBLE=1` and `TERM_A11Y=1` for shells BlindTerm starts, so command-line tools built with term-a11y, and anything else following the GNOME and Debian convention, render spinners, progress bars and tables as plain text without being configured to. This cannot apply to a console handed over by Windows, because that program was started before BlindTerm was involved.
 
 ## v0.1.1 - 2026-08-27
 

@@ -18,7 +18,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Speaks through NVDA's controller client and JAWS' documented COM interface, using the reader's own voice and settings.
 - Handles redraws, spinners, wrapped lines, screen wipes, alternate screens, and split UTF-8 input.
 - Can be set as the Windows 11 default terminal, so command-line programs open in BlindTerm on their own.
-- Tells the programs it launches that they are being read, so tools that can render plainly do: `ACCESSIBLE`, `TERM_A11Y`, and the flags GitHub CLI and Claude Code already understand.
+- Tells the shells it starts that they are being read, so tools that can render plainly do: `ACCESSIBLE`, `TERM_A11Y`, and the flags GitHub CLI and Claude Code already understand.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 
@@ -63,6 +63,8 @@ Windows 11 lets you choose which terminal opens when a command-line program is s
 BlindTerm offers this once, in a dialog at startup, with Yes and No buttons and a **Don't ask me again** checkbox that is already ticked. Answering either way is final unless you clear the checkbox. You can change your mind at any time from **Terminal** &rarr; **Use BlindTerm as the default terminal**, which shows a check mark when it is on.
 
 A window opened this way brings itself to the front and puts the caret on the command line, because a terminal that appears in the background is a terminal a screen reader never mentions.
+
+One thing does not carry over. BlindTerm normally tells the shell it starts that it is being read, by setting `ACCESSIBLE`, `TERM_A11Y` and the flags GitHub CLI and Claude Code understand. A handed-over console cannot be told: Windows started that program before BlindTerm was involved, and a running process's environment is not ours to change. Everything else -- the transcript, screen mode, speech, the reading commands -- works the same either way. If you want those variables in a default-terminal session, set them for your account and every program will inherit them.
 
 This needs Windows 11 and Windows Terminal installed. BlindTerm uses Windows Terminal's console host, which is the Microsoft-signed component that receives the console from Windows and hands it on; BlindTerm does not redistribute a copy of it. Nothing here needs administrator rights, and nothing is written outside your own user account.
 
