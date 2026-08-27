@@ -91,12 +91,6 @@ public sealed class MainForm : Form
     /// </summary>
     private bool _reviewing;
 
-    /// <summary>
-    /// Remote sessions ordinarily expose only the response to the latest submitted command.
-    /// The complete history is still available through Go, Transcript.
-    /// </summary>
-    private bool _showingLatestResponse;
-
     /// <summary>Whether keystrokes are going straight to the program.</summary>
     private bool LivePassthrough => _screen is not null && !_reviewing;
 
@@ -115,7 +109,6 @@ public sealed class MainForm : Form
         _screenKeyboard = new KeyboardEchoProxy();
         _settings = settings;
         _settingsStore = settingsStore;
-        _showingLatestResponse = _host.Kind == TerminalSessionKind.Remote;
 
         Text = "BlindTerm";
         Width = 1000;
@@ -161,7 +154,7 @@ public sealed class MainForm : Form
         _transcript.ShortcutsEnabled = true;
         _transcript.Font = font;
         _transcript.Dock = DockStyle.Fill;
-        _transcript.AccessibleName = _showingLatestResponse ? "Latest response" : "Transcript";
+        _transcript.AccessibleName = "Output";
         _transcript.AccessibleRole = AccessibleRole.Text;
         _transcript.TabIndex = 0;
 
@@ -316,12 +309,8 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (_showingLatestResponse) RefreshLatestResponse();
-        else
-        {
-            MirrorEdits(update.Edits);
-            MirrorAppended(update.NewLines);
-        }
+        MirrorEdits(update.Edits);
+        MirrorAppended(update.NewLines);
 
         if (_live.Text != update.LiveText) _live.Text = update.LiveText;
         CommandAccessibility.Apply(_command, update.LiveText);
@@ -564,29 +553,6 @@ public sealed class MainForm : Form
     {
         if (_host.Kind != TerminalSessionKind.Remote) return;
         _latestResponse.Begin(_host.Transcript);
-        _showingLatestResponse = true;
-        _transcript.AccessibleName = "Latest response";
-        SetTranscriptText(string.Empty);
-    }
-
-    private void RefreshLatestResponse()
-    {
-        bool follow = FollowingOutput;
-        int selection = _transcript.SelectionStart;
-        int length = _transcript.SelectionLength;
-        SetTranscriptText(_latestResponse.Text(_host.Transcript));
-        _transcript.Select(
-            Math.Min(selection, _transcript.TextLength),
-            Math.Min(length, Math.Max(0, _transcript.TextLength - selection)));
-        if (follow) TextBoxScroll.ToBottom(_transcript);
-    }
-
-    private void ShowFullTranscript()
-    {
-        if (!_showingLatestResponse) return;
-        _showingLatestResponse = false;
-        _transcript.AccessibleName = "Transcript";
-        SetTranscriptText(_host.Transcript.Text());
     }
 
     /// <summary>
@@ -668,12 +634,11 @@ public sealed class MainForm : Form
             return;
         }
 
-        ShowFullTranscript();
         _transcript.Focus();
         MoveCaret(LastLineStart);
     }
 
-    private void FocusLatestResponse()
+    private void FocusOutputAtLatestResponse()
     {
         if (_host.Kind != TerminalSessionKind.Remote)
         {
@@ -681,11 +646,8 @@ public sealed class MainForm : Form
             return;
         }
 
-        _showingLatestResponse = true;
-        _transcript.AccessibleName = "Latest response";
-        RefreshLatestResponse();
         _transcript.Focus();
-        MoveCaret(0);
+        MoveCaret(_latestResponse.StartOffset(_host.Transcript));
     }
 
     private void FocusCommandLine()
@@ -1087,7 +1049,7 @@ public sealed class MainForm : Form
             keyData, ScreenMode, _command.Focused, _transcript.Focused))
         {
             case AppShortcuts.ScreenTabTarget.Output:
-                FocusLatestResponse();
+                FocusOutputAtLatestResponse();
                 return true;
             case AppShortcuts.ScreenTabTarget.Input:
                 FocusCommandLine();

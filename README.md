@@ -109,7 +109,7 @@ Whether a program is running is decided by whether the shell has actually starte
 
 Focus decides which surface owns editing keys. In the transcript/output, standard Windows selection and clipboard commands remain local even while a program runs: `Ctrl+A`, `Ctrl+C`, `Ctrl+Shift+Home`, `Ctrl+Shift+End`, Shift with arrows or page keys, and the rest of the native edit-control behavior work with NVDA's system caret. Move to the command line with `Alt+2` when Ctrl chords should go to the program; return to output with `Alt+1` when you want to read, select, or copy.
 
-For a telnet session, the ordinary output view contains only the complete response to the latest command. A Core MUD `look`, for example, presents that room description, its exits, and its objects without putting the login banner or earlier rooms in the same field. `Shift+Tab` moves from the command line to this latest response and `Tab` returns to input. `Alt+1` deliberately opens the full transcript when older output is wanted.
+For a telnet session, output remains the complete transcript. BlindTerm records where each submitted command's response begins. `Shift+Tab` moves from the command line into that full output field with its caret at the first line of the latest response; earlier rooms and the login history remain immediately available by moving upward. `Tab` returns to input, and `Alt+1` moves to the end of the full transcript.
 
 - `Alt+1`: focus the transcript.
 - `Alt+2`: focus the command line.

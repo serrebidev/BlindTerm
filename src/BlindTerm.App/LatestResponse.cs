@@ -11,7 +11,14 @@ internal sealed class LatestResponse
 {
     private int _firstLine;
 
+    public int FirstLine => _firstLine;
+
     public void Begin(Transcript transcript) => _firstLine = transcript.Count;
+
+    public int StartOffset(Transcript transcript)
+        => _firstLine >= transcript.Count
+            ? transcript.Length
+            : transcript.OffsetOfLine(_firstLine);
 
     public IReadOnlyList<string> Lines(Transcript transcript)
     {

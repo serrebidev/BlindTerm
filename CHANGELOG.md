@@ -4,6 +4,11 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.2.3 - 2026-08-27
+
+- Keep remote output as the complete transcript. `Shift+Tab` focuses that full output at the first line of the latest command response, so the newest result is ready to read without making older output unavailable.
+- Correct the v0.2.2 behavior that replaced the output document with only the latest response.
+
 ## v0.2.2 - 2026-08-27
 
 - Telnet output now shows only the complete response to the latest submitted command during ordinary use. Shift+Tab opens that response, Tab returns to input, and the full session history remains available through Go, Transcript.

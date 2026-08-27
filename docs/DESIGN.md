@@ -20,10 +20,10 @@ Line mode has three controls:
 - Current line: the prompt or unfinished output that has not ended in a newline.
 - Command line: a normal edit control whose text and Return are sent as separate PTY writes.
 
-The output edit control has two document views for a remote session. Its ordinary view begins
-at the transcript position recorded when the latest command is submitted, so a MUD response
-contains that response alone. Shift+Tab enters this latest-response view and Tab returns to
-input. Go, Transcript switches the same native control to the complete permanent history.
+Remote output is always the complete transcript. BlindTerm records its line count when a
+command is submitted; Shift+Tab focuses the full output control with the caret at that line,
+which makes the newest response the starting point without hiding any earlier output. Tab
+returns to input. Go, Transcript moves to the end of the same permanent history.
 
 The command line is buffered until Enter so ordinary shell commands retain native editing and
 can be adapted for an accessible agent interface before launch. Once an active inline program

@@ -18,7 +18,21 @@ public class LatestResponseTests
         transcript.Append("Apartment");
         transcript.Append("Exits: north");
 
+        Assert.Equal(2, response.FirstLine);
+        Assert.Equal(transcript.OffsetOfLine(2), response.StartOffset(transcript));
         Assert.Equal(new[] { "Apartment", "Exits: north" }, response.Lines(transcript));
+    }
+
+    [Fact]
+    public void FocusesTheEndOfFullOutputWhileAResponseHasNotArrived()
+    {
+        var transcript = new Transcript();
+        transcript.Append("Old output");
+        var response = new LatestResponse();
+
+        response.Begin(transcript);
+
+        Assert.Equal(transcript.Length, response.StartOffset(transcript));
     }
 
     [Fact]
