@@ -3,10 +3,9 @@ namespace BlindTerm.App;
 /// <summary>
 /// Keys BlindTerm keeps for its own commands.
 ///
-/// Control belongs to native edit controls and terminal programs: Ctrl+C, Ctrl+X and
-/// Ctrl+Z must continue to mean copy, cut and undo where Windows users expect them. Alt is
-/// the single application-command modifier. In live screen mode an Alt chord can still be
-/// sent to the program with Pass Next.
+/// Control belongs to the foreground terminal program while one is active, and to native edit
+/// controls at the idle shell prompt. Alt is the single BlindTerm-command modifier. In live
+/// screen mode an Alt chord can still be sent to the program with Pass Next.
 /// </summary>
 internal static class AppShortcuts
 {
@@ -53,4 +52,14 @@ internal static class AppShortcuts
     /// </summary>
     public static bool IsApplicationChord(Keys keyData)
         => (keyData & Keys.Alt) == Keys.Alt;
+
+    /// <summary>
+    /// Ctrl chords belong to an interactive line-mode program while it is active. They stay
+    /// native Windows editing commands at the shell prompt, and Ctrl+Alt is never allowed to
+    /// bypass BlindTerm's Alt command namespace.
+    /// </summary>
+    public static bool ShouldPassControlChord(Keys keyData, bool foregroundProgramActive)
+        => foregroundProgramActive
+            && (keyData & Keys.Control) == Keys.Control
+            && (keyData & Keys.Alt) != Keys.Alt;
 }

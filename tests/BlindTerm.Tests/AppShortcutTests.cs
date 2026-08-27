@@ -34,4 +34,21 @@ public class AppShortcutTests
     [Fact]
     public void EveryAltChordIsKeptForCommandsAndMenuAccess()
         => Assert.True(AppShortcuts.IsApplicationChord(Keys.Alt | Keys.T));
+
+    [Theory]
+    [InlineData(Keys.C)]
+    [InlineData(Keys.X)]
+    [InlineData(Keys.Z)]
+    [InlineData(Keys.V)]
+    public void ControlChordsReachAnyActiveInlineProgram(Keys key)
+        => Assert.True(AppShortcuts.ShouldPassControlChord(Keys.Control | key, true));
+
+    [Fact]
+    public void ControlChordsStayNativeWhenNoInlineProgramIsActive()
+        => Assert.False(AppShortcuts.ShouldPassControlChord(Keys.Control | Keys.C, false));
+
+    [Fact]
+    public void ControlAltNeverBypassesTheAltCommandNamespace()
+        => Assert.False(AppShortcuts.ShouldPassControlChord(
+            Keys.Control | Keys.Alt | Keys.C, true));
 }

@@ -4,6 +4,10 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.1.4 - 2026-08-27
+
+- Pass Ctrl chords, including `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V`, to any active foreground program even when it uses inline terminal output. The same keys retain their native copy, cut, undo, and paste behavior after the program exits and the shell prompt returns.
+
 ## v0.1.3 - 2026-08-27
 
 - Start simple `claude`, `codex`, and `opencode` commands in the least repainting interface each installed CLI supports. Claude gets its screen-reader renderer, Codex keeps output in inline scrollback with animations disabled, and OpenCode gets its minimal interface without history replay. Freebuff does not currently expose a comparable mode, so it continues through BlindTerm's full-screen speech and review support without unsupported arguments.

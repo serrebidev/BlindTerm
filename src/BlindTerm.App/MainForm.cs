@@ -48,6 +48,7 @@ public sealed class MainForm : Form
     private readonly UpdateClient _updates = new();
     private readonly LineNews _news = new();
     private readonly ScreenNews _screenNews = new();
+    private readonly ForegroundProgramState _foregroundProgram = new();
 
     private readonly List<string> _history = new();
     private int _historyIndex;
@@ -266,6 +267,10 @@ public sealed class MainForm : Form
         // UI thread, which ends the process rather than the window.
         if (IsDisposed || Disposing) return;
 
+        // An OSC 133 completed-command marker means the program returned control to the shell.
+        // Until then its Ctrl shortcuts must keep reaching it even when it uses inline output.
+        _foregroundProgram.Updated(_host.Core.CommandBlocks.Blocks.Count);
+
         if (update.AlternateScreen is not null)
         {
             EnterOrUpdateScreenMode(update);
@@ -479,6 +484,8 @@ public sealed class MainForm : Form
     private void OnExited(int? code)
     {
         if (IsDisposed || Disposing) return;
+
+        _foregroundProgram.Exited();
 
         string what = _host.IsHandoff ? "Program" : "Shell";
         string message = code is null ? $"[{what} exited]" : $"[{what} exited with code {code}]";
@@ -832,6 +839,7 @@ public sealed class MainForm : Form
     {
         string text = _command.Text;
         string accessible = AccessibleAgentCommand.Adapt(text);
+        _foregroundProgram.Submitted(text, _host.Core.CommandBlocks.Blocks.Count);
         _news.SuppressCommandEcho(accessible);
         _host.SendLine(accessible);
         if (text.Length > 0 && (_history.Count == 0 || _history[^1] != text)) _history.Add(text);
@@ -869,6 +877,20 @@ public sealed class MainForm : Form
         // Pass Next is checked first so an occasional Meta/Alt chord can still reach the program.
         if (AppShortcuts.IsApplicationChord(keyData))
             return base.ProcessCmdKey(ref message, keyData);
+
+        // Inline programs never enter alternate-screen mode. Their Ctrl+C, Ctrl+X, Ctrl+Z and
+        // other control commands still belong to them until the shell's completed-command
+        // marker says the foreground command exited. A handoff is itself the foreground app.
+        bool foregroundLineProgram = !ScreenMode && (_foregroundProgram.Active || _host.IsHandoff);
+        if (AppShortcuts.ShouldPassControlChord(keyData, foregroundLineProgram))
+        {
+            byte[]? control = KeyTranslator.Translate(keyData, _host.Engine.ApplicationCursorKeys);
+            if (control is not null)
+            {
+                _host.Send(control);
+                return true;
+            }
+        }
 
         // While the screen is frozen for reading, the keyboard belongs to the text box again,
         // which is the only way to read a full-screen program line by line.

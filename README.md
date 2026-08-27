@@ -90,7 +90,7 @@ That restores whatever Windows would have chosen. In fact BlindTerm cannot lock 
 
 ## Reading and keyboard commands
 
-BlindTerm keeps its application commands under Alt. That leaves `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V` as ordinary copy, cut, undo, and paste commands in the transcript and command line. In a live full-screen program, Ctrl chords continue to go to that program.
+BlindTerm keeps its own commands under Alt. While any foreground command or application is running, Ctrl chords—including `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V`—go directly to that program whether it uses inline output or a full-screen interface. After it exits and the shell prompt returns, those keys resume their ordinary copy, cut, undo, and paste behavior in BlindTerm's native controls.
 
 - `Alt+1`: focus the transcript.
 - `Alt+2`: focus the command line.
