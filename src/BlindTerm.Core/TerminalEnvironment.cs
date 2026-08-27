@@ -25,6 +25,15 @@ public static class TerminalEnvironment
             ["TERM_PROGRAM"] = TermProgram,
             ["TERM_PROGRAM_VERSION"] = version ?? VersionInfo.Current,
 
+            // The cross-tool conventions, so that anything honouring them renders plainly
+            // without its author having heard of BlindTerm. ACCESSIBLE is not ours: GNOME's
+            // AT-SPI stack and Debian's dpkg-reconfigure already use it to mean "a screen
+            // reader is active", and term-a11y and others read it. TERM_A11Y is term-a11y's
+            // own. Setting both is honest here -- a program running inside BlindTerm is being
+            // read by a screen reader, which is the entire premise of the terminal.
+            ["ACCESSIBLE"] = "1",
+            ["TERM_A11Y"] = "1",
+
             // Claude Code: flat, labelled output instead of a repainting frame.
             ["CLAUDE_AX_SCREEN_READER"] = "1",
 

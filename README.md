@@ -18,6 +18,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Speaks through NVDA's controller client and JAWS' documented COM interface, using the reader's own voice and settings.
 - Handles redraws, spinners, wrapped lines, screen wipes, alternate screens, and split UTF-8 input.
 - Can be set as the Windows 11 default terminal, so command-line programs open in BlindTerm on their own.
+- Tells the programs it launches that they are being read, so tools that can render plainly do: `ACCESSIBLE`, `TERM_A11Y`, and the flags GitHub CLI and Claude Code already understand.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 

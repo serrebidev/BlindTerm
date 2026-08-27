@@ -4,6 +4,10 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## Unreleased
+
+- Set `ACCESSIBLE=1` and `TERM_A11Y=1` for programs launched in BlindTerm, so command-line tools built with term-a11y, and anything else following the GNOME and Debian convention, render spinners, progress bars and tables as plain text without being configured to.
+
 ## v0.1.1 - 2026-08-27
 
 - Make the default terminal setting take effect after BlindTerm is installed over a copy that was being run from somewhere else, or moved. Windows goes on opening the executable it last used, whatever the setting now says, until the registration is replaced rather than edited.
