@@ -118,13 +118,16 @@ internal static class Capture
         // The child exiting does not mean its last output has been read: the pseudo console
         // writes its teardown sequence after the child is gone, and reads are on another
         // thread. Settle until the byte count stops moving, so the count reported is the
-        // count written.
+        // count written. A TUI can animate forever after the scripted actions are done, so a
+        // bounded settle window keeps the diagnostic command from hanging on perpetual output.
+        var settleDeadline = System.Diagnostics.Stopwatch.StartNew();
         long settled;
         do
         {
             settled = Interlocked.Read(ref total);
             Thread.Sleep(150);
-        } while (Interlocked.Read(ref total) != settled);
+        } while (Interlocked.Read(ref total) != settled
+                 && settleDeadline.Elapsed < TimeSpan.FromSeconds(2));
 
         file.Flush();
 

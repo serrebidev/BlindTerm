@@ -7,7 +7,7 @@ public class TelnetProtocolTests
 {
     private const byte Iac = 255, Dont = 254, Do = 253, Wont = 252, Will = 251, Sb = 250, Se = 240;
     private const byte OptEcho = 1, OptSga = 3, OptTerminalType = 24, OptNaws = 31;
-    private const byte OptCompress2 = 86, OptGmcp = 201, OptMudSound = 90;
+    private const byte OptCharset = 42, OptCompress2 = 86, OptGmcp = 201, OptMudSound = 90;
 
     private static (string Text, byte[] Reply) Feed(TelnetProtocol protocol, params byte[] received)
     {
@@ -111,6 +111,37 @@ public class TelnetProtocolTests
         var (_, reply) = Feed(New(), Iac, Will, OptEcho);
 
         Assert.Equal(new byte[] { Iac, Do, OptEcho }, reply);
+    }
+
+    [Fact]
+    public void RemoteCharacterSetNegotiationIsAccepted()
+    {
+        var (_, reply) = Feed(New(), Iac, Will, OptCharset);
+
+        Assert.Equal(new byte[] { Iac, Do, OptCharset }, reply);
+    }
+
+    [Fact]
+    public void Utf8IsSelectedFromACharacterSetRequest()
+    {
+        byte[] offered = Encoding.ASCII.GetBytes("ISO-8859-1;UTF-8;US-ASCII");
+        byte[] request = [Iac, Sb, OptCharset, 1, (byte)';', .. offered, Iac, Se];
+
+        var (_, reply) = Feed(New(), request);
+
+        Assert.Equal<byte[]>(
+            [Iac, Sb, OptCharset, 2, .. "UTF-8"u8.ToArray(), Iac, Se], reply);
+    }
+
+    [Fact]
+    public void ACharacterSetRequestWithoutUtf8IsRejected()
+    {
+        byte[] request =
+            [Iac, Sb, OptCharset, 1, (byte)';', .. "US-ASCII;ISO-8859-1"u8.ToArray(), Iac, Se];
+
+        var (_, reply) = Feed(New(), request);
+
+        Assert.Equal<byte[]>([Iac, Sb, OptCharset, 3, Iac, Se], reply);
     }
 
     [Fact]

@@ -67,7 +67,7 @@ When a command line consists of a simple `codex`, `claude`, or `opencode` launch
 - Claude Code receives `--ax-screen-reader`, producing labelled, flat text without decorative borders or animations.
 - Codex receives `--no-alt-screen -c tui.raw_output_mode=true -c tui.animations=false`, using its copy-friendly scrollback renderer, keeping it out of the alternate screen, and stopping visual animations. This keeps `/model`, `/permissions`, `/keymap`, and the other interactive pickers readable as plain numbered text while retaining direct text selection. Codex does not currently provide a dedicated screen-reader renderer.
 - OpenCode receives `--mini --no-replay`, selecting its smaller interactive interface and preventing old sessions from repainting on startup and resize.
-- Freebuff currently provides no screen-reader or minimal-interface switch. It already renders inline, so BlindTerm invents no unsupported argument for it and drives it from the command line like the others.
+- Freebuff currently provides no screen-reader or minimal-interface switch. BlindTerm invents no unsupported argument for it, so Freebuff uses the terminal's full-screen speech and frozen review support.
 
 Explicit flags are respected, and subcommands such as `codex exec` or `opencode run` keep working. Compound shell expressions and executable paths are left exactly as typed rather than guessed at.
 
@@ -102,6 +102,8 @@ Codex, Claude Code, OpenCode, Freebuff and a MUD over telnet all ask questions n
 **While a program is running, an empty command line is a remote control for it.** Up, Down, Left, Right, Home, End, Page Up, Page Down and Escape are sent straight to the program, and you hear what it does rather than a caret that has nowhere to go.
 
 **As soon as there is text in the command line, it is an ordinary edit box again.** Arrows move the caret through what you have typed, so a typo in a long prompt can still be fixed. Clear the line to get the remote control back, or use `Alt+P` to pass one key either way.
+
+**Tab asks the running program to complete what you typed.** In Claude Code, Codex, OpenCode, and similar inline programs, BlindTerm sends the pending edit text followed by Tab, then keeps new typing and editing synchronized with the program until Enter. The program's rendered line is authoritative after completion. Press `Shift+Tab` to move from input to the readable output, and press `Tab` in output to return to input. Freebuff and other full-screen programs use the same focus pair between live input and frozen review output. If a program itself needs `Shift+Tab`, press `Alt+P` first or choose **Terminal** &rarr; **Send Shift+Tab**.
 
 Whether a program is running is decided by whether the shell has actually started one, so this turns itself on when you launch `codex` and off again the moment it exits—no shell configuration, and it works the same in PowerShell, `cmd.exe` and a handed-over console.
 
@@ -140,6 +142,8 @@ Two other things follow from speaking the protocol rather than driving a program
 
 - **The host is told a screen reader is in use.** When it asks what terminal this is, BlindTerm answers with the MUD convention of a client name, then `ANSI`, then an MTTS bit vector — and bit 64 of MTTS means SCREEN READER. A server that honours it drops its room maps and ASCII art without anyone having to find the setting. The window width is sent too, so text wraps to the width being read.
 - **Nothing but text reaches the transcript.** Compression and the out-of-band data channels (MSDP, GMCP, ATCP, MSSP, MXP) are declined, so no markup ever lands in the middle of a sentence a screen reader is speaking.
+
+Core MUD sends its opening ASCII logo before any client has time to answer that negotiation. BlindTerm recognizes that one unavoidable opening and rewrites it as ordinary prose, preserving the welcome, setting, story, server version, and login instructions without making NVDA read rows of dots, slashes, and bars. Later text remains byte-for-byte server output. BlindTerm also accepts a host's UTF-8 character-set offer, automatically speaks complete prompts that do not end in a newline, and changes the command line into a protected password field while a password, passphrase, passcode, or PIN is requested.
 
 Typing works as it does anywhere else in BlindTerm, and with an empty command line the arrow keys, `Escape` and `Ctrl+]` reach the host, so a MUD's own history and menus behave. Nothing is sent on connect, so a plain TCP service — a mail server, a web server — can still be poked at the way people use a telnet client for.
 

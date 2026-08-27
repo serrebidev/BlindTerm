@@ -4,6 +4,33 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.2.1 - 2026-08-27
+
+- Send an unmodified `Tab` from the input field to an active Claude Code, Codex, OpenCode,
+  Freebuff, or other inline program for native command, file, and mention completion. Text held
+  in BlindTerm's native edit is flushed once before Tab; subsequent typing and editing reach
+  the program live until Enter, without duplicating the completed line.
+- Keep focus navigation unambiguous around completion. `Shift+Tab` moves from input to readable
+  output, and `Tab` in output returns to input. Full-screen programs such as Freebuff use the
+  same contract between live input and frozen review output; `Alt+P`, then `Shift+Tab`, remains
+  the escape hatch when the program itself needs that chord.
+- Stop the raw-capture diagnostic from waiting forever for an animated TUI's output to become
+  completely still. Its final settling period is now bounded.
+
+- Rewrite Core MUD's unavoidable opening ASCII logo as readable prose. The server sends that
+  logo in the same packet as its first telnet negotiation, before a client can report the MTTS
+  screen-reader capability, so BlindTerm now removes only the visual fragments while keeping
+  the welcome, setting, connection details, story, version, and login instructions.
+- Speak complete prompts that remain on the terminal's unfinished current line, including Core
+  MUD's name and character-creation questions. Prompts have no newline and previously appeared
+  visually without reaching automatic NVDA or JAWS speech.
+- Mark the native command edit as a protected password field while a terminal asks for a
+  password, passphrase, passcode, or PIN, preventing screen-reader keyboard echo and braille
+  from exposing the secret. Ordinary command entry is restored with the next prompt.
+- Accept telnet `CHARSET` negotiation and select UTF-8 when a host offers it. Core MUD offers
+  this explicitly, and accepting it keeps non-ASCII text consistent with the UTF-8 capability
+  BlindTerm already reports through MTTS.
+
 ## v0.2.0 - 2026-08-27
 
 - Send the arrow keys, `Home`, `End`, `Page Up`, `Page Down`, and `Escape` to the running program while the command line is empty. Codex's `/model` list and reasoning level, Claude Code's and OpenCode's pickers, Freebuff's menus, and a MUD's own history are all driven from the command line now instead of moving a caret that has nowhere to go. Type anything into the command line and it is an ordinary edit box again, so a typo in a long prompt can still be corrected.

@@ -49,11 +49,17 @@ public sealed class TelnetProtocol
     private const byte OptTerminalType = 24;
     private const byte OptEndOfRecord = 25;
     private const byte OptWindowSize = 31;
+    private const byte OptCharset = 42;
     private const byte OptMudSound = 90;
 
     // Subnegotiation verbs for TERMINAL-TYPE.
     private const byte TerminalTypeIs = 0;
     private const byte TerminalTypeSend = 1;
+
+    // Subnegotiation verbs for CHARSET (RFC 2066).
+    private const byte CharsetRequest = 1;
+    private const byte CharsetAccepted = 2;
+    private const byte CharsetRejected = 3;
 
     /// <summary>
     /// ANSI (1) + UTF-8 (4) + 256 colours (8) + SCREEN READER (64). The first three describe
@@ -212,7 +218,7 @@ public sealed class TelnetProtocol
     /// off, and Suppress Go Ahead because character-at-a-time is what every MUD expects.
     /// </summary>
     private static bool TheyMayPerform(byte option)
-        => option is OptEcho or OptSuppressGoAhead or OptEndOfRecord or OptMudSound;
+        => option is OptEcho or OptSuppressGoAhead or OptEndOfRecord or OptCharset or OptMudSound;
 
     /// <summary>Whether the far end has been told it may send MUD Sound Protocol triggers.</summary>
     public bool MudSoundAgreed => _remoteOn.Contains(OptMudSound);
@@ -286,6 +292,15 @@ public sealed class TelnetProtocol
 
     private void Subnegotiated(List<byte> reply)
     {
+        if (_subnegotiation.Count >= 3 &&
+            _subnegotiation[0] == OptCharset &&
+            _subnegotiation[1] == CharsetRequest)
+        {
+            AnswerCharset(reply);
+            _subnegotiation.Clear();
+            return;
+        }
+
         if (_subnegotiation.Count >= 2 && _subnegotiation[0] == OptMudSound)
         {
             _soundRequests.Add(Encoding.UTF8.GetString([.. _subnegotiation[1..]]));
@@ -307,6 +322,31 @@ public sealed class TelnetProtocol
         }
 
         _subnegotiation.Clear();
+    }
+
+    /// <summary>
+    /// Selects UTF-8 when it appears in a CHARSET request. The VT engine consumes UTF-8, and
+    /// MTTS advertises that fact, so declining Core MUD's matching telnet offer leaves the two
+    /// ends needlessly guessing about every non-ASCII character.
+    /// </summary>
+    private void AnswerCharset(List<byte> reply)
+    {
+        byte separator = _subnegotiation[2];
+        string offered = Encoding.ASCII.GetString([.. _subnegotiation[3..]]);
+        bool utf8 = offered.Split((char)separator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(value => value.Trim().Equals("UTF-8", StringComparison.OrdinalIgnoreCase)
+                       || value.Trim().Equals("UTF8", StringComparison.OrdinalIgnoreCase));
+
+        reply.Add(Iac);
+        reply.Add(Sb);
+        reply.Add(OptCharset);
+        reply.Add(utf8 ? CharsetAccepted : CharsetRejected);
+        if (utf8)
+        {
+            foreach (byte value in "UTF-8"u8) AppendEscaped(reply, value);
+        }
+        reply.Add(Iac);
+        reply.Add(Se);
     }
 
     /// <summary>

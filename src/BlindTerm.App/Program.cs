@@ -232,7 +232,8 @@ internal sealed class TerminalWindows : ApplicationContext
     {
         try { store.Save(settings); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                                   or ArgumentOutOfRangeException) { }
+                                   or ArgumentOutOfRangeException)
+        { }
     }
 
     /// <summary>Opens a window onto a console Windows has just handed to BlindTerm.</summary>

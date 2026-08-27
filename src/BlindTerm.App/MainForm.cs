@@ -53,8 +53,10 @@ public sealed class MainForm : Form
     private readonly SettingsStore _settingsStore;
     private readonly UpdateClient _updates = new();
     private readonly LineNews _news = new();
+    private readonly PromptNews _promptNews = new();
     private readonly ScreenNews _screenNews = new();
     private readonly ForegroundProgramState _foregroundProgram;
+    private readonly CommandCompletionInput _completionInput = new();
 
     private MspPlayer? _sounds;
     private SoundDownloader? _soundDownloads;
@@ -309,9 +311,13 @@ public sealed class MainForm : Form
         MirrorEdits(update.Edits);
         MirrorAppended(update.NewLines);
 
-        _host.Announcer.Enqueue(_news.News(update));
-
         if (_live.Text != update.LiveText) _live.Text = update.LiveText;
+        CommandAccessibility.Apply(_command, update.LiveText);
+
+        var announcements = new List<string>();
+        announcements.AddRange(_news.News(update));
+        announcements.AddRange(_promptNews.News(update.LiveText));
+        _host.Announcer.Enqueue(announcements);
     }
 
     private void EnterOrUpdateScreenMode(TerminalUpdate update)
@@ -732,7 +738,8 @@ public sealed class MainForm : Form
 
         try { _settingsStore.Save(_settings); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                                   or ArgumentOutOfRangeException) { }
+                                   or ArgumentOutOfRangeException)
+        { }
 
         Say(_settings.MudSounds ? "MUD sounds on" : "MUD sounds off");
     }
@@ -953,6 +960,15 @@ public sealed class MainForm : Form
     private void Submit()
     {
         string text = _command.Text;
+        if (_completionInput.FinishLine())
+        {
+            // The pending text and every character typed after completion already reached the
+            // program. Only Return remains; resending the edit control would duplicate text.
+            _host.SendLine(string.Empty);
+            _command.Clear();
+            return;
+        }
+
         // A line typed at a MUD is that MUD's to interpret. Rewriting "codex" into a command
         // line with flags on it would be nonsense there.
         string accessible = _host.Kind == TerminalSessionKind.Remote
@@ -997,12 +1013,70 @@ public sealed class MainForm : Form
         if (AppShortcuts.IsApplicationChord(keyData))
             return base.ProcessCmdKey(ref message, keyData);
 
+        switch (AppShortcuts.ScreenTab(keyData, ScreenMode, _reviewing))
+        {
+            case AppShortcuts.ScreenTabTarget.Output:
+            case AppShortcuts.ScreenTabTarget.Input:
+                ToggleReview();
+                return true;
+        }
+
+        switch (AppShortcuts.LineTab(
+            keyData, ScreenMode, _command.Focused, _transcript.Focused))
+        {
+            case AppShortcuts.ScreenTabTarget.Output:
+                FocusTranscript();
+                return true;
+            case AppShortcuts.ScreenTabTarget.Input:
+                FocusCommandLine();
+                return true;
+        }
+
         // Inline programs never enter alternate-screen mode. With their input field focused,
         // Ctrl+C, Ctrl+X, Ctrl+Z and other control commands belong to them until the shell's
         // completed-command marker says they exited. Output focus keeps native selection keys.
         // A handoff is itself the foreground app.
         bool foregroundLineProgram = !ScreenMode && _foregroundProgram.Active;
         bool commandFocused = _command.Focused;
+
+        if (!_command.UseSystemPasswordChar &&
+            AppShortcuts.ShouldSendCompletionTab(keyData, foregroundLineProgram, commandFocused))
+        {
+            _host.Send(_completionInput.Begin(_command.Text));
+            // The program's rendered line is authoritative after it completes the text. The
+            // native field now mirrors only new typing; Shift+Tab moves to that output.
+            _command.Clear();
+            return true;
+        }
+
+        if (_completionInput.Active && !ScreenMode && commandFocused)
+        {
+            Keys key = keyData & Keys.KeyCode;
+            // Every modified Tab remains focus navigation. In particular, Shift+Tab must move
+            // from input to output instead of becoming a CLI-specific chord.
+            if (key == Keys.Tab) return base.ProcessCmdKey(ref message, keyData);
+
+            if (IsPasteChord(keyData))
+            {
+                if (Clipboard.ContainsText())
+                    _host.Send(Encoding.UTF8.GetBytes(Clipboard.GetText()));
+                return base.ProcessCmdKey(ref message, keyData);
+            }
+
+            if (key != Keys.Enter)
+            {
+                byte[]? streamed = KeyTranslator.Translate(
+                    keyData, _host.Engine.ApplicationCursorKeys);
+                if (streamed is not null)
+                {
+                    _host.Send(streamed);
+                    return MirrorsNativeCommandEdit(keyData)
+                        ? base.ProcessCmdKey(ref message, keyData)
+                        : true;
+                }
+            }
+        }
+
         // An empty command line is a remote control for whatever is running; one with text in
         // it is an edit box. Arrows drive a model picker in the first case and move the caret
         // through what has been typed in the second.
@@ -1047,6 +1121,14 @@ public sealed class MainForm : Form
     /// </summary>
     protected override void OnKeyPress(KeyPressEventArgs e)
     {
+        if (!ScreenMode && _command.Focused &&
+            _completionInput.Character(e.KeyChar) is byte[] streamed)
+        {
+            _host.Send(streamed);
+            // The native edit still receives the character for keyboard echo and local review.
+            return;
+        }
+
         if (LivePassthrough && !char.IsControl(e.KeyChar))
         {
             _host.Send(Encoding.UTF8.GetBytes(e.KeyChar.ToString()));
@@ -1056,6 +1138,20 @@ public sealed class MainForm : Form
         }
         base.OnKeyPress(e);
     }
+
+    private static bool IsPasteChord(Keys keyData)
+    {
+        Keys key = keyData & Keys.KeyCode;
+        bool controlPaste = key == Keys.V && (keyData & Keys.Control) == Keys.Control
+                            && (keyData & Keys.Alt) != Keys.Alt;
+        bool insertPaste = key == Keys.Insert && (keyData & Keys.Shift) == Keys.Shift
+                           && (keyData & (Keys.Control | Keys.Alt)) == Keys.None;
+        return controlPaste || insertPaste;
+    }
+
+    private static bool MirrorsNativeCommandEdit(Keys keyData)
+        => (keyData & Keys.Alt) != Keys.Alt && (keyData & Keys.KeyCode) is
+            Keys.Left or Keys.Right or Keys.Home or Keys.End or Keys.Back or Keys.Delete;
 
     protected override void OnShown(EventArgs e)
     {

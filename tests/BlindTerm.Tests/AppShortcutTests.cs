@@ -127,8 +127,71 @@ public class AppShortcutTests
             Keys.Control | Keys.Left, foregroundProgramActive: true, terminalInputFocused: true));
     }
 
+    [Fact]
+    public void TabInAnActiveInlineProgramsInputRequestsCompletion()
+        => Assert.True(AppShortcuts.ShouldSendCompletionTab(
+            Keys.Tab, foregroundProgramActive: true, terminalInputFocused: true));
+
     [Theory]
-    [InlineData(Keys.Tab)]
+    [InlineData(Keys.Shift | Keys.Tab)]
+    [InlineData(Keys.Control | Keys.Tab)]
+    [InlineData(Keys.Alt | Keys.Tab)]
+    public void ModifiedTabRemainsWindowFocusOrApplicationNavigation(Keys key)
+        => Assert.False(AppShortcuts.ShouldSendCompletionTab(
+            key, foregroundProgramActive: true, terminalInputFocused: true));
+
+    [Fact]
+    public void TabFromOutputStillMovesFocusToInput()
+        => Assert.False(AppShortcuts.ShouldSendCompletionTab(
+            Keys.Tab, foregroundProgramActive: true, terminalInputFocused: false));
+
+    [Fact]
+    public void TabAtTheShellPromptIsNotTakenBeforeAgentLaunchAdaptation()
+        => Assert.False(AppShortcuts.ShouldSendCompletionTab(
+            Keys.Tab, foregroundProgramActive: false, terminalInputFocused: true));
+
+    [Fact]
+    public void ShiftTabMovesAFullScreenInputToReadableOutput()
+        => Assert.Equal(AppShortcuts.ScreenTabTarget.Output,
+            AppShortcuts.ScreenTab(Keys.Shift | Keys.Tab, screenMode: true, reviewing: false));
+
+    [Fact]
+    public void TabMovesFullScreenReviewOutputBackToLiveInput()
+        => Assert.Equal(AppShortcuts.ScreenTabTarget.Input,
+            AppShortcuts.ScreenTab(Keys.Tab, screenMode: true, reviewing: true));
+
+    [Theory]
+    [InlineData(Keys.Tab, true, false)]
+    [InlineData(Keys.Shift | Keys.Tab, true, true)]
+    [InlineData(Keys.Shift | Keys.Tab, false, false)]
+    [InlineData(Keys.Control | Keys.Tab, true, false)]
+    public void OtherScreenTabCombinationsKeepTheirExistingMeaning(
+        Keys key, bool screenMode, bool reviewing)
+        => Assert.Equal(AppShortcuts.ScreenTabTarget.None,
+            AppShortcuts.ScreenTab(key, screenMode, reviewing));
+
+    [Fact]
+    public void ShiftTabExplicitlyMovesLineInputToOutput()
+        => Assert.Equal(AppShortcuts.ScreenTabTarget.Output,
+            AppShortcuts.LineTab(Keys.Shift | Keys.Tab, screenMode: false,
+                inputFocused: true, outputFocused: false));
+
+    [Fact]
+    public void TabExplicitlyMovesLineOutputToInput()
+        => Assert.Equal(AppShortcuts.ScreenTabTarget.Input,
+            AppShortcuts.LineTab(Keys.Tab, screenMode: false,
+                inputFocused: false, outputFocused: true));
+
+    [Theory]
+    [InlineData(Keys.Tab, false, true, false)]
+    [InlineData(Keys.Shift | Keys.Tab, false, false, true)]
+    [InlineData(Keys.Tab, true, false, true)]
+    public void OtherLineTabCombinationsAreNotFocusChanges(
+        Keys key, bool screenMode, bool inputFocused, bool outputFocused)
+        => Assert.Equal(AppShortcuts.ScreenTabTarget.None,
+            AppShortcuts.LineTab(key, screenMode, inputFocused, outputFocused));
+
+    [Theory]
     [InlineData(Keys.Enter)]
     [InlineData(Keys.Back)]
     public void FocusMovementAndSubmissionAreNeverStolenFromTheWindow(Keys key)

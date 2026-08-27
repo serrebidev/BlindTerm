@@ -30,6 +30,7 @@ public sealed class TelnetSession : ITerminalSession
 
     private TcpClient? _client;
     private NetworkStream? _stream;
+    private TelnetAccessibilityFilter? _accessibility;
     private Thread? _readThread;
     private Thread? _writeThread;
     private int _disposed;
@@ -97,6 +98,8 @@ public sealed class TelnetSession : ITerminalSession
         _stream = client.GetStream();
         Host = host;
         Port = port;
+        var accessibility = new TelnetAccessibilityFilter(host, port);
+        _accessibility = accessibility.IsActive ? accessibility : null;
     }
 
     /// <summary>
@@ -156,7 +159,18 @@ public sealed class TelnetSession : ITerminalSession
 
                 // A read can be nothing but negotiation, and an empty update is noise the
                 // transcript assembler should never have to think about.
-                if (written > 0) Output?.Invoke(new ReadOnlyMemory<byte>(sounds, 0, written));
+                if (written > 0)
+                {
+                    if (_accessibility is null)
+                    {
+                        Output?.Invoke(new ReadOnlyMemory<byte>(sounds, 0, written));
+                    }
+                    else
+                    {
+                        byte[] accessible = _accessibility.Process(sounds.AsSpan(0, written));
+                        if (accessible.Length > 0) Output?.Invoke(accessible);
+                    }
+                }
                 foreach (MspTrigger trigger in _triggers) SoundRequested?.Invoke(trigger);
             }
         }
@@ -171,7 +185,20 @@ public sealed class TelnetSession : ITerminalSession
 
         // Anything held back waiting to become a sound trigger never will now, and is text.
         int trailing = _sounds.Flush(sounds);
-        if (trailing > 0) Output?.Invoke(new ReadOnlyMemory<byte>(sounds, 0, trailing));
+        if (trailing > 0)
+        {
+            if (_accessibility is null) Output?.Invoke(new ReadOnlyMemory<byte>(sounds, 0, trailing));
+            else
+            {
+                byte[] accessible = _accessibility.Process(sounds.AsSpan(0, trailing));
+                if (accessible.Length > 0) Output?.Invoke(accessible);
+            }
+        }
+        if (_accessibility is not null)
+        {
+            byte[] withheld = _accessibility.Flush();
+            if (withheld.Length > 0) Output?.Invoke(withheld);
+        }
 
         IsRunning = false;
         // A closed connection has no exit code. Nothing here can invent one.

@@ -9,6 +9,8 @@ namespace BlindTerm.App;
 /// </summary>
 internal static class AppShortcuts
 {
+    public enum ScreenTabTarget { None, Output, Input }
+
     public const Keys FocusTranscript = Keys.Alt | Keys.D1;
     public const Keys FocusCommandLine = Keys.Alt | Keys.D2;
     public const Keys ToggleReview = Keys.Alt | Keys.D3;
@@ -74,6 +76,49 @@ internal static class AppShortcuts
             && (keyData & Keys.Control) == Keys.Control
             && (keyData & Keys.Alt) != Keys.Alt
             && (keyData & Keys.KeyCode) != Keys.V;
+
+    /// <summary>
+    /// An unmodified Tab in an active inline program's input asks that program to complete
+    /// what was typed. Shift+Tab remains reverse focus navigation to the transcript, and a
+    /// Tab pressed in the transcript remains forward focus navigation to the input field.
+    /// </summary>
+    public static bool ShouldSendCompletionTab(Keys keyData, bool foregroundProgramActive,
+        bool terminalInputFocused)
+        => foregroundProgramActive
+            && terminalInputFocused
+            && (keyData & Keys.KeyCode) == Keys.Tab
+            && (keyData & (Keys.Control | Keys.Alt | Keys.Shift)) == Keys.None;
+
+    /// <summary>
+    /// Full-screen programs use the keyboard proxy as their input field and review mode as
+    /// their output field. They keep the same focus contract as inline programs: Shift+Tab
+    /// moves from live input to readable output, and Tab returns from output to live input.
+    /// </summary>
+    public static ScreenTabTarget ScreenTab(Keys keyData, bool screenMode, bool reviewing)
+    {
+        if (!screenMode || (keyData & Keys.KeyCode) != Keys.Tab
+                        || (keyData & (Keys.Control | Keys.Alt)) != Keys.None)
+            return ScreenTabTarget.None;
+
+        bool shift = (keyData & Keys.Shift) == Keys.Shift;
+        if (!reviewing && shift) return ScreenTabTarget.Output;
+        if (reviewing && !shift) return ScreenTabTarget.Input;
+        return ScreenTabTarget.None;
+    }
+
+    /// <summary>The equivalent focus movement for the native line-mode controls.</summary>
+    public static ScreenTabTarget LineTab(Keys keyData, bool screenMode, bool inputFocused,
+        bool outputFocused)
+    {
+        if (screenMode || (keyData & Keys.KeyCode) != Keys.Tab
+                       || (keyData & (Keys.Control | Keys.Alt)) != Keys.None)
+            return ScreenTabTarget.None;
+
+        bool shift = (keyData & Keys.Shift) == Keys.Shift;
+        if (inputFocused && shift) return ScreenTabTarget.Output;
+        if (outputFocused && !shift) return ScreenTabTarget.Input;
+        return ScreenTabTarget.None;
+    }
 
     /// <summary>
     /// Whether a navigation key typed at the command line is the running program's rather
