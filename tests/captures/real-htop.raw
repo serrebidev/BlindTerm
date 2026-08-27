@@ -1,0 +1,90 @@
+[?9001h[?1004h[?25l[2J[m[H]0;C:\WINDOWS\SYSTEM32\wsl.exe[?25h[?1049h[22;0;0t[?1h=[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[?25l[100C[?1006;1000h[2J[H[K
+    [36m0[m[1m[[90m[22m[38X[1m[38C0.0%[m[1m][22m   [36m4[m[1m[[90m[22m[39X[1m[39C0.0%[m[1m][22m  
+    [36m1[m[1m[[90m[22m[38X[1m[38C0.0%[m[1m][22m   [36m5[m[1m[[90m[22m[39X[1m[39C0.0%[m[1m][22m  
+    [36m2[m[1m[[90m[22m[38X[1m[38C0.0%[m[1m][22m   [36m6[m[1m[[90m[22m[39X[1m[39C0.0%[m[1m][22m  
+    [36m3[m[1m[[90m[22m[38X[1m[38C0.0%[m[1m][22m   [36m7[m[1m[[90m[22m[39X[1m[39C0.0%[m[1m][22m  
+  [36mMem[m[1m[[32m[22m|||[35m|[34m[1m|[33m[22m|||[24X[90m[1m[24C405M/7.72G[m[1m][22m [36mTasks: [1m31[22m, [32m[1m13[36m[22m thr[90m[1m, 0 kthr[36m[22m; [32m[1m1[36m[22m running[K[m
+  [36mSwp[m[1m[[90m[22m[34X[1m[34C0K/2.00G[m[1m][22m [36mLoad average: [m[1m0.17 [36m0.04 [22m0.01[K[m
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[100C[36m[8;51HUptime: [1m00:03:44[32m[42m[22m[10;3H[[30mMain[32m][m [34m[44m[[30mI/O[34m][30m[42m
+    PID USER       PRI  NI  VIRT   RES   SHR S [46m CPU%▽[42mMEM%   TIME+  Command[K[46m
+      1 root        20   0 24580 15472 11480 S   0.0  0.2  0:00.48 /sbin/init[K[m[13;7H2 root[8C20 [90m[1m  0 [36m[22m 3[m352  [36m2[m312  [36m2[m180 [90m[1mS   0.0  0.0  0:00.00 [m/init[14;7H3 root[8C20 [90m[1m  0 [36m[22m 3[m204  [36m1[m948  [36m1[m848 [90m[1mS   0.0  0.0  0:00.00 [minit-watcher[15;6H12 root[8C20 [90m[1m  0 [36m[22m 3[m352  [36m2[m020  [36m1[m912 [90m[1mS   0.0  0.0  0:00.00 [mplan9 --control-socket 7 --log-le[16;6H13 [35mroot        [m20 [90m[1m  0 [36m[22m 3[m352  [36m2[m020     0 [90m[1mS   0.0  0.0  0:00.00 [32m[22mplan9 --control-socket 7 --log-le[m[17;6H14 [35mroot        [m20 [90m[1m  0 [36m[22m 3[m352  [36m2[m312     0 [90m[1mS   0.0  0.0  0:00.00 [32m[22m/init[m[18;6H52 root[8C19  [31m-1 [36m33[m836 [36m12[m980 [36m11[m740 [90m[1mS   0.0 [m 0.2  0:00.11 /usr/lib/systemd/systemd-journald[19;6H69 [35msystemd-re  [m20 [90m[1m  0 [36m[22m22[m540 [36m14[m652 [36m12[m032 [90m[1mS   0.0 [m 0.2  0:00.05 /usr/lib/systemd/systemd-resolved[20;6H92 root[8C20 [90m[1m  0 [36m[22m35[m248 [36m12[m396  [36m9[m296 [90m[1mS   0.0 [m 0.2  0:00.18 /usr/lib/systemd/systemd-udevd[21;5H142 root[8C20 [90m[1m  0 [36m[22m 2[m888  [36m1[m948  [36m1[m820 [90m[1mS   0.0  0.0 [m 0:00.04 /bin/sh /usr/lib/systemd/scripts/[22;5H143 root[8C20 [90m[1m  0 [36m[22m 4[m472  [36m3[m124  [36m2[m868 [90m[1mS   0.0  0.0  0:00.00 [m/usr/sbin/cron -f -P[23;5H144 [35mmessagebus  [m20 [90m[1m  0 [36m[22m 8[m816  [36m5[m436  [36m4[m780 [90m[1mS   0.0 [m 0.1  0:00.03 @dbus-daemon --system --address=s[24;5H148 root[8C20 [90m[1m  0 [36m[22m44[m092 [36m29[m812 [36m14[m676 [90m[1mS   0.0 [m 0.4  0:00.16 /usr/bin/python3 /usr/bin/networkF1[30m[46mHelp  [mF2[30m[46mSetup [mF3[30m[46mSearch[mF4[30m[46mFilter[mF5[30m[46mTree  [mF6[30m[46mSortBy[mF7[30m[46mNice -[mF8[30m[46mNice +[mF9[30m[46mKill  [mF10[30m[46mQuit[K[21C[m[31m[3;7H|[90m[1m[39C7[31m[22m[4;7H|[90m[1m[39C7[m[1m[7;68H5[36m[8;66H6[30m[46m[22m[12;1H    412 root        20   0  5728  4460  3708 R   0.7  0.1  0:00.02 htop[K[m
+      1 root        20 [90m[1m  0 [36m[22m24[m580 [36m15[m472 [36m11[m480 [90m[1mS   0.0 [m 0.2  0:00.48 /sbin/init[K
+      2 root        20 [90m[1m  0 [36m[22m 3[m352  [36m2[m312  [36m2[m180 [90m[1mS   0.0  0.0  0:00.00 [m/init[K
+      3 root        20 [90m[1m  0 [36m[22m 3[m204  [36m1[m948  [36m1[m848 [90m[1mS   0.0  0.0  0:00.00 [minit-watcher[K
+     12 root        20 [90m[1m  0 [36m[22m 3[m352  [36m2[m020  [36m1[m912 [90m[1mS   0.0  0.0  0:00.00 [mplan9 --control-socket 7 --log-le     13 [35mroot        [m20 [90m[1m  0 [36m[22m 3[m352  [36m2[m020     0 [90m[1mS   0.0  0.0  0:00.00 [32m[22mplan9 --control-socket 7 --log-le[m     14 [35mroot        [m20 [90m[1m  0 [36m[22m 3[m352  [36m2[m312     0 [90m[1mS   0.0  0.0  0:00.00 [32m[22m/init[K[m
+     52 root        19  [31m-1 [36m33[m836 [36m12[m980 [36m11[m740 [90m[1mS   0.0 [m 0.2  0:00.11 /usr/lib/systemd/systemd-journald     69 [35msystemd-re  [m20 [90m[1m  0 [36m[22m22[m540 [36m14[m652 [36m12[m032 [90m[1mS   0.0 [m 0.2  0:00.05 /usr/lib/systemd/systemd-resolved     92 root        20 [90m[1m  0 [36m[22m35[m248 [36m12[m396  [36m9[m296 [90m[1mS   0.0 [m 0.2  0:00.18 /usr/lib/systemd/systemd-udevd   
+    142 root        20 [90m[1m  0 [36m[22m 2[m888  [36m1[m948  [36m1[m820 [90m[1mS   0.0  0.0 [m 0:00.04 /bin/sh /usr/lib/systemd/scripts/    143 root        20 [90m[1m  0 [36m[22m 4[m472  [36m3[m124  [36m2[m868 [90m[1mS   0.0  0.0  0:00.00 [m/usr/sbin/cron -f -P[K
+    144 [35mmessagebus  [m20 [90m[1m  0 [36m[22m 8[m816  [36m5[m436  [36m4[m780 [90m[1mS   0.0 [m 0.1  0:00.03 @dbus-daemon --system --address=s[31m[2;7H|[90m[1m[39C7[3;7H [39C0[4;7H [39C0[6;41H3[36m[8;66H7[30m[46m[22m[12;1H      [m1 root        20 [90m[1m  0 [36m[22m24[m580 [36m15[m472 [36m11[m480 [90m[1mS   0.0 [m 0.2  0:00.48 /sbin/init[K
+      2 root        20 [90m[1m  0 [36m[22m 3[m352  [36m2[m312  [36m2[m180 [90m[1mS   0.0  0.0  0:00.00 [m/init[K
+      3 root        20 [90m[1m  0 [36m[22m 3[m204  [36m1[m948  [36m1[m848 [90m[1mS   0.0  0.0  0:00.00 [minit-watcher[K
+     12 root        20 [90m[1m  0 [36m[22m 3[m352  [36m2[m020  [36m1[m912 [90m[1mS   0.0  0.0  0:00.00 [mplan9 --control-socket 7 --log-le     13 [35mroot        [m20 [90m[1m  0 [36m[22m 3[m352  [36m2[m020     0 [90m[1mS   0.0  0.0  0:00.00 [32m[22mplan9 --control-socket 7 --log-le[m     14 [35mroot        [m20 [90m[1m  0 [36m[22m 3[m352  [36m2[m312     0 [90m[1mS   0.0  0.0  0:00.00 [32m[22m/init[K[m
+     52 root        19  [31m-1 [36m33[m836 [36m12[m980 [36m11[m740 [90m[1mS   0.0 [m 0.2  0:00.11 /usr/lib/systemd/systemd-journald     69 [35msystemd-re  [m20 [90m[1m  0 [36m[22m22[m540 [36m14[m652 [36m12[m032 [90m[1mS   0.0 [m 0.2  0:00.05 /usr/lib/systemd/systemd-resolved     92 root        20 [90m[1m  0 [36m[22m35[m248 [36m12[m396  [36m9[m296 [90m[1mS   0.0 [m 0.2  0:00.18 /usr/lib/systemd/systemd-udevd   
+    142 root        20 [90m[1m  0 [36m[22m 2[m888  [36m1[m948  [36m1[m820 [90m[1mS   0.0  0.0 [m 0:00.04 /bin/sh /usr/lib/systemd/scripts/    143 root        20 [90m[1m  0 [36m[22m 4[m472  [36m3[m124  [36m2[m868 [90m[1mS   0.0  0.0  0:00.00 [m/usr/sbin/cron -f -P[K
+    144 [35mmessagebus  [m20 [90m[1m  0 [36m[22m 8[m816  [36m5[m436  [36m4[m780 [90m[1mS   0.0 [m 0.1  0:00.03 @dbus-daemon --system --address=s
+[K[100C[30m[46m[12;7H1 root        20   0 24580 15472 11480 S   0.0  0.2  0:00.48 /sbin/init[K[m[24;5H148 root[8C20 [90m[1m  0 [36m[22m44[m092 [36m29[m812 [36m14[m676 [90m[1mS   0.0 [m 0.4  0:00.16 /usr/bin/python3 /usr/bin/network[?12l[?1006;1000l
+[K[?25h[?1049l[23;0;0t[?1l>[?25l[H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[H[?25h[?9001l[?1004l

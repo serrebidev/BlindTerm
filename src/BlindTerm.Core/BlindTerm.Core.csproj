@@ -1,13 +1,28 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!-- Windows-targeted: the pseudo console is a Windows API, and JAWS is reached through
+         COM, which needs the Windows targeting pack to bind by ProgID. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="XTerm.NET" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The byte-level scanners and the SSML escaping are internal, and are exactly the
+         parts worth testing directly: both fail silently rather than loudly. -->
+    <InternalsVisibleTo Include="BlindTerm.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NVDA's controller client, one copy per architecture, loaded by name at run time.
+         LGPL 2.1 and unmodified; the licence travels with it. -->
+    <None Include="native\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="native" />
   </ItemGroup>
 
 </Project>

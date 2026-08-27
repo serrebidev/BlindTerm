@@ -58,8 +58,13 @@ foreach ($raw in Get-ChildItem $captures -Filter *.raw | Sort-Object Name) {
             $failed++
             continue
         }
-        $actual = (($lines[($start + 1)..($end - 1)] -join "`n").TrimEnd() + "`n")
-        $want = ($expected.TrimEnd() + "`n")
+        # An empty transcript is a real and important expectation: a full-screen program's
+        # frames must not reach it at all. Slice carefully, because PowerShell reverses a
+        # range whose start is past its end.
+        $slice = @()
+        if (($end - 1) -ge ($start + 1)) { $slice = @($lines[($start + 1)..($end - 1)]) }
+        $actual = ($slice -join "`n").TrimEnd() + "`n"
+        $want = ([string]$expected).TrimEnd() + "`n"
 
         if ($actual -ceq $want) {
             Write-Host "ok   $name (chunk $chunk)"

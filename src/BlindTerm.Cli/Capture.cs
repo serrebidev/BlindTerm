@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using System.Text;
 using BlindTerm.Core;
 using BlindTerm.Core.Pty;
+using BlindTerm.Core.Vt;
 
 namespace BlindTerm.Cli;
 
@@ -19,9 +20,9 @@ internal static class Capture
     public static int Run(string[] args)
     {
         string output = "capture.raw";
-        int cols = 120, rows = 30, waitMs = 700, seconds = 3;
+        int cols = 120, rows = 30, waitMs = 700, seconds = 3, startupMs = -1;
         bool quiet = false, noEnv = false;
-        var send = new List<string>();
+        var send = new List<Step>();
         string? commandLine = null;
 
         for (int i = 0; i < args.Length; i++)
@@ -31,8 +32,10 @@ internal static class Capture
                 case "--out": output = Next(args, ref i); break;
                 case "--cols": cols = int.Parse(Next(args, ref i)); break;
                 case "--rows": rows = int.Parse(Next(args, ref i)); break;
-                case "--send": send.Add(Next(args, ref i)); break;
+                case "--send": send.Add(new Step(Next(args, ref i), IsKey: false)); break;
+                case "--key": send.Add(new Step(Next(args, ref i), IsKey: true)); break;
                 case "--wait": waitMs = int.Parse(Next(args, ref i)); break;
+                case "--startup": startupMs = int.Parse(Next(args, ref i)); break;
                 case "--seconds": seconds = int.Parse(Next(args, ref i)); break;
                 case "--quiet": quiet = true; break;
                 case "--noenv": noEnv = true; break;
@@ -81,12 +84,33 @@ internal static class Capture
         Console.Error.WriteLine($"capture: running {commandLine}");
         session.Start(commandLine!, cols, rows, environment);
 
-        foreach (string line in send)
+        // A full-screen program has to be given time to put the terminal into raw mode before
+        // anything is typed at it. Until it does, the line discipline is still echoing, and a
+        // key sent early comes back in caret notation -- an arrow arrives as a literal "^[[B"
+        // printed onto the screen -- which looks like a bug in the terminal and is not one.
+        bool first = true;
+        foreach (var step in send)
         {
-            Thread.Sleep(waitMs);
+            Thread.Sleep(first && startupMs >= 0 ? startupMs : waitMs);
+            first = false;
             if (!session.IsRunning) break;
-            Console.Error.WriteLine($"capture: send {line}");
-            session.WriteLineSplit(line).GetAwaiter().GetResult();
+
+            if (step.IsKey)
+            {
+                byte[]? bytes = KeyEncoder.Parse(step.Text);
+                if (bytes is null)
+                {
+                    Console.Error.WriteLine($"capture: unknown key '{step.Text}'");
+                    return 2;
+                }
+                Console.Error.WriteLine($"capture: key {step.Text}");
+                session.Write(bytes);
+            }
+            else
+            {
+                Console.Error.WriteLine($"capture: send {step.Text}");
+                session.WriteLineSplit(step.Text).GetAwaiter().GetResult();
+            }
         }
 
         exited.Wait(TimeSpan.FromSeconds(seconds));
@@ -133,6 +157,9 @@ internal static class Capture
         }
         return builder.ToString();
     }
+
+    /// <summary>One scripted action: a line to type, or a single key to press.</summary>
+    private readonly record struct Step(string Text, bool IsKey);
 
     private static string Next(string[] args, ref int i)
     {

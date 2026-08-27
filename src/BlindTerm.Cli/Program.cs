@@ -17,6 +17,7 @@ internal static class Program
         {
             "capture" => Capture.Run(args[1..]),
             "replay" => Replay.Run(args[1..]),
+            "speak" => Speak.Run(args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Unknown(args[0]),
         };
@@ -37,6 +38,7 @@ internal static class Program
             Usage:
               blindterm capture [options] -- <command line>
               blindterm replay <capture file> [options]
+              blindterm speak [--probe] [--braille] [--batch] [--now] [text...]
 
             capture options:
               --out FILE        Write raw pty bytes to FILE (default: capture.raw)
