@@ -194,6 +194,35 @@ public sealed class DefaultTerminalTests : IDisposable
     }
 
     [Fact]
+    public void MovingTheExecutableReplacesTheClassRatherThanEditingIt()
+    {
+        DefaultTerminalConfig.RegisterComServer(@"C:\Old\BlindTerm.App.exe", _scope);
+        DefaultTerminalConfig.RegisterComServer(@"C:\Program Files\BlindTerm\BlindTerm.App.exe", _scope);
+
+        // COM remembers where it last launched a class from and goes on using that, so a copy
+        // installed over one that was being run from somewhere else keeps starting the old
+        // executable -- with the registry plainly saying otherwise -- until the class is
+        // removed and put back.
+        Assert.Equal("\"C:\\Program Files\\BlindTerm\\BlindTerm.App.exe\"",
+            DefaultTerminalConfig.RegisteredCommand(_scope));
+    }
+
+    [Fact]
+    public void RegisteringTheSamePathAgainLeavesTheClassAlone()
+    {
+        DefaultTerminalConfig.RegisterComServer(@"C:\BlindTerm\BlindTerm.App.exe", _scope);
+        DefaultTerminalConfig.RegisterComServer(@"C:\BlindTerm\BlindTerm.App.exe", _scope);
+
+        Assert.Equal("\"C:\\BlindTerm\\BlindTerm.App.exe\"", DefaultTerminalConfig.RegisteredCommand(_scope));
+    }
+
+    [Fact]
+    public void AnUnregisteredClassHasNoCommand()
+    {
+        Assert.Null(DefaultTerminalConfig.RegisteredCommand(_scope));
+    }
+
+    [Fact]
     public void UnregisteringRemovesTheClass()
     {
         DefaultTerminalConfig.RegisterComServer(@"C:\BlindTerm\BlindTerm.App.exe", _scope);

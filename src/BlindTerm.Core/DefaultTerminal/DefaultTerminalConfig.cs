@@ -139,6 +139,24 @@ public static class DefaultTerminalConfig
     {
         scope ??= RegistrationScope.Default;
         string path = executablePath ?? CurrentExecutable();
+        string command = $"\"{path}\"";
+
+        // Overwriting the command in place is not enough. COM remembers where a class was
+        // last launched from, and goes on launching that -- so a user who installs over a
+        // copy they were running from elsewhere, or who moves the folder, keeps getting the
+        // old executable until they sign out, with the registry plainly saying otherwise.
+        // Removing the class and putting it back is what makes the change take effect now.
+        if (RegisteredCommand(scope) is string existing && existing != command)
+        {
+            try
+            {
+                Registry.CurrentUser.DeleteSubKeyTree(scope.ClassKey(BlindTermTerminal), throwOnMissingSubKey: false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                // Rewriting in place still leaves the registry correct for the next sign-in.
+            }
+        }
 
         using RegistryKey key = Registry.CurrentUser.CreateSubKey(scope.ClassKey(BlindTermTerminal), writable: true);
         key.SetValue(null, "BlindTerm", RegistryValueKind.String);
@@ -148,6 +166,22 @@ public static class DefaultTerminalConfig
         // whitespace before appending -Embedding, which is how BlindTerm knows to come up as
         // a handoff server with no shell of its own.
         server.SetValue(null, $"\"{path}\"", RegistryValueKind.String);
+    }
+
+    /// <summary>The command line currently registered for BlindTerm's class, or null if there is none.</summary>
+    public static string? RegisteredCommand(RegistrationScope? scope = null)
+    {
+        scope ??= RegistrationScope.Default;
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
+                $@"{scope.ClassKey(BlindTermTerminal)}\LocalServer32");
+            return key?.GetValue(null) as string;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Removes everything <see cref="MakeDefault"/> put in place except the choice itself.</summary>
