@@ -56,7 +56,7 @@ internal sealed class ScreenSurface : Control
             set { }
         }
 
-        // The painted rows are read through the native keyboard proxy or F5 review mode.
+        // The painted rows are read through the native keyboard proxy or Alt+3 review mode.
         public override string? Value => string.Empty;
 
         // Dynamic child text causes NVDA to announce every repaint as a value change. Detailed

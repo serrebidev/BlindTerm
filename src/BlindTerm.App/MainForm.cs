@@ -191,15 +191,14 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// Every command also lives in the menu. Windows has no free modifier -- Ctrl, Alt and the
-    /// function keys all belong to terminal programs, Insert and Caps Lock belong to the
-    /// screen readers -- so the chords are Ctrl+Alt+key, which nothing else claims, and the
-    /// menu is how anyone finds them. Both readers announce menus perfectly.
+    /// Every command also lives in the menu. Alt is the application-command modifier, leaving
+    /// ordinary Ctrl editing keys alone. The menu is how anyone finds the commands, and both
+    /// readers announce menus perfectly.
     /// </summary>
     private void BuildMenu()
     {
         var terminal = new ToolStripMenuItem("&Terminal");
-        terminal.DropDownItems.Add(Item("Change &directory...", Keys.Control | Keys.Alt | Keys.D,
+        terminal.DropDownItems.Add(Item("Change &directory...", AppShortcuts.ChangeDirectory,
             ChangeDirectory));
         terminal.DropDownItems.Add(Item("&Settings...", Keys.None, ShowSettings));
         _defaultTerminalItem.CheckOnClick = false;
@@ -211,40 +210,40 @@ public sealed class MainForm : Form
         _checkUpdatesItem.Click += async (_, _) => await CheckForUpdates();
         terminal.DropDownItems.Add(_checkUpdatesItem);
         terminal.DropDownItems.Add(new ToolStripSeparator());
-        terminal.DropDownItems.Add(Item("Send Ctrl+&C (interrupt)", Keys.Control | Keys.Alt | Keys.C,
+        terminal.DropDownItems.Add(Item("Send Ctrl+&C (interrupt)", AppShortcuts.Interrupt,
             () => _host.Send([0x03])));
-        terminal.DropDownItems.Add(Item("Send &Escape", Keys.Control | Keys.Alt | Keys.OemOpenBrackets,
+        terminal.DropDownItems.Add(Item("Send &Escape", AppShortcuts.Escape,
             () => _host.Send([0x1b])));
         terminal.DropDownItems.Add(Item("Send Shift+&Tab", Keys.None,
             () => _host.Send([0x1b, (byte)'[', (byte)'Z'])));
         terminal.DropDownItems.Add(new ToolStripSeparator());
-        terminal.DropDownItems.Add(Item("&Pass next chord to the program", Keys.Control | Keys.Alt | Keys.P,
+        terminal.DropDownItems.Add(Item("&Pass next chord to the program", AppShortcuts.PassNext,
             () => { _passThroughNext = true; Say("Pass through next key"); }));
         terminal.DropDownItems.Add(new ToolStripSeparator());
         terminal.DropDownItems.Add(Item("E&xit", Keys.None, Close));
 
         var read = new ToolStripMenuItem("&Read");
-        read.DropDownItems.Add(Item("&Read the screen (freeze and navigate)", Keys.F5, ToggleReview));
-        read.DropDownItems.Add(Item("Speak &current line", Keys.Control | Keys.Alt | Keys.L, SpeakCurrentLine));
-        read.DropDownItems.Add(Item("Speak whole &screen", Keys.Control | Keys.Alt | Keys.W, SpeakScreen));
+        read.DropDownItems.Add(Item("&Read the screen (freeze and navigate)", AppShortcuts.ToggleReview, ToggleReview));
+        read.DropDownItems.Add(Item("Speak &current line", AppShortcuts.SpeakCurrentLine, SpeakCurrentLine));
+        read.DropDownItems.Add(Item("Speak whole &screen", AppShortcuts.SpeakScreen, SpeakScreen));
         _speakOutputItem.Checked = true;
-        _speakOutputItem.ShortcutKeys = Keys.Control | Keys.Alt | Keys.S;
+        _speakOutputItem.ShortcutKeys = AppShortcuts.ToggleSpeakOutput;
         _speakOutputItem.Click += (_, _) => ToggleSpeakOutput();
         read.DropDownItems.Add(_speakOutputItem);
         _speakOffCursorItem.Click += (_, _) => ToggleOffCursor();
         read.DropDownItems.Add(_speakOffCursorItem);
 
         var go = new ToolStripMenuItem("&Go");
-        go.DropDownItems.Add(Item("&Transcript", Keys.Control | Keys.Alt | Keys.D1, FocusTranscript));
-        go.DropDownItems.Add(Item("&Command line", Keys.Control | Keys.Alt | Keys.D2, FocusCommandLine));
-        go.DropDownItems.Add(Item("&End of transcript", Keys.Control | Keys.Alt | Keys.E, GoToEnd));
+        go.DropDownItems.Add(Item("&Transcript", AppShortcuts.FocusTranscript, FocusTranscript));
+        go.DropDownItems.Add(Item("&Command line", AppShortcuts.FocusCommandLine, FocusCommandLine));
+        go.DropDownItems.Add(Item("&End of transcript", AppShortcuts.EndOfTranscript, GoToEnd));
 
         var edit = new ToolStripMenuItem("&Edit");
-        edit.DropDownItems.Add(Item("Copy &all", Keys.Control | Keys.Alt | Keys.A, CopyAll));
-        edit.DropDownItems.Add(Item("Copy current command &output", Keys.Control | Keys.Alt | Keys.O, CopyCommandOutput));
+        edit.DropDownItems.Add(Item("Copy &all", AppShortcuts.CopyAll, CopyAll));
+        edit.DropDownItems.Add(Item("Copy current command &output", AppShortcuts.CopyCommandOutput, CopyCommandOutput));
 
-        go.DropDownItems.Add(Item("&Previous command", Keys.Control | Keys.Alt | Keys.Up, PreviousCommand));
-        go.DropDownItems.Add(Item("&Next command", Keys.Control | Keys.Alt | Keys.Down, NextCommand));
+        go.DropDownItems.Add(Item("&Previous command", AppShortcuts.PreviousCommand, PreviousCommand));
+        go.DropDownItems.Add(Item("&Next command", AppShortcuts.NextCommand, NextCommand));
 
         _menu.Items.AddRange([terminal, read, go, edit]);
         _menu.Dock = DockStyle.Top;
@@ -832,8 +831,9 @@ public sealed class MainForm : Form
     private void Submit()
     {
         string text = _command.Text;
-        _news.SuppressCommandEcho(text);
-        _host.SendLine(text);
+        string accessible = AccessibleAgentCommand.Adapt(text);
+        _news.SuppressCommandEcho(accessible);
+        _host.SendLine(accessible);
         if (text.Length > 0 && (_history.Count == 0 || _history[^1] != text)) _history.Add(text);
         _historyIndex = _history.Count;
         _command.Clear();
@@ -854,16 +854,6 @@ public sealed class MainForm : Form
     /// </summary>
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
-        if (keyData == Keys.F5)
-        {
-            ToggleReview();
-            return true;
-        }
-
-        // The reserved chords win everywhere, so there is always a way back out.
-        if ((keyData & (Keys.Control | Keys.Alt)) == (Keys.Control | Keys.Alt))
-            return base.ProcessCmdKey(ref message, keyData);
-
         if (_passThroughNext)
         {
             byte[]? passed = KeyTranslator.Translate(keyData, _host.Engine.ApplicationCursorKeys);
@@ -874,6 +864,11 @@ public sealed class MainForm : Form
                 return true;
             }
         }
+
+        // Alt belongs to BlindTerm and its menu everywhere, so there is always a way back out.
+        // Pass Next is checked first so an occasional Meta/Alt chord can still reach the program.
+        if (AppShortcuts.IsApplicationChord(keyData))
+            return base.ProcessCmdKey(ref message, keyData);
 
         // While the screen is frozen for reading, the keyboard belongs to the text box again,
         // which is the only way to read a full-screen program line by line.

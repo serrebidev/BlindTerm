@@ -4,6 +4,11 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.1.3 - 2026-08-27
+
+- Start simple `claude`, `codex`, and `opencode` commands in the least repainting interface each installed CLI supports. Claude gets its screen-reader renderer, Codex keeps output in inline scrollback with animations disabled, and OpenCode gets its minimal interface without history replay. Freebuff does not currently expose a comparable mode, so it continues through BlindTerm's full-screen speech and review support without unsupported arguments.
+- Move every assigned BlindTerm command to an Alt chord. `Alt+1`, `Alt+2`, and `Alt+3` focus the transcript, focus the command line, and freeze or resume full-screen review. Standard `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V` remain native editing keys instead of sharing BlindTerm's shortcut modifier.
+
 ## v0.1.2 - 2026-08-27
 
 - Set `ACCESSIBLE=1` and `TERM_A11Y=1` for shells BlindTerm starts, so command-line tools built with term-a11y, and anything else following the GNOME and Debian convention, render spinners, progress bars and tables as plain text without being configured to. This cannot apply to a console handed over by Windows, because that program was started before BlindTerm was involved.

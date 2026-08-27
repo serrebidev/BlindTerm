@@ -19,6 +19,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Handles redraws, spinners, wrapped lines, screen wipes, alternate screens, and split UTF-8 input.
 - Can be set as the Windows 11 default terminal, so command-line programs open in BlindTerm on their own.
 - Tells the shells it starts that they are being read, so tools that can render plainly do: `ACCESSIBLE`, `TERM_A11Y`, and the flags GitHub CLI and Claude Code already understand.
+- Starts simple Codex, Claude Code, and OpenCode commands in the least repainting interface each CLI provides.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 
@@ -56,6 +57,17 @@ BlindTerm prefers PowerShell 7 when `pwsh.exe` is available and falls back to Wi
 dotnet run --project src\BlindTerm.App -- wsl.exe
 ```
 
+### Coding-agent interfaces
+
+When a command line consists of a simple `codex`, `claude`, or `opencode` launch, BlindTerm selects that program's accessible interface automatically:
+
+- Claude Code receives `--ax-screen-reader`, producing labelled, flat text without decorative borders or animations.
+- Codex receives `--no-alt-screen -c tui.animations=false`, preserving its output in readable terminal scrollback and stopping its visual animations. Codex does not currently provide a dedicated screen-reader renderer.
+- OpenCode receives `--mini --no-replay`, selecting its smaller interactive interface and preventing old sessions from repainting on startup and resize.
+- Freebuff currently provides no screen-reader or minimal-interface switch. BlindTerm runs it as a full-screen program: use `Alt+3` to freeze the current frame into the native review control, or `Alt+W` to speak the whole screen.
+
+Explicit flags are respected, and subcommands such as `codex exec` or `opencode run` keep working. Compound shell expressions and executable paths are left exactly as typed rather than guessed at.
+
 ## Making BlindTerm your default terminal
 
 Windows 11 lets you choose which terminal opens when a command-line program is started without one, so that `cmd.exe` from the Run dialog, a `.bat` file from File Explorer, or a tool that launches a console all open in BlindTerm.
@@ -78,19 +90,24 @@ That restores whatever Windows would have chosen. In fact BlindTerm cannot lock 
 
 ## Reading and keyboard commands
 
-BlindTerm keeps its reserved commands under `Ctrl+Alt`, because Ctrl, Alt, function keys, Insert, and Caps Lock already belong to shells, terminal programs, and screen readers.
+BlindTerm keeps its application commands under Alt. That leaves `Ctrl+C`, `Ctrl+X`, `Ctrl+Z`, and `Ctrl+V` as ordinary copy, cut, undo, and paste commands in the transcript and command line. In a live full-screen program, Ctrl chords continue to go to that program.
 
-- `Ctrl+Alt+1`: focus the transcript.
-- `Ctrl+Alt+2`: focus the command line.
-- `Ctrl+Alt+E`: move to the end of the transcript.
-- `F5`: freeze or resume full-screen review.
-- `Ctrl+Alt+L`: speak the current line.
-- `Ctrl+Alt+W`: speak the visible screen.
-- `Ctrl+Alt+C`: send Ctrl+C.
-- `Ctrl+Alt+P`: pass the next supported key to the program.
-- `Ctrl+Alt+A`: copy the transcript or current screen.
+- `Alt+1`: focus the transcript.
+- `Alt+2`: focus the command line.
+- `Alt+3`: freeze or resume full-screen review.
+- `Alt+End`: move to the end of the transcript.
+- `Alt+L`: speak the current line.
+- `Alt+W`: speak the visible screen.
+- `Alt+S`: turn automatic output speech on or off.
+- `Alt+C`: send Ctrl+C to interrupt the program.
+- `Alt+[`: send Escape.
+- `Alt+P`: pass the next supported key to the program, including an Alt chord.
+- `Alt+A`: copy the transcript or current screen.
+- `Alt+O`: copy the current command's output.
+- `Alt+Up` and `Alt+Down`: move through command output blocks.
+- `Alt+D`: change directory.
 
-The complete command list is also available from the menu bar, which is the discoverability path for NVDA and JAWS users.
+The complete command list is also available from the menu bar. `Alt+T`, `Alt+R`, `Alt+G`, and `Alt+E` open its Terminal, Read, Go, and Edit menus, including while a full-screen program is running.
 
 ## Diagnostic CLI
 

@@ -220,10 +220,11 @@ public static class DefaultTerminalConfig
 
     /// <summary>
     /// The path recorded for COM activation. <see cref="Environment.ProcessPath"/> is the real
-    /// executable even for a self-contained publish, where the entry assembly is a DLL.
+    /// executable even for a self-contained publish. AppContext is the safe fallback for a
+    /// single-file process, where Assembly.Location is deliberately empty.
     /// </summary>
     public static string CurrentExecutable()
-        => Environment.ProcessPath ?? System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "BlindTerm.App.exe";
+        => Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BlindTerm.App.exe");
 
     /// <summary>Registry spelling of a CLSID: braces, upper case, hyphens.</summary>
     public static string Format(Guid value) => RegistrationScope.Format(value);

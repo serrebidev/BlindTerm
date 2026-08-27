@@ -29,7 +29,7 @@ Remove generated package output:
 .\build.bat clean
 ```
 
-The `build` command publishes a self-contained `win-x64` application, adds the update worker, creates `dist\BlindTerm-v0.1.2.zip`, creates `dist\BlindTerm-Setup-v0.1.2.exe`, and writes `dist\BlindTerm-update.json` with SHA-256 values.
+The `build` command publishes a self-contained `win-x64` application, adds the update worker, creates `dist\BlindTerm-v0.1.3.zip`, creates `dist\BlindTerm-Setup-v0.1.3.exe`, and writes `dist\BlindTerm-update.json` with SHA-256 values.
 
 ## Installation
 
@@ -37,6 +37,6 @@ The installer uses Program Files and creates a Start Menu entry. It writes a mar
 
 The installer is currently unsigned for public distribution unless a signing certificate is supplied through the normal Inno Setup and Windows signing tooling. Local testing does not require a public certificate.
 
-## Future releases
+## Publishing a release
 
-The update format already points at `serrebidev/BlindTerm`, matching the eventual GitHub repository name, but this repository is not being published yet. When the project is ready, a release process can upload the ZIP, installer, and manifest as a single versioned release. Until then, keep using the local package and install command above.
+After tests and the local build pass, commit the versioned files and create the matching Git tag. Push the branch and tag, then publish one GitHub release containing the portable ZIP, installer, and `BlindTerm-update.json`. The tag and release title use `v<version>` and `BlindTerm v<version>` respectively.
