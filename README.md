@@ -11,8 +11,16 @@ cursor.
 It follows [AccessTerm](https://github.com/allisonfm85/AccessTerm), which does this for macOS
 and VoiceOver. The design, and where it deliberately differs, is in [docs/DESIGN.md](docs/DESIGN.md).
 
-**Status: the terminal core works; there is no UI yet.** The pseudo console, the VT engine and
-the transcript assembly are in and tested. See "Build order" in the design document.
+**Status: the terminal core and the speech layer work; there is no window yet.**
+
+Done: the pseudo console, the VT engine, the transcript assembly, the replay harness, and
+speech through NVDA and JAWS. nano, vim and htop all drive correctly through the pty and none
+of them leaks a frame into the transcript.
+
+Next: the line mode window, then screen mode. See "Build order" in the design document.
+
+The JAWS path is written but **unverified** — JAWS is not installed on the machine this was
+built on. NVDA is verified working, including braille and the batching path.
 
 ## Building
 
@@ -46,8 +54,18 @@ sequence split across two reads, or a screen wipe arriving in the same read as t
 is about to destroy, are exactly the cases the assembly has to get right. The test suite
 replays everything at 16384, 7 and 1 bytes for that reason.
 
+### speak
+
+Reports which screen readers are running and speaks through the chosen one. `--probe` reports
+without speaking.
+
+    dotnet run --project src/BlindTerm.Cli -- speak --probe
+    dotnet run --project src/BlindTerm.Cli -- speak "hello"
+    dotnet run --project src/BlindTerm.Cli -- speak --batch
+
 ## Tests
 
+    dotnet test
     pwsh -File tests/run-replay-tests.ps1
 
 Every capture in `tests/captures` is replayed at several chunk sizes and compared against the

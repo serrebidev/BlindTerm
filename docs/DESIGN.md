@@ -261,12 +261,25 @@ explicitly, and prefer PowerShell 7 (`pwsh`), which does not do this.
 
 ## 8. Build order
 
-1. ConPTY + VT engine + raw logging + the `--replay` harness. No UI.
-2. Transcript assembly ported from `TerminalSession.publishUpdate`, verified by replay
-   against captures.
-3. Line mode window, screen reader speech layer, news filter and batching.
-4. **Screen mode with full passthrough and cursor-follow autoread.** Test against nano, vim,
-   htop and mc, locally and over SSH to serrebiradio.com.
-5. OSC 133 blocks and shell integration, local shells then remote.
+1. **Done.** ConPTY + VT engine + raw logging + the `--replay` harness. No UI.
+2. **Done.** Transcript assembly ported from `TerminalSession.publishUpdate`, verified by
+   replay against captures at 16384, 7 and 1 byte chunks.
+3. **Done:** screen reader speech layer, news filter and batching, verified against NVDA.
+   **Remaining:** the line mode window.
+4. **Screen mode with full passthrough and cursor-follow autoread.** The input half
+   (`KeyEncoder`) is in and tested. nano, vim and htop are recorded captures and drive
+   correctly through the pty; what is missing is reading them. Then SSH to serrebiradio.com.
+5. OSC 133 blocks and shell integration, local shells then remote. `TranscriptBuilder` already
+   raises `RowBecameLine` for markers to anchor against, and `TerminalEngine` already surfaces
+   `MarkReceived` with the cursor position at the time the marker arrived.
 6. Turns, copy-output, command navigation.
 7. Resize, scrollback trimming, settings.
+
+### Verified, and not
+
+Verified on the machine this was built on: NVDA speech, NVDA braille, the batching and news
+filter, ConPTY against cmd/PowerShell/pwsh, and nano, vim and htop under Ubuntu on WSL.
+
+Not verified: **JAWS**, which is not installed here — the COM path is written from its
+documented API but has never been run. **SSH to a real remote host**, and with it the remote
+shell integration and a remote `CLAUDE_AX_SCREEN_READER`. Both need a machine that has them.
