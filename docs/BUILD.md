@@ -29,7 +29,7 @@ Remove generated package output:
 .\build.bat clean
 ```
 
-The `build` command publishes a self-contained `win-x64` application, adds the update worker, creates `dist\BlindTerm-v0.1.1.zip`, creates `dist\BlindTerm-Setup-v0.1.1.exe`, and writes `dist\BlindTerm-update.json` with SHA-256 values.
+The `build` command publishes a self-contained `win-x64` application, adds the update worker, creates `dist\BlindTerm-v0.1.2.zip`, creates `dist\BlindTerm-Setup-v0.1.2.exe`, and writes `dist\BlindTerm-update.json` with SHA-256 values.
 
 ## Installation
 

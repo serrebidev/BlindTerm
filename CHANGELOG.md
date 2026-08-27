@@ -4,7 +4,7 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
-## Unreleased
+## v0.1.2 - 2026-08-27
 
 - Set `ACCESSIBLE=1` and `TERM_A11Y=1` for programs launched in BlindTerm, so command-line tools built with term-a11y, and anything else following the GNOME and Debian convention, render spinners, progress bars and tables as plain text without being configured to.
 
