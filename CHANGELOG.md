@@ -1,10 +1,10 @@
 # Changelog
 
-Readable release history for BlindTerm. This starts with the first complete,
-installable build rather than pretending the early prototype releases were
-something users could have installed.
+Readable release history for BlindTerm. This starts with the first build
+that was complete enough to install and use, rather than pretending the
+earlier prototypes were something anyone could have run.
 
-## v1.0.0 - 2026-08-27
+## v0.1.0 - 2026-08-27
 
 - Add a Windows terminal window built for NVDA and JAWS.
 - Read ordinary output as a logical transcript in a native edit control.
@@ -21,3 +21,7 @@ something users could have installed.
 - Add a Terminal menu item that turns the default-terminal setting on and off and shows which is in effect.
 - Bring a window opened for a handed-over console to the front and put the caret on the command line.
 - Add `--set-default-terminal` and `--reset-default-terminal`, so the setting can be changed without a terminal to type into.
+- Speak output as soon as it stops arriving instead of after a fixed quarter-second, so an answer to a typed command is no longer noticeably late. A burst of lines is still gathered into one utterance, and long-running output is still spoken as it goes.
+- Stop reading the whole transcript twice for every batch of output, which was most of BlindTerm's processor time and enough garbage to make the screen reader itself feel slow.
+- Ask which screen reader is running at most once every two seconds rather than once per line whenever none is, which mattered most while a reader was restarting.
+- Stop sending output to a screen reader that has just refused an utterance until it is worth asking again.

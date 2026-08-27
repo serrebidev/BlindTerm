@@ -17,6 +17,7 @@ public sealed class ScreenReaderRouter : IScreenReader
     private readonly IScreenReader[] _candidates;
     private readonly Stopwatch _sinceProbe = Stopwatch.StartNew();
     private IScreenReader? _current;
+    private bool _probed;
 
     /// <summary>How stale the choice of reader is allowed to get.</summary>
     private static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(2);
@@ -43,8 +44,14 @@ public sealed class ScreenReaderRouter : IScreenReader
 
     private IScreenReader? Resolve()
     {
-        if (_current is not null && _sinceProbe.Elapsed < ProbeInterval) return _current;
+        // The interval applies whether or not a reader was found last time. Keying it on
+        // having one meant that a machine with no reader running probed every candidate on
+        // every single utterance -- and probing JAWS is a COM activation. The case that
+        // matters most is a reader that has just crashed and is restarting, where the old
+        // behaviour turned a quiet failure into a storm of them.
+        if (_probed && _sinceProbe.Elapsed < ProbeInterval) return _current;
 
+        _probed = true;
         _sinceProbe.Restart();
         IScreenReader? found = _candidates.FirstOrDefault(c => c.IsRunning);
 
@@ -56,12 +63,33 @@ public sealed class ScreenReaderRouter : IScreenReader
         return _current;
     }
 
+    /// <summary>
+    /// Stops speaking through a reader that has just refused an utterance, until the next
+    /// probe is due.
+    ///
+    /// A reader restarting answers "yes, running" from the moment its endpoint exists, which
+    /// is before it can actually say anything -- NVDA restarts itself whenever its settings
+    /// change. Carrying on regardless means shouting at something that is still waking up,
+    /// once per line of output.
+    /// </summary>
+    private void Failed()
+    {
+        _current = null;
+        _probed = true;
+    }
+
     private bool Muted => RespectSecureDesktop && SecureDesktop.IsActive();
 
     public bool Speak(string text, SpeechPriority priority = SpeechPriority.Normal)
     {
         if (string.IsNullOrEmpty(text) || Muted) return false;
-        return Resolve()?.Speak(text, priority) ?? false;
+
+        IScreenReader? reader = Resolve();
+        if (reader is null) return false;
+
+        if (reader.Speak(text, priority)) return true;
+        Failed();
+        return false;
     }
 
     public bool Braille(string text)

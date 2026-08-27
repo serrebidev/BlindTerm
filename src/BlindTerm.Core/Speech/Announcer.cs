@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 
 namespace BlindTerm.Core.Speech;
@@ -17,13 +18,26 @@ public sealed class Announcer : IDisposable
     private readonly Lock _gate = new();
     private readonly List<string> _pending = new();
     private Timer? _flushTimer;
+    private long _batchStarted;
     private bool _disposed;
 
     /// <summary>
-    /// How long lines are gathered before being spoken. Long enough that a burst becomes one
-    /// utterance, short enough that a prompt does not feel late.
+    /// How long after output stops before it is spoken.
+    ///
+    /// Short, because most of the time this is the whole delay: press Return, the shell
+    /// answers in one go, output stops, and speech starts. A fixed window instead of this put
+    /// a quarter of a second between every keystroke and its answer, which is small enough to
+    /// look reasonable written down and large enough to feel broken to use.
     /// </summary>
-    public TimeSpan BatchWindow { get; set; } = TimeSpan.FromMilliseconds(250);
+    public TimeSpan IdleWindow { get; set; } = TimeSpan.FromMilliseconds(50);
+
+    /// <summary>
+    /// The longest output can keep arriving before it is spoken anyway.
+    ///
+    /// Without a cap, a program that prints steadily would defer speech forever. With one, a
+    /// build that runs for a minute is still described as it goes.
+    /// </summary>
+    public TimeSpan MaxWindow { get; set; } = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
     /// Past this many lines in one batch, the text is summarised rather than read out whole.
@@ -56,8 +70,21 @@ public sealed class Announcer : IDisposable
         lock (_gate)
         {
             if (_disposed) return;
+
+            bool starting = _pending.Count == 0;
             _pending.AddRange(useful);
-            _flushTimer ??= new Timer(_ => Flush(), null, BatchWindow, Timeout.InfiniteTimeSpan);
+            if (starting) _batchStarted = Stopwatch.GetTimestamp();
+
+            // Wait for output to stop -- but never past the cap measured from the first line,
+            // so that a burst still becomes one utterance rather than an unbroken postponement.
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(_batchStarted);
+            TimeSpan delay = IdleWindow;
+            TimeSpan remaining = MaxWindow - elapsed;
+            if (remaining < delay) delay = remaining;
+            if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+
+            if (_flushTimer is null) _flushTimer = new Timer(_ => Flush(), null, delay, Timeout.InfiniteTimeSpan);
+            else _flushTimer.Change(delay, Timeout.InfiniteTimeSpan);
         }
     }
 

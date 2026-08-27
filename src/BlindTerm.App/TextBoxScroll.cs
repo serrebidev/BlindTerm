@@ -17,13 +17,16 @@ internal static class TextBoxScroll
 {
     private const int EM_LINESCROLL = 0x00B6;
     private const int EM_GETFIRSTVISIBLELINE = 0x00CE;
+    private const int EM_GETLINECOUNT = 0x00BA;
 
     /// <summary>Scrolls so the last line is in view, leaving the selection untouched.</summary>
     public static void ToBottom(TextBox box)
     {
         if (!box.IsHandleCreated) return;
 
-        int lines = box.Lines.Length;
+        // Asked of the control rather than of TextBox.Lines, which copies the whole transcript
+        // out and splits it into an array of every line. This runs on every batch of output.
+        int lines = SendMessage(box.Handle, EM_GETLINECOUNT, IntPtr.Zero, IntPtr.Zero).ToInt32();
         int first = SendMessage(box.Handle, EM_GETFIRSTVISIBLELINE, IntPtr.Zero, IntPtr.Zero).ToInt32();
 
         // Scrolling further than there is content is clamped by the control, so overshooting

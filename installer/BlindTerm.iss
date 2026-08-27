@@ -2,7 +2,7 @@
 #define AppPublisher "SerrebiProjects"
 #define AppExeName "BlindTerm.App.exe"
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "0.1.0"
 #endif
 
 [Setup]
