@@ -4,6 +4,12 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.4.1 - 2026-08-27
+
+- Open the selected menu with Down Arrow as soon as the menu bar is activated. The terminal's
+  global key routing no longer takes the arrow away first, including while a full-screen
+  program is running or pass-through is armed; Enter continues to open it too.
+
 ## v0.4.0 - 2026-08-27
 
 - Watch the output for a pattern, and do something when it arrives. **Terminal** -> **Triggers...** (`Alt+Shift+T`) is the list, and `Alt+Shift+G` is the master switch over it. A screen reader reads what a terminal sends in the order it sends it, so the one line that mattered -- the build finishing, the health warning, someone saying your name -- goes past in the middle of forty that did not. A trigger is how that line gets to sound different from the rest, or be the only one that makes a sound at all.
