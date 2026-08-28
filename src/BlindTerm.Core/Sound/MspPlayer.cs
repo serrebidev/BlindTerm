@@ -38,6 +38,7 @@ public sealed class MspPlayer : IDisposable
     private Voice? _music;
     private string? _musicPath;
     private string? _soundUrl;
+    private MspProblem? _problem;
     private bool _disposed;
 
     /// <summary>
@@ -48,6 +49,12 @@ public sealed class MspPlayer : IDisposable
 
     /// <summary>Scales every sound. 0 silences without turning the protocol off.</summary>
     public int MasterVolume { get; set; } = 100;
+
+    /// <summary>
+    /// Raised when a trigger asked for something that could not be heard, and the reason is
+    /// one a user can do something about. See <see cref="MspProblem"/>.
+    /// </summary>
+    public event Action<MspProblem>? Unplayable;
 
     public MspPlayer(ISoundOutput output, SoundLibrary library)
     {
@@ -69,6 +76,9 @@ public sealed class MspPlayer : IDisposable
     public bool Handle(MspTrigger trigger)
     {
         ArgumentNullException.ThrowIfNull(trigger);
+
+        bool acted;
+        MspProblem? problem;
         lock (_gate)
         {
             if (_disposed) return false;
@@ -78,9 +88,18 @@ public sealed class MspPlayer : IDisposable
             // trigger after that carries a file name and nothing else.
             if (trigger.Url is not null) _soundUrl = trigger.Url;
 
-            if (trigger.IsOff) return StopAll(trigger.Kind);
-            return trigger.Kind == MspKind.Music ? StartMusic(trigger) : StartSound(trigger);
+            _problem = null;
+            acted = trigger.IsOff
+                ? StopAll(trigger.Kind)
+                : trigger.Kind == MspKind.Music ? StartMusic(trigger) : StartSound(trigger);
+            problem = _problem;
+            _problem = null;
         }
+
+        // Outside the lock. What listens to this speaks, and speech must not be able to reach
+        // back into a player that is still part-way through a trigger.
+        if (problem is { } reason) Unplayable?.Invoke(reason);
+        return acted;
     }
 
     /// <summary>
@@ -144,7 +163,11 @@ public sealed class MspPlayer : IDisposable
 
         int volume = Scale(trigger.Volume);
         int? handle = _output.Play(path, volume);
-        if (handle is not int started) return false;
+        if (handle is not int started)
+        {
+            _problem = MspProblem.CannotPlay;
+            return false;
+        }
 
         _sounds.Add(new Voice
         {
@@ -180,7 +203,11 @@ public sealed class MspPlayer : IDisposable
 
         int volume = Scale(trigger.Volume);
         int? handle = _output.Play(path, volume);
-        if (handle is not int started) return false;
+        if (handle is not int started)
+        {
+            _problem = MspProblem.CannotPlay;
+            return false;
+        }
 
         _music = new Voice
         {
@@ -214,12 +241,28 @@ public sealed class MspPlayer : IDisposable
     private string? Locate(MspTrigger trigger)
     {
         string? here = _library.Resolve(trigger);
-        if (here is not null || Download is null) return here;
+        if (here is not null) return here;
+
+        // A name this will never play is the server's mistake rather than a missing file, and
+        // "turn on downloading" would send someone after a setting that cannot help.
+        if (!SoundLibrary.IsSafeName(trigger.FileName))
+        {
+            _problem = MspProblem.Refused;
+            return null;
+        }
+
+        if (Download is null)
+        {
+            _problem = MspProblem.NotHere;
+            return null;
+        }
 
         MspTrigger asked = trigger.Url is null && _soundUrl is not null
             ? trigger with { Url = _soundUrl }
             : trigger;
-        return Download(asked);
+        string? fetched = Download(asked);
+        if (fetched is null) _problem = MspProblem.CouldNotFetch;
+        return fetched;
     }
 
     /// <summary>Where this MUD has said its sounds live, if it has said.</summary>

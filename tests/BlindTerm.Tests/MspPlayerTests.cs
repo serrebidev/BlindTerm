@@ -93,12 +93,82 @@ public class MspPlayerTests
     }
 
     [Fact]
-    public void ASoundThisMachineDoesNotHaveIsQuietlySkipped()
+    public void ASoundThisMachineDoesNotHaveIsSkippedAndSaidSo()
     {
         var (player, output) = Build();
+        var problems = new List<MspProblem>();
+        player.Unplayable += problems.Add;
 
         Assert.False(player.Handle(Trigger("missing.wav")));
         Assert.Empty(output.Voices);
+        // Not silence: the MUD said it was playing a sound, and nothing happened.
+        Assert.Equal([MspProblem.NotHere], problems);
+    }
+
+    [Fact]
+    public void ASoundThatCannotBeFetchedSaysThatInstead()
+    {
+        var output = new FakeOutput();
+        var player = new MspPlayer(output, Library()) { Download = _ => null };
+        var problems = new List<MspProblem>();
+        player.Unplayable += problems.Add;
+
+        Assert.False(player.Handle(Trigger("missing.wav U=https://mud.example/s")));
+        Assert.Equal([MspProblem.CouldNotFetch], problems);
+    }
+
+    [Fact]
+    public void SomethingThatIsNotASoundIsRefusedRatherThanFetched()
+    {
+        var output = new FakeOutput();
+        bool asked = false;
+        var player = new MspPlayer(output, Library())
+        {
+            Download = _ => { asked = true; return null; },
+        };
+        var problems = new List<MspProblem>();
+        player.Unplayable += problems.Add;
+
+        Assert.False(player.Handle(Trigger("payload.exe U=https://mud.example/s")));
+        Assert.False(asked);
+        Assert.Equal([MspProblem.Refused], problems);
+    }
+
+    [Fact]
+    public void ASoundWindowsWillNotPlaySaysSoRatherThanNothing()
+    {
+        var (player, output) = Build(@"C:\sounds\sword.wav");
+        output.Broken = true;
+        var problems = new List<MspProblem>();
+        player.Unplayable += problems.Add;
+
+        Assert.False(player.Handle(Trigger("sword.wav")));
+        Assert.Equal([MspProblem.CannotPlay], problems);
+    }
+
+    [Fact]
+    public void NothingIsSaidWhenTheSoundPlays()
+    {
+        var (player, _) = Build(@"C:\sounds\sword.wav");
+        var problems = new List<MspProblem>();
+        player.Unplayable += problems.Add;
+
+        Assert.True(player.Handle(Trigger("sword.wav")));
+        Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void ASoundNamedInsideAFolderIsPlayed()
+    {
+        // Core MUD's test sound. Its name carries a folder, which used to be refused outright.
+        var (player, output) = Build(@"C:\sounds\mp3\msptest.mp3");
+        var problems = new List<MspProblem>();
+        player.Unplayable += problems.Add;
+
+        Assert.True(player.Handle(Trigger("mp3/msptest.mp3")));
+
+        Assert.Equal(@"C:\sounds\mp3\msptest.mp3", Assert.Single(output.Voices).Path);
+        Assert.Empty(problems);
     }
 
     [Fact]

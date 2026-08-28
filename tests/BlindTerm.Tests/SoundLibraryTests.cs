@@ -61,15 +61,54 @@ public class SoundLibraryTests
     [Theory]
     [InlineData(@"..\..\Startup\evil.exe")]
     [InlineData("../../etc/passwd")]
+    [InlineData("sounds/../../evil.wav")]
     [InlineData(@"C:\Windows\System32\calc.exe")]
+    [InlineData("C:/Windows/System32/calc.exe")]
     [InlineData(@"sub\nested.wav")]
-    [InlineData("sub/nested.wav")]
+    [InlineData("/etc/sound.wav")]
+    [InlineData("sub//nested.wav")]
+    [InlineData("a/b/c/d/e/f/g/h/i/deep.wav")]
+    [InlineData("mp3*/test.wav")]
     [InlineData("..")]
     public void AServerNamesASoundAndNeverAPath(string name)
     {
-        // A MUD sends the name of a sound. It does not get to say where on this disk to look.
+        // A MUD names a sound under its own folder. It does not get to leave that folder, name
+        // a drive, or point a wildcard at the folders themselves.
         Assert.False(SoundLibrary.IsSafeName(name));
         Assert.Null(Library(@"C:\sounds\sword.wav").Resolve(Trigger(name)));
+        Assert.Null(Library().DestinationFor(Trigger(name)));
+        Assert.Null(SoundLibrary.DownloadFor(Trigger($"{name} U=https://mud.example/s")));
+    }
+
+    [Fact]
+    public void AMudMayKeepItsSoundsInFolders()
+    {
+        // Core MUD's own test sound is named "mp3/msptest.mp3". Refusing that refuses the
+        // sound the MUD plays to prove sound is working.
+        Assert.True(SoundLibrary.IsSafeName("mp3/msptest.mp3"));
+
+        Assert.Equal(@"C:\sounds\mp3\msptest.mp3",
+                     Library(@"C:\sounds\mp3\msptest.mp3").Resolve(Trigger("mp3/msptest.mp3")));
+        Assert.Equal(@"C:\sounds\mp3\msptest.mp3",
+                     Library().DestinationFor(Trigger("mp3/msptest.mp3")));
+        Assert.Equal("https://coremud.org/sounds/mp3/msptest.mp3",
+                     SoundLibrary.DownloadFor(
+                         Trigger("mp3/msptest.mp3 U=https://coremud.org/sounds/"))?.AbsoluteUri);
+    }
+
+    [Fact]
+    public void AFolderInTheNameSitsUnderTheTypeFolder()
+        => Assert.Equal(@"C:\sounds\combat\swords\hit.wav",
+                        Library(@"C:\sounds\combat\swords\hit.wav")
+                            .Resolve(Trigger("swords/hit.wav T=combat")));
+
+    [Fact]
+    public void AWildcardMayNameTheFileInsideAFolder()
+    {
+        string? chosen = Library(@"C:\sounds\mp3\hit1.mp3", @"C:\sounds\mp3\hit2.mp3")
+            .Resolve(Trigger("mp3/hit*.mp3"));
+
+        Assert.Contains(chosen, new[] { @"C:\sounds\mp3\hit1.mp3", @"C:\sounds\mp3\hit2.mp3" });
     }
 
     [Theory]

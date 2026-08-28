@@ -8,7 +8,7 @@ public static class VersionInfo
     public static string Current
         => Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion.Split('+')[0]
-            ?? "0.2.6";
+            ?? "0.2.7";
 
     public static string Display => $"v{Current.TrimStart('v', 'V')}";
 }

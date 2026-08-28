@@ -42,6 +42,7 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem _speakOutputItem = new("Speak &output");
     private readonly ToolStripMenuItem _speakOffCursorItem = new("Speak &background changes");
     private readonly ToolStripMenuItem _mudSoundsItem = new("&MUD sounds");
+    private readonly ToolStripMenuItem _downloadSoundsItem = new("&Download sounds a MUD offers");
     private readonly ToolStripMenuItem _checkUpdatesItem = new("Check for &updates...");
     private readonly ToolStripMenuItem _defaultTerminalItem = new("Use BlindTerm as the &default terminal");
     private readonly System.Windows.Forms.Timer _reviewFocusSpeechTimer = new() { Interval = 120 };
@@ -267,6 +268,15 @@ public sealed class MainForm : Form
             "Whether a MUD may play sounds. Its sound triggers are kept out of the text either way.";
         _mudSoundsItem.Click += (_, _) => ToggleMudSounds();
         read.DropDownItems.Add(_mudSoundsItem);
+        // Beside the switch it is really part of. A MUD keeps its sounds on its own web
+        // server, so for anyone without a sound pack already unpacked, turning sounds on and
+        // leaving this off is turning on silence -- and the setting was buried in a dialog.
+        _downloadSoundsItem.Checked = _settings.DownloadSounds;
+        _downloadSoundsItem.AccessibleDescription =
+            "Whether a sound a MUD offers may be fetched when this machine does not have it. "
+            + "The address comes from the MUD.";
+        _downloadSoundsItem.Click += (_, _) => ToggleDownloadSounds();
+        read.DropDownItems.Add(_downloadSoundsItem);
 
         var go = new ToolStripMenuItem("&Go");
         go.DropDownItems.Add(Item("&Transcript", AppShortcuts.FocusTranscript, FocusTranscript));
@@ -774,11 +784,41 @@ public sealed class MainForm : Form
         _soundDownloads = _settings.DownloadSounds ? new SoundDownloader(library) : null;
         SoundDownloader? downloads = _soundDownloads;
 
-        return new MspPlayer(new MciSoundOutput(), library)
+        var player = new MspPlayer(new MciSoundOutput(), library)
         {
             MasterVolume = _settings.SoundVolume,
             Download = downloads is null ? null : downloads.Fetch,
         };
+        player.Unplayable += SaySoundProblem;
+        _soundProblemSaid = null;
+        return player;
+    }
+
+    /// <summary>The last thing said about sounds, so a busy MUD says it once and not per trigger.</summary>
+    private MspProblem? _soundProblemSaid;
+
+    /// <summary>
+    /// Says why a sound was not heard.
+    ///
+    /// Once per reason, and naming what to do about it. "Attempting test sound" followed by
+    /// nothing at all is the worst possible answer for someone who cannot see a settings
+    /// window they were never told to open.
+    /// </summary>
+    private void SaySoundProblem(MspProblem problem)
+    {
+        if (IsDisposed || Disposing || _soundProblemSaid == problem) return;
+        _soundProblemSaid = problem;
+        Say(problem switch
+        {
+            MspProblem.NotHere =>
+                "This MUD's sounds are not on this machine. Turn on Download sounds a MUD "
+                + "offers, in the Read menu, to fetch them.",
+            MspProblem.CouldNotFetch =>
+                "This MUD's sounds could not be downloaded.",
+            MspProblem.CannotPlay =>
+                "Windows would not play this MUD's sound.",
+            _ => "This MUD asked for something BlindTerm will not play as a sound.",
+        });
     }
 
     private void ToggleMudSounds()
@@ -802,6 +842,31 @@ public sealed class MainForm : Form
         { }
 
         Say(_settings.MudSounds ? "MUD sounds on" : "MUD sounds off");
+    }
+
+    /// <summary>
+    /// Allows or refuses fetching a sound this machine does not have.
+    ///
+    /// The player is rebuilt either way, because whether it may download at all is decided
+    /// when it is made: a session that has not asked for this has nothing in it that could
+    /// reach the network.
+    /// </summary>
+    private void ToggleDownloadSounds()
+    {
+        _settings.DownloadSounds = !_settings.DownloadSounds;
+        _downloadSoundsItem.Checked = _settings.DownloadSounds;
+
+        _soundTimer.Stop();
+        _sounds?.Dispose();
+        _sounds = null;
+        _soundDownloads?.Dispose();
+        _soundDownloads = null;
+
+        TrySaveSettings();
+
+        Say(_settings.DownloadSounds
+            ? "Downloading MUD sounds on"
+            : "Downloading MUD sounds off");
     }
 
     private void ToggleOffCursor()
@@ -885,6 +950,7 @@ public sealed class MainForm : Form
             _settings.SoundVolume = next.SoundVolume;
             _settings.DownloadSounds = next.DownloadSounds;
             _mudSoundsItem.Checked = _settings.MudSounds;
+            _downloadSoundsItem.Checked = _settings.DownloadSounds;
             // The player holds the old folder, volume and download choice, so it is built
             // again from the new ones rather than asked to change its mind.
             _soundTimer.Stop();

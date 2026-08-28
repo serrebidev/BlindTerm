@@ -14,6 +14,12 @@ namespace BlindTerm.Core.Sound;
 ///
 /// Every call is serialised. MCI keeps one table of open devices per process, and two threads
 /// opening aliases at the same moment is how that table gets confused.
+///
+/// Call this from a thread in a COM apartment. The device that plays MP3 and WMA is
+/// DirectShow underneath, and on a thread with no apartment it does not fail to play -- it
+/// fails to load, and MCI reports only "unknown problem while loading the specified device
+/// driver". BlindTerm's window thread is [STAThread], which is where every one of these calls
+/// comes from; anything else calling this has to arrange the same.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class MciSoundOutput : ISoundOutput

@@ -4,6 +4,19 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.2.7 - 2026-08-27
+
+- Play the sounds a MUD asks for when it keeps them in folders. A sound name may carry a
+  path relative to the sound folder, which BlindTerm refused outright -- so Core MUD's own
+  "setsound" test, which asks for "mp3/msptest.mp3", played nothing at all. Names still may
+  not leave the sound folder, name a drive, use a backslash, or point a wildcard at a folder.
+- Say why a sound was not heard instead of nothing at all: that it is not on this machine and
+  downloading is off, that it could not be downloaded, that Windows would not play it, or that
+  the MUD named something that is not a sound. Once per reason, not once per trigger.
+- Add "Download sounds a MUD offers" to the Read menu, beside "MUD sounds". A MUD keeps its
+  sound pack on its own web server, so for anyone without one already unpacked, turning sounds
+  on while this stayed off in a settings dialog was turning on silence.
+
 ## v0.2.6 - 2026-08-27
 
 - Keep the caret where you put it. Dialling a host, answering a password prompt and opening

@@ -64,20 +64,20 @@ public sealed class SoundLibrary
     public string? Resolve(MspTrigger trigger)
     {
         ArgumentNullException.ThrowIfNull(trigger);
-        if (!IsSafeName(trigger.FileName)) return null;
+        if (RelativePath(trigger.FileName) is not { } relative) return null;
 
         string folder = FolderFor(trigger.Type);
         if (folder.Length == 0) return null;
 
         if (trigger.FileName.Contains('*') || trigger.FileName.Contains('?'))
         {
-            string[] matches = [.. _matchingFiles(Path.Combine(folder, trigger.FileName))
+            string[] matches = [.. _matchingFiles(Path.Combine(folder, relative))
                 .Where(match => PlayableExtensions.Contains(Path.GetExtension(match)))
                 .OrderBy(match => match, StringComparer.OrdinalIgnoreCase)];
             return matches.Length == 0 ? null : matches[_random.Next(matches.Length)];
         }
 
-        string path = Path.Combine(folder, trigger.FileName);
+        string path = Path.Combine(folder, relative);
         return _exists(path) ? path : null;
     }
 
@@ -86,11 +86,11 @@ public sealed class SoundLibrary
     {
         ArgumentNullException.ThrowIfNull(trigger);
         // A wildcard names a choice among files already here, not a file to fetch.
-        if (!IsSafeName(trigger.FileName)) return null;
+        if (RelativePath(trigger.FileName) is not { } relative) return null;
         if (trigger.FileName.Contains('*') || trigger.FileName.Contains('?')) return null;
 
         string folder = FolderFor(trigger.Type);
-        return folder.Length == 0 ? null : Path.Combine(folder, trigger.FileName);
+        return folder.Length == 0 ? null : Path.Combine(folder, relative);
     }
 
     /// <summary>
@@ -116,13 +116,53 @@ public sealed class SoundLibrary
     }
 
     /// <summary>
-    /// Whether a name is one a server may use: a plain file name, with an extension this can
-    /// actually play, and nothing that would step outside the sound folder.
+    /// Whether a name is one a server may use: a sound file, named relative to the sound
+    /// folder, with an extension this can actually play, and nothing that would step outside
+    /// that folder.
+    ///
+    /// A MUD keeps its sounds in folders and names them that way -- Core MUD's own test sound
+    /// is "mp3/msptest.mp3" -- so a name is one or more parts joined by forward slashes.
+    /// Every part still has to be an ordinary name. "..", a drive letter, a backslash or an
+    /// empty part all describe a path rather than a name, and are refused where they always
+    /// were.
     /// </summary>
     public static bool IsSafeName(string? name)
+        => Parts(name) is { } parts && PlayableExtensions.Contains(Path.GetExtension(parts[^1]));
+
+    /// <summary>How many folders deep a server may name. Deeper than any sound pack needs.</summary>
+    private const int MaximumDepth = 8;
+
+    /// <summary>
+    /// The parts of a name a server may use, or null when it is not one.
+    ///
+    /// Wildcards are allowed only in the last part: a MUD asks for one of the sword sounds,
+    /// never for one of the folders, and matching folders would let a pattern walk the disk.
+    /// </summary>
+    private static string[]? Parts(string? name)
     {
-        if (!IsSafeSegment(name)) return false;
-        return PlayableExtensions.Contains(Path.GetExtension(name!));
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        // A backslash is a separator to Windows and an ordinary character to the protocol.
+        // Refusing it outright keeps the two readings from ever disagreeing about a name.
+        if (name.Contains('\\')) return null;
+
+        string[] parts = name.Split('/');
+        if (parts.Length > MaximumDepth) return null;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (!IsSafeSegment(parts[i])) return null;
+            if (i < parts.Length - 1 && (parts[i].Contains('*') || parts[i].Contains('?')))
+                return null;
+        }
+        return parts;
+    }
+
+    /// <summary>The name as a path under the sound folder, or null when it is not allowed.</summary>
+    private static string? RelativePath(string? name)
+    {
+        if (Parts(name) is not { } parts) return null;
+        return PlayableExtensions.Contains(Path.GetExtension(parts[^1]))
+            ? Path.Combine(parts)
+            : null;
     }
 
     /// <summary>Whether a name is a single ordinary path segment and nothing more.</summary>
