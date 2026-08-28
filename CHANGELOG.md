@@ -4,6 +4,13 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.1 - 2026-08-28
+
+- Stop Left, Right, Home and End from being forwarded to a remote shell at an empty command
+  line. A remote shell has no local model picker or effort selector to drive, and answering
+  those keys with a bell made BlindTerm announce the prompt as an "Attention" event on every
+  press. They are ordinary edit-box caret keys again, exactly as at a local shell prompt.
+
 ## v0.7.0 - 2026-08-28
 
 - Connect to an SSH host through Windows OpenSSH, so a remote shell that expects its own

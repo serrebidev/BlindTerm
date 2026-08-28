@@ -159,9 +159,14 @@ internal static class AppShortcuts
     /// moment there is something typed the box is an ordinary edit box again -- otherwise a
     /// typo in a long prompt could never be corrected, which is a far worse trade. Alt+P
     /// passes a single key either way.
+    ///
+    /// A remote session has no local model picker or effort selector to drive, so Left, Right,
+    /// Home and End stay as ordinary edit-box caret keys. On an empty remote prompt a shell
+    /// answers those with a bell, which BlindTerm would read out as "Attention" together with
+    /// the prompt. Up, Down, Escape and the page keys are still passed through.
     /// </summary>
     public static bool ShouldPassNavigationKey(Keys keyData, bool foregroundProgramActive,
-        bool terminalInputFocused, bool commandLineEmpty)
+        bool terminalInputFocused, bool commandLineEmpty, bool remoteSession = false)
     {
         if (!foregroundProgramActive || !terminalInputFocused || !commandLineEmpty) return false;
         if ((keyData & Keys.Alt) == Keys.Alt) return false;
@@ -169,8 +174,15 @@ internal static class AppShortcuts
         // twice.
         if ((keyData & Keys.Control) == Keys.Control) return false;
 
-        return (keyData & Keys.KeyCode) is Keys.Up or Keys.Down or Keys.Left or Keys.Right
-            or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown or Keys.Escape;
+        Keys key = keyData & Keys.KeyCode;
+        if (key is not (Keys.Up or Keys.Down or Keys.Left or Keys.Right
+            or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown or Keys.Escape))
+            return false;
+
+        if (remoteSession && key is Keys.Left or Keys.Right or Keys.Home or Keys.End)
+            return false;
+
+        return true;
     }
 
     /// <summary>

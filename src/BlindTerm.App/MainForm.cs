@@ -126,6 +126,13 @@ public sealed class MainForm : Form
 
     private bool ScreenMode => _screen is not null;
 
+    /// <summary>
+    /// Whether the far end is a host on the network rather than a shell or console Windows
+    /// handed over. A remote shell has no local process tree to detect a program in, so the
+    /// empty-command-line key rules that drive an agent CLI's pickers must not be assumed.
+    /// </summary>
+    private bool RemoteSession => _host.Kind is TerminalSessionKind.Remote or TerminalSessionKind.Ssh;
+
     public MainForm(TerminalHost host, AppSettings settings, SettingsStore settingsStore)
     {
         _host = host;
@@ -1899,7 +1906,7 @@ public sealed class MainForm : Form
         // through what has been typed in the second.
         if (AppShortcuts.ShouldPassControlChord(keyData, foregroundLineProgram, commandFocused)
             || AppShortcuts.ShouldPassNavigationKey(keyData, foregroundLineProgram, commandFocused,
-                                                    _command.TextLength == 0))
+                                                    _command.TextLength == 0, RemoteSession))
         {
             byte[]? control = KeyTranslator.Translate(keyData, _host.Engine.ApplicationCursorKeys);
             if (control is not null)

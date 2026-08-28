@@ -91,6 +91,38 @@ public class AppShortcutTests
     [InlineData(Keys.Left)]
     [InlineData(Keys.Right)]
     [InlineData(Keys.Home)]
+    [InlineData(Keys.End)]
+    public void CaretKeysAreNotForwardedToARemoteShellAtAnEmptyPrompt(Keys key)
+        => Assert.False(AppShortcuts.ShouldPassNavigationKey(
+            key, foregroundProgramActive: true, terminalInputFocused: true,
+            commandLineEmpty: true, remoteSession: true));
+
+    [Theory]
+    [InlineData(Keys.Up)]
+    [InlineData(Keys.Down)]
+    [InlineData(Keys.PageUp)]
+    [InlineData(Keys.PageDown)]
+    [InlineData(Keys.Escape)]
+    public void HistoryAndPagerKeysStillReachARemoteShell(Keys key)
+        => Assert.True(AppShortcuts.ShouldPassNavigationKey(
+            key, foregroundProgramActive: true, terminalInputFocused: true,
+            commandLineEmpty: true, remoteSession: true));
+
+    [Fact]
+    public void ALocalAgentCliStillOwnsLeftAndRightOnAnEmptyLine()
+    {
+        Assert.True(AppShortcuts.ShouldPassNavigationKey(
+            Keys.Left, foregroundProgramActive: true, terminalInputFocused: true,
+            commandLineEmpty: true));
+        Assert.True(AppShortcuts.ShouldPassNavigationKey(
+            Keys.Right, foregroundProgramActive: true, terminalInputFocused: true,
+            commandLineEmpty: true));
+    }
+
+    [Theory]
+    [InlineData(Keys.Left)]
+    [InlineData(Keys.Right)]
+    [InlineData(Keys.Home)]
     [InlineData(Keys.Up)]
     public void TypedTextCanStillBeEdited(Keys key)
         => Assert.False(AppShortcuts.ShouldPassNavigationKey(

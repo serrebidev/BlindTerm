@@ -112,7 +112,7 @@ public class MainFormMenuTests
     private static ToolStripMenuItem Top(MenuStrip menu, string name)
         => menu.Items.Cast<ToolStripMenuItem>().Single(item => Plain(item.Text) == name);
 
-    private static string Plain(string text) => text.Replace("&", string.Empty);
+    private static string Plain(string? text) => (text ?? string.Empty).Replace("&", string.Empty);
 
     private static void InvokeProcessCmdKey(MainForm form, Keys key)
     {
