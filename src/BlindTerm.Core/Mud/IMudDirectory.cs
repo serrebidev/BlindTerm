@@ -31,9 +31,21 @@ public interface IMudDirectory : IDisposable
 /// </summary>
 public sealed class MudDirectoryException : Exception
 {
-    public MudDirectoryException(string message, bool isAuthentication = false, Exception? inner = null)
-        : base(message, inner) => IsAuthentication = isAuthentication;
+    public MudDirectoryException(string message, bool isAuthentication = false,
+        bool worthRetrying = false, Exception? inner = null)
+        : base(message, inner)
+    {
+        IsAuthentication = isAuthentication;
+        IsWorthRetrying = worthRetrying;
+    }
 
     /// <summary>Whether the fix is a key rather than a retry, so the window can offer the key.</summary>
     public bool IsAuthentication { get; }
+
+    /// <summary>
+    /// Whether this is the sort of failure that goes away on its own -- a timeout, a dropped
+    /// connection, a server having a moment -- rather than one that will fail identically
+    /// however many times it is asked. A rejected key is not worth asking twice.
+    /// </summary>
+    public bool IsWorthRetrying { get; }
 }

@@ -210,6 +210,72 @@ public class MudDirectoryTests
         Assert.False(bare.CanConnect);
     }
 
+    [Fact]
+    public async Task AFailureThatMightPassIsTriedAgain()
+    {
+        // A server having a moment, which is worth exactly one more ask.
+        var handler = new Flaky(HttpStatusCode.ServiceUnavailable, failures: 1, OneGame);
+        using var directory = new MudVerseDirectory("key", http: new HttpClient(handler));
+
+        var retries = new List<string>();
+        directory.Retrying += trouble => retries.Add(trouble);
+
+        MudDirectoryPage page = await directory.SearchAsync(new MudDirectoryQuery
+        {
+            Sort = MudDirectorySort.Newest,
+        });
+
+        Assert.Equal("Example MUD", Assert.Single(page.Games).Name);
+        Assert.Equal(2, handler.Calls);
+        // Said out loud, so a run that is limping says so while it is happening.
+        Assert.Single(retries);
+    }
+
+    [Fact]
+    public async Task ASecondFailureIsNotChasedForever()
+    {
+        // A request that timed out because MUDVerse cannot serve that offset will time out
+        // again in exactly the same way. Two attempts, then the caller is told.
+        var handler = new Flaky(HttpStatusCode.ServiceUnavailable, failures: 99, OneGame);
+        using var directory = new MudVerseDirectory("key", http: new HttpClient(handler));
+
+        await Assert.ThrowsAsync<MudDirectoryException>(
+            () => directory.SearchAsync(new MudDirectoryQuery { Sort = MudDirectorySort.Newest }));
+
+        Assert.Equal(2, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ARejectedKeyIsNotAskedTwice()
+    {
+        var handler = new Flaky(HttpStatusCode.Unauthorized, failures: 5, OneGame);
+        using var directory = new MudVerseDirectory("wrong", http: new HttpClient(handler));
+
+        await Assert.ThrowsAsync<MudDirectoryException>(
+            () => directory.SearchAsync(new MudDirectoryQuery { Sort = MudDirectorySort.Newest }));
+
+        // Retrying a key MUDVerse has already refused just spends the rate limit on the
+        // same answer.
+        Assert.Equal(1, handler.Calls);
+    }
+
+    /// <summary>Fails the first few times with one status, then answers properly.</summary>
+    private sealed class Flaky(HttpStatusCode status, int failures, string json) : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            bool failing = Calls <= failures;
+            return Task.FromResult(new HttpResponseMessage(failing ? status : HttpStatusCode.OK)
+            {
+                Content = new StringContent(failing ? "{}" : json, Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
     private static MudVerseDirectory Reading(string json)
         => new("key", http: new HttpClient(new Stub(json)));
 

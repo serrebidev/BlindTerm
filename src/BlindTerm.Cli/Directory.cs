@@ -20,10 +20,13 @@ internal static class Directory
     public const string KeyVariable = "MUDVERSE_API_KEY";
 
     /// <summary>
-    /// A bound on the paging, so a directory that grows or a server that keeps saying "next"
-    /// cannot turn a scheduled job into an unbounded one. Fifty a page.
+    /// How far into any one ordering this will go before giving up on it.
+    ///
+    /// Three pages of twenty, so the deepest offset asked of MUDVerse is sixty. Past roughly
+    /// there its answers stop arriving at all -- see <see cref="Harvest"/>, where the reason
+    /// this number is small is written down.
     /// </summary>
-    private const int MaximumPages = 120;
+    private const int ShallowPages = 3;
 
     /// <summary>
     /// How many MUDStats worlds get their address looked up in one run.
@@ -144,6 +147,9 @@ internal static class Directory
         string? previous, bool skipStats, bool quiet)
     {
         using var mudverse = new MudVerseDirectory(key, endpoint);
+        // Always reported, even under --quiet: a run that is retrying is a run in trouble, and
+        // the log should say so while it is happening rather than only if it finally fails.
+        mudverse.Retrying += trouble => Console.Error.WriteLine("directory: " + trouble);
 
         MudDirectoryFilters filters = await mudverse.FiltersAsync();
         var feed = new MudFeed
@@ -154,27 +160,7 @@ internal static class Directory
             Roleplaying = [.. filters.Roleplaying],
         };
 
-        var described = new Dictionary<string, MudGame>(StringComparer.Ordinal);
-        for (int page = 1; page <= MaximumPages; page++)
-        {
-            MudDirectoryPage batch = await mudverse.SearchAsync(new MudDirectoryQuery
-            {
-                // Newest, not "recently updated": the browser's recently-updated view asks
-                // MUDVerse for the last thirty days only, and this is taking everything.
-                Sort = MudDirectorySort.Newest,
-                Page = page,
-                PerPage = 50,
-            });
-
-            foreach (MudGame game in batch.Games) described[game.SourceId] = game;
-            if (!quiet)
-                Console.Error.WriteLine($"directory: MUDVerse page {page}, {described.Count} games so far");
-            if (!batch.HasMore || batch.Games.Count == 0) break;
-
-            await Task.Delay(BetweenRequests);
-        }
-
-        List<MudGame> games = [.. described.Values];
+        List<MudGame> games = [.. (await Harvest(mudverse, quiet)).Values];
         if (!skipStats)
         {
             try
@@ -193,6 +179,72 @@ internal static class Directory
         feed.Games = [.. games.OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase)];
         feed.Sources = [.. feed.Games.Select(game => game.Source).Distinct().OrderBy(name => name)];
         return feed;
+    }
+
+    /// <summary>
+    /// Everything MUDVerse will actually serve, gathered without ever paging deep.
+    ///
+    /// MUDVerse cannot be enumerated by walking its pages. Its cost grows with the offset,
+    /// not the page size: measured against the live API, page 1 came back in about two
+    /// seconds, page 3 in seven, and every page past that timed out and kept timing out. So
+    /// walking to the end of two hundred listings is not slow, it is impossible.
+    ///
+    /// What works is asking the same question several different ways and never going far into
+    /// any of the answers. A game near the top of "most reviewed" is somewhere else entirely
+    /// in "recently online", so the union of a few shallow pages across several orderings
+    /// covers most of the directory while every single request stays in the fast range. What
+    /// it misses is the long tail -- games nobody voted for, reviewed or updated recently --
+    /// and MUDStats has those, with their statistics.
+    /// </summary>
+    private static async Task<Dictionary<string, MudGame>> Harvest(MudVerseDirectory mudverse, bool quiet)
+    {
+        // Deliberately different questions, so their shallow pages overlap as little as
+        // possible. Twenty to a page keeps the deepest offset at sixty.
+        MudDirectorySort[] askedFor =
+        [
+            MudDirectorySort.TopVoted,
+            MudDirectorySort.RecentlyOnline,
+            MudDirectorySort.MostReviewed,
+            MudDirectorySort.Newest,
+            MudDirectorySort.RecentlyUpdated,
+        ];
+
+        var described = new Dictionary<string, MudGame>(StringComparer.Ordinal);
+        int total = 0;
+        foreach (MudDirectorySort sort in askedFor)
+        {
+            for (int page = 1; page <= ShallowPages; page++)
+            {
+                MudDirectoryPage batch;
+                try
+                {
+                    batch = await mudverse.SearchAsync(new MudDirectoryQuery
+                    {
+                        Sort = sort,
+                        Page = page,
+                        PerPage = 20,
+                    });
+                }
+                catch (MudDirectoryException ex)
+                {
+                    // The expected way for this to end, not an error. This ordering has gone
+                    // as deep as MUDVerse will serve it; the next ordering starts from the top
+                    // again, where it is fast.
+                    if (!quiet) Console.Error.WriteLine($"directory: MUDVerse {sort} stopped at page {page}: {ex.Message}");
+                    break;
+                }
+
+                foreach (MudGame game in batch.Games) described[game.SourceId] = game;
+                total = Math.Max(total, batch.Total);
+                if (!batch.HasMore || batch.Games.Count == 0) break;
+                await Task.Delay(BetweenRequests);
+            }
+            if (!quiet) Console.Error.WriteLine($"directory: MUDVerse after {sort}: {described.Count} games");
+        }
+
+        if (total > 0)
+            Console.Error.WriteLine($"directory: MUDVerse gave {described.Count} of the {total} it says it has");
+        return described;
     }
 
     private static async Task<List<MudGame>> AddStatistics(List<MudGame> games, MudFeed feed,

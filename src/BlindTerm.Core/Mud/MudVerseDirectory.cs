@@ -49,7 +49,12 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
     public MudVerseDirectory(string? apiKey = null, string? endpoint = null, HttpClient? http = null)
     {
         _endpoint = (string.IsNullOrWhiteSpace(endpoint) ? MudVerseEndpoint : endpoint).TrimEnd('/');
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        // Short on purpose, and this was measured rather than guessed. MUDVerse answers a
+        // first page in about two seconds and gets slower the deeper the offset goes: at
+        // twenty to a page, page 3 took seven seconds and everything past it never came back
+        // at all. Waiting a minute on a request like that buys nothing -- it was never going
+        // to arrive -- so the caller is better off being told quickly and moving on.
+        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
         _ownsClient = http is null;
         _http.DefaultRequestHeaders.UserAgent.Clear();
         _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BlindTerm", VersionInfo.Current));
@@ -300,7 +305,41 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
         };
     }
 
+    /// <summary>
+    /// How many times a request that failed for a reason that might pass is tried again.
+    ///
+    /// Two, not more. A dropped connection or a server having a moment is worth one more ask;
+    /// a request that timed out because the offset is too deep for MUDVerse to serve will
+    /// time out again in exactly the same way, and a third attempt only spends another
+    /// twenty-five seconds of a scheduled run proving it. A rejected key is not retried at all.
+    /// </summary>
+    private const int Attempts = 2;
+
+    /// <summary>Raised when a request is being tried again, so a slow run says so rather than just being slow.</summary>
+    public event Action<string>? Retrying;
+
     private async Task<JsonDocument> GetAsync(string path, CancellationToken cancellationToken)
+    {
+        MudDirectoryException? last = null;
+        for (int attempt = 1; attempt <= Attempts; attempt++)
+        {
+            try
+            {
+                return await SendAsync(path, cancellationToken).ConfigureAwait(false);
+            }
+            catch (MudDirectoryException ex) when (ex.IsWorthRetrying && attempt < Attempts)
+            {
+                last = ex;
+                Retrying?.Invoke($"{path}: {ex.Message} Trying again ({attempt} of {Attempts}).");
+                // Backing off rather than hammering: whatever was wrong is given time to stop
+                // being wrong, and MUDVerse is not asked the same question three times in a row.
+                await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        throw last ?? new MudDirectoryException("MUDVerse could not be reached.");
+    }
+
+    private async Task<JsonDocument> SendAsync(string path, CancellationToken cancellationToken)
     {
         HttpResponseMessage response;
         try
@@ -310,11 +349,13 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
         }
         catch (HttpRequestException ex)
         {
-            throw new MudDirectoryException("BlindTerm could not reach MUDVerse. " + ex.Message, inner: ex);
+            throw new MudDirectoryException("BlindTerm could not reach MUDVerse. " + ex.Message,
+                worthRetrying: true, inner: ex);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new MudDirectoryException("MUDVerse did not answer in time.", inner: ex);
+            throw new MudDirectoryException($"MUDVerse did not answer {path} within {_http.Timeout.TotalSeconds:0} seconds.",
+                worthRetrying: true, inner: ex);
         }
 
         using (response)
@@ -331,6 +372,12 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
             {
                 throw new MudDirectoryException("MUDVerse sent something BlindTerm could not read.", inner: ex);
             }
+            catch (Exception ex) when (ex is HttpRequestException or IOException)
+            {
+                // The headers arrived and the body did not. Worth another go.
+                throw new MudDirectoryException("MUDVerse stopped part way through answering " + path + ".",
+                    worthRetrying: true, inner: ex);
+            }
         }
     }
 
@@ -340,9 +387,11 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
             "MUDVerse did not accept the API key. Choose MUDVerse key to enter another, or "
             + "generate a new one at " + ApiKeyPage + ".", isAuthentication: true),
         HttpStatusCode.TooManyRequests => new MudDirectoryException(
-            "MUDVerse is rate limiting this key. " + RetryIn(response)),
+            "MUDVerse is rate limiting this key. " + RetryIn(response), worthRetrying: true),
         HttpStatusCode.NotFound => new MudDirectoryException("MUDVerse has no such listing any more."),
-        _ => new MudDirectoryException($"MUDVerse answered {(int)response.StatusCode} {response.ReasonPhrase}."),
+        // A server having a moment is worth asking again; anything it means on purpose is not.
+        _ => new MudDirectoryException($"MUDVerse answered {(int)response.StatusCode} {response.ReasonPhrase}.",
+            worthRetrying: (int)response.StatusCode >= 500),
     };
 
     private static string RetryIn(HttpResponseMessage response)
