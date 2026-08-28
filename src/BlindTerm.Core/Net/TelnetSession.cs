@@ -1,5 +1,9 @@
 using System.Collections.Concurrent;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace BlindTerm.Core.Net;
@@ -30,7 +34,9 @@ public sealed class TelnetSession : ITerminalSession
     private readonly object _sizeLock = new();
 
     private TcpClient? _client;
-    private NetworkStream? _stream;
+    // Not a NetworkStream: with TLS the socket is wrapped, and everything below this line
+    // reads and writes the wrapper the same way it read and wrote the socket.
+    private Stream? _stream;
     private TelnetAccessibilityFilter? _accessibility;
     private Thread? _readThread;
     private Thread? _writeThread;
@@ -71,6 +77,20 @@ public sealed class TelnetSession : ITerminalSession
 
     public string Host { get; private set; } = string.Empty;
     public int Port { get; private set; }
+
+    /// <summary>Whether this connection is encrypted.</summary>
+    public bool IsSecure { get; private set; }
+
+    /// <summary>
+    /// What was negotiated, as something that can be said out loud: "TLS 1.3". Empty on a
+    /// plain connection.
+    ///
+    /// Worth saying once, when the connection opens. A MUD login sends a password down this,
+    /// and "encrypted" is not something anybody should have to take on trust from a checkbox
+    /// they ticked in a dialog they have since closed.
+    /// </summary>
+    public string Security { get; private set; } = string.Empty;
+
     public int Columns { get; private set; }
     public int Rows { get; private set; }
 
@@ -83,11 +103,26 @@ public sealed class TelnetSession : ITerminalSession
     /// a window has time to subscribe before a login banner that arrives in the first
     /// millisecond is delivered to nobody.
     /// </summary>
-    public async Task ConnectAsync(string host, int port, int columns, int rows,
+    public Task ConnectAsync(string host, int port, int columns, int rows,
+        CancellationToken cancellationToken = default)
+        => ConnectAsync(new TelnetTarget(host, port), columns, rows, cancellationToken);
+
+    /// <summary>
+    /// Opens the connection, encrypting it when the target asks for that.
+    ///
+    /// It is the same TLS a browser speaks, laid under telnet instead of under HTTP: the
+    /// socket is wrapped before a single byte of the protocol crosses it, so the option
+    /// negotiation, the login name and the password are all inside it. MUDs publish this as a
+    /// second port beside the plain one -- Core MUD's is 4022 -- and from the outside the two
+    /// are indistinguishable, which is why <see cref="TelnetTarget"/> carries the answer
+    /// rather than anything here trying to guess it from a port number.
+    /// </summary>
+    public async Task ConnectAsync(TelnetTarget target, int columns, int rows,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(host);
-        if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(target.Host);
+        if (target.Port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(target));
         if (_client is not null) throw new InvalidOperationException("Session is already connected.");
 
         TerminalSize size = TerminalSize.Validate(columns, rows);
@@ -95,9 +130,13 @@ public sealed class TelnetSession : ITerminalSession
         Rows = size.Rows;
 
         var client = new TcpClient { NoDelay = true };
+        Stream stream;
         try
         {
-            await client.ConnectAsync(host, port, cancellationToken).ConfigureAwait(false);
+            await client.ConnectAsync(target.Host, target.Port, cancellationToken).ConfigureAwait(false);
+            stream = target.UseTls
+                ? await SecureAsync(client, target, cancellationToken).ConfigureAwait(false)
+                : client.GetStream();
         }
         catch
         {
@@ -106,12 +145,75 @@ public sealed class TelnetSession : ITerminalSession
         }
 
         _client = client;
-        _stream = client.GetStream();
-        Host = host;
-        Port = port;
-        var accessibility = new TelnetAccessibilityFilter(host, port);
+        _stream = stream;
+        Host = target.Host;
+        Port = target.Port;
+        var accessibility = new TelnetAccessibilityFilter(target.Host, target.Port);
         _accessibility = accessibility.IsActive ? accessibility : null;
     }
+
+    private async Task<Stream> SecureAsync(TcpClient client, TelnetTarget target,
+        CancellationToken cancellationToken)
+    {
+        SslPolicyErrors refused = SslPolicyErrors.None;
+        X509Certificate2? offered = null;
+        var ssl = new SslStream(client.GetStream(), leaveInnerStreamOpen: false,
+            (_, certificate, _, errors) =>
+            {
+                if (errors == SslPolicyErrors.None) return true;
+                // Kept rather than thrown from inside the callback: what comes out of a
+                // handshake that threw in here is a general "authentication failed", with the
+                // actual reason nested where nothing can read it back out and say it.
+                refused = errors;
+                // Copied, not kept. The certificate handed in here belongs to the SslStream
+                // and is invalid the moment that is disposed -- which is the very next thing
+                // that happens on a failed handshake, before anything has read a word of it.
+                if (certificate is not null)
+                {
+                    try { offered = X509CertificateLoader.LoadCertificate(certificate.GetRawCertData()); }
+                    catch (CryptographicException) { }
+                }
+                return target.AllowUntrustedCertificate;
+            });
+
+        try
+        {
+            await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+            {
+                // The name the certificate is checked against, and the name sent in SNI so a
+                // host serving several MUDs answers with the right certificate.
+                TargetHost = target.Host,
+                // Left to the operating system, so this follows Windows' current idea of what
+                // is still acceptable rather than freezing one answer into BlindTerm.
+                EnabledSslProtocols = SslProtocols.None,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AuthenticationException ex) when (refused != SslPolicyErrors.None)
+        {
+            await ssl.DisposeAsync().ConfigureAwait(false);
+            throw new TelnetCertificateException(target, refused, offered, ex);
+        }
+        catch
+        {
+            await ssl.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        IsSecure = true;
+        Security = Describe(ssl.SslProtocol);
+        return ssl;
+    }
+
+    private static string Describe(SslProtocols protocol) => protocol switch
+    {
+        SslProtocols.Tls13 => "TLS 1.3",
+        SslProtocols.Tls12 => "TLS 1.2",
+#pragma warning disable SYSLIB0039 // Obsolete to offer, still worth naming when a MUD used one.
+        SslProtocols.Tls11 => "TLS 1.1",
+        SslProtocols.Tls => "TLS 1.0",
+#pragma warning restore SYSLIB0039
+        _ => "TLS",
+    };
 
     /// <summary>
     /// Starts reading. Nothing is written: the far end speaks first, and a client that

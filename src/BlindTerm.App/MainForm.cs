@@ -1318,13 +1318,27 @@ public sealed class MainForm : Form
     /// The user asked for a telnet connection. The window cannot open another window, so the
     /// application does it, and a failure to connect is reported before an empty one appears.
     /// </summary>
-    public event Action<string, int>? TelnetRequested;
+    public event Action<TelnetTarget>? TelnetRequested;
 
     private void ConnectToHost()
     {
-        using var dialog = new TelnetConnectForm(_settings.RecentTelnetHosts);
+        using var dialog = new TelnetConnectForm(_settings, SaveDirectorySettings);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        TelnetRequested?.Invoke(dialog.Host, dialog.Port);
+        TelnetRequested?.Invoke(dialog.Target);
+    }
+
+    /// <summary>
+    /// Keeps a MUDVerse key or endpoint entered while browsing, so it is asked for once and
+    /// not once per session.
+    ///
+    /// The browser is inside a modal dialog and has no settings store of its own; this is the
+    /// window handing it the one it already has.
+    /// </summary>
+    private void SaveDirectorySettings(string key, string endpoint)
+    {
+        _settings.MudDirectoryKey = key;
+        _settings.MudDirectoryEndpoint = endpoint;
+        TrySaveSettings();
     }
 
     private void PreviousCommand() => MoveCommand(-1);
@@ -1501,12 +1515,12 @@ public sealed class MainForm : Form
     {
         if (!_host.CanConnectOver) return false;
         if (_foregroundProgram.Active) return false;
-        if (TelnetCommand.Parse(text) is not var (host, port)) return false;
+        if (TelnetCommand.Parse(text) is not TelnetTarget target) return false;
 
         // The command itself is written back the way a shell would echo it, and suppressed
         // for speech the same way, having just been read out as it was typed.
         _news.SuppressCommandEcho(text);
-        _ = ConnectOver(text, host, port);
+        _ = ConnectOver(text, target);
         return true;
     }
 
@@ -1518,10 +1532,12 @@ public sealed class MainForm : Form
     /// the answer to "what happened to my command" is there to read afterwards rather than
     /// having been spoken once and lost.
     /// </summary>
-    private async Task ConnectOver(string typed, string host, int port)
+    private async Task ConnectOver(string typed, TelnetTarget target)
     {
-        string address = TelnetAddress.Format(host, port);
-        _host.AppendExternal([typed, $"Connecting to {address}..."]);
+        string address = target.Address;
+        _host.AppendExternal([typed, target.UseTls
+            ? $"Connecting to {target.Host} port {target.Port}, encrypted..."
+            : $"Connecting to {address}..."]);
         // Nothing here touches focus or the enabled state of the command box. Disabling the
         // focused control hands focus to the next one, which Windows announces, and taking it
         // back afterwards announces that too -- so dialling a host read as a trip through the
@@ -1532,15 +1548,32 @@ public sealed class MainForm : Form
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(ConnectTimeoutSeconds));
-            await _host.ConnectOverAsync(host, port, timeout.Token);
+            await _host.ConnectOverAsync(target, timeout.Token);
+        }
+        catch (TelnetCertificateException certificate)
+        {
+            if (IsDisposed || Disposing) return;
+            _connecting = false;
+            // The transcript keeps the whole objection, because a certificate is exactly the
+            // sort of thing somebody wants to read back through afterwards rather than take
+            // from a dialog they have already dismissed.
+            _host.AppendExternal([.. certificate.Message.Split(Environment.NewLine)]);
+            if (!TerminalWindows.AcceptCertificate(this, certificate))
+            {
+                _host.AppendExternal([$"Did not connect to {address}."]);
+                return;
+            }
+            await ConnectOver(typed, certificate.Anyway);
+            return;
         }
         catch (Exception ex) when (ex is SocketException or OperationCanceledException
                                    or IOException or ArgumentException or InvalidOperationException
-                                   or ObjectDisposedException)
+                                   or ObjectDisposedException
+                                   or System.Security.Authentication.AuthenticationException)
         {
             if (IsDisposed || Disposing) return;
             string reason = ex is OperationCanceledException
-                ? $"{host} did not answer within {ConnectTimeoutSeconds} seconds."
+                ? $"{target.Host} did not answer within {ConnectTimeoutSeconds} seconds."
                 : ex.Message;
             // The shell is untouched and still at its prompt, so there is nothing to restore.
             _host.AppendExternal([$"Could not connect to {address}. {reason}"]);
@@ -1552,6 +1585,12 @@ public sealed class MainForm : Form
         }
 
         if (IsDisposed || Disposing) return;
+
+        // Said once, into the transcript, at the only moment it is knowable: which encryption
+        // was actually negotiated, rather than which was asked for. A checkbox ticked in a
+        // dialog is not evidence, and there is nowhere else in a terminal to look this up.
+        string security = _host.Security;
+        if (security.Length > 0) _host.AppendExternal([$"Connected to {target.Host} over {security}."]);
 
         _settings.RememberTelnetHost(address);
         TrySaveSettings();

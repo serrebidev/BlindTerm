@@ -55,9 +55,9 @@ internal static class Program
         DefaultTerminalServer.Start(SynchronizationContext.Current!,
             handoff => windows.OpenHandoff(handoff, settings, settingsStore));
 
-        if (!embedding && TelnetArgument(args) is (string host, int port))
+        if (!embedding && TelnetArgument(args) is TelnetTarget target)
         {
-            windows.OpenTelnet(host, port, settings, settingsStore);
+            windows.OpenTelnet(target, settings, settingsStore);
         }
         else if (!embedding)
         {
@@ -75,25 +75,30 @@ internal static class Program
     }
 
     /// <summary>
-    /// The host and port in "--telnet host[:port]" or "--telnet host port", or null when this
-    /// is an ordinary launch. Both spellings are accepted because both are what anyone types.
+    /// The host in "--telnet host[:port]" or "--telnet host port", or null when this is an
+    /// ordinary launch. Both spellings are accepted because both are what anyone types, and
+    /// so is "--telnet ssl://host 4022" for a MUD's encrypted port.
     /// </summary>
-    internal static (string Host, int Port)? TelnetArgument(string[] args)
+    internal static TelnetTarget? TelnetArgument(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
         int at = Array.FindIndex(args, argument =>
             argument.Equals("--telnet", StringComparison.OrdinalIgnoreCase));
         if (at < 0 || at + 1 >= args.Length) return null;
 
-        if (!TelnetAddress.TryParse(args[at + 1], out string host, out int port)) return null;
+        string written = args[at + 1];
+        if (!TelnetAddress.TryParse(written, out string host, out int port, out bool secure)) return null;
 
         // A port given as its own argument wins: "--telnet host 4000" is unambiguous, and a
-        // host that already carried one would not have left the default in place.
+        // host that already carried one would not have left the default in place. A scheme is
+        // not a port, so it is looked past before deciding whether one was written.
+        int scheme = written.IndexOf("://", StringComparison.Ordinal);
+        bool carriedPort = written[(scheme < 0 ? 0 : scheme + 3)..].Contains(':');
         if (at + 2 < args.Length && int.TryParse(args[at + 2], out int separate)
-            && separate is >= 1 and <= 65535 && !args[at + 1].Contains(':'))
+            && separate is >= 1 and <= 65535 && !carriedPort)
             port = separate;
 
-        return (host, port);
+        return new TelnetTarget(host, port, secure);
     }
 
     /// <summary>
@@ -190,23 +195,39 @@ internal sealed class TerminalWindows : ApplicationContext
     /// delivered before there is a window subscribed to receive it, which is why reading only
     /// starts once the window is up.
     /// </summary>
-    public async void OpenTelnet(string host, int port, AppSettings settings, SettingsStore store)
+    public async void OpenTelnet(TelnetTarget target, AppSettings settings, SettingsStore store)
     {
+        ArgumentNullException.ThrowIfNull(target);
         var terminal = new TerminalHost(settings.Columns, settings.Rows, SynchronizationContext.Current!);
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(ConnectTimeoutSeconds));
-            await terminal.ConnectAsync(host, port, timeout.Token);
+            await terminal.ConnectAsync(target, timeout.Token);
+        }
+        catch (TelnetCertificateException certificate)
+        {
+            terminal.Dispose();
+            // Asked rather than refused outright: a MUD on a certificate it signed itself is
+            // ordinary, and the person dialling it is the one who can tell whether that is
+            // expected here.
+            if (!AcceptCertificate(null, certificate))
+            {
+                if (!_everOpened) ExitThread();
+                return;
+            }
+            OpenTelnet(certificate.Anyway, settings, store);
+            return;
         }
         catch (Exception ex) when (ex is SocketException or OperationCanceledException
-                                   or IOException or ArgumentException)
+                                   or IOException or ArgumentException
+                                   or System.Security.Authentication.AuthenticationException)
         {
             terminal.Dispose();
             string reason = ex is OperationCanceledException
-                ? $"{host} did not answer within {ConnectTimeoutSeconds} seconds."
+                ? $"{target.Host} did not answer within {ConnectTimeoutSeconds} seconds."
                 : ex.Message;
             MessageBox.Show(
-                $"Could not connect to {TelnetAddress.Format(host, port)}."
+                $"Could not connect to {target.Address}."
                 + Environment.NewLine + Environment.NewLine + reason,
                 "BlindTerm could not connect", MessageBoxButtons.OK, MessageBoxIcon.Error);
             // Nothing opened, and nothing else is going to: a launch that was only ever this
@@ -215,16 +236,43 @@ internal sealed class TerminalWindows : ApplicationContext
             return;
         }
 
-        settings.RememberTelnetHost(TelnetAddress.Format(host, port));
+        settings.RememberTelnetHost(target.Address);
         TrySave(settings, store);
 
         var form = new MainForm(terminal, settings, store)
         {
-            Text = $"{TelnetAddress.Format(host, port)} — BlindTerm",
+            Text = $"{target.Address} — BlindTerm",
         };
+        // Written before reading starts, so it is the first line of the transcript rather than
+        // something that landed in the middle of the login banner. It says which encryption was
+        // actually negotiated, which is the only claim about it worth anything.
+        string security = terminal.Security;
+        if (security.Length > 0)
+            form.Shown += (_, _) => terminal.AppendExternal([$"Connected to {target.Host} over {security}."]);
         form.Shown += (_, _) => terminal.Begin();
         Track(form, settings, store);
         form.Show();
+    }
+
+    /// <summary>
+    /// Puts what is wrong with a certificate in front of somebody and asks whether to go on.
+    ///
+    /// No by default, and the whole of the objection is in the box rather than behind a
+    /// "details" button, because a dialog that has to be explored before it can be answered
+    /// is a dialog that gets answered without being read.
+    /// </summary>
+    internal static bool AcceptCertificate(IWin32Window? owner, TelnetCertificateException problem)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        string question = problem.Message + Environment.NewLine + Environment.NewLine
+            + "Connect anyway? What you type is still encrypted, but BlindTerm cannot tell you "
+            + "that the host at the other end is the one you meant.";
+        DialogResult answer = owner is null
+            ? MessageBox.Show(question, "Certificate could not be verified",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
+            : MessageBox.Show(owner, question, "Certificate could not be verified",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        return answer == DialogResult.Yes;
     }
 
     /// <summary>A remembered address is a convenience; failing to write one is not an error.</summary>
@@ -266,7 +314,7 @@ internal sealed class TerminalWindows : ApplicationContext
         _everOpened = true;
         _open++;
         // A window cannot open another window, so the connection request comes back here.
-        form.TelnetRequested += (host, port) => OpenTelnet(host, port, settings, store);
+        form.TelnetRequested += target => OpenTelnet(target, settings, store);
         form.FormClosed += (_, _) =>
         {
             if (--_open <= 0) ExitThread();

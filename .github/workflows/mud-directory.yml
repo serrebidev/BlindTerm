@@ -1,0 +1,92 @@
+name: MUD directory
+
+# Rebuilds the list of MUDs that BlindTerm downloads when someone opens Browse for MUDs.
+#
+# This job is the reason nobody using BlindTerm needs an API key. MUDVerse issues keys for
+# servers and asks that they are not published; BlindTerm is published. So the key lives here,
+# as a repository secret, and what gets published is the answer rather than the key.
+#
+# It also reads MUDStats, which needs no key and has the thirty-day player averages that
+# nothing else publishes, and merges the two. That half is a scrape of an undocumented
+# endpoint, so it is allowed to fail: the list still publishes without the activity figures.
+#
+# One-time setup: add a secret named MUDVERSE_API_KEY, from the API tab of a MUDVerse account
+# (https://www.mudverse.com/api). Nothing else. The job then runs on its own.
+
+on:
+  schedule:
+    # Twice an hour, off the hour, so this is not queued behind everybody else's :00 jobs.
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # Two of these pushing the same branch would race. Later wins; nothing is lost, because
+  # each run rebuilds the whole list from scratch.
+  group: mud-directory
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # BlindTerm.Cli targets net9.0-windows, so this cannot run on Linux.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Build the list
+        env:
+          MUDVERSE_API_KEY: ${{ secrets.MUDVERSE_API_KEY }}
+        shell: bash
+        run: |
+          if [ -z "$MUDVERSE_API_KEY" ]; then
+            echo "::error::MUDVERSE_API_KEY is not set. Add it as a repository secret; see https://www.mudverse.com/api"
+            exit 1
+          fi
+          # --previous carries over the MUDStats addresses already looked up, so each world's
+          # page is fetched once ever rather than once every half hour.
+          PREVIOUS="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/directory/mud-directory.json"
+          dotnet run --project src/BlindTerm.Cli -c Release -- directory --out mud-directory.json --previous "$PREVIOUS" --quiet
+
+      - name: Check MUDStats is still readable
+        # Not a failure of the run: the list publishes without activity figures if this half
+        # has broken. It is here so the breakage is visible in the log the day it happens,
+        # rather than the month somebody notices the averages have gone.
+        continue-on-error: true
+        shell: bash
+        run: dotnet run --project src/BlindTerm.Cli -c Release -- directory --mudstats-only
+
+      - name: Check it before publishing it
+        shell: bash
+        run: |
+          # A truncated or empty list would replace a working one, and every BlindTerm would
+          # then show "no MUDs matched" for half an hour. The verb already refuses to write an
+          # empty list; this is the second look, on the file that is actually about to ship.
+          test -s mud-directory.json
+          python -c "import json,sys; d=json.load(open('mud-directory.json')); n=len(d['Games']); print(f'{n} games'); sys.exit(0 if n >= 50 else 1)"
+
+      - name: Publish to the directory branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A fresh single-commit orphan branch, force-pushed. The file changes every half
+          # hour; keeping history of that would grow the repository forever for no reader.
+          mkdir -p publish
+          cp mud-directory.json publish/
+          cd publish
+          git init -q
+          git checkout -q -b directory
+          git add mud-directory.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "MUD directory $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q --force \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" directory
+          echo "Published to https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/directory/mud-directory.json"

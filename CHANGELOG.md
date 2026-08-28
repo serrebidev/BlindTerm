@@ -4,6 +4,59 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.5.0 - 2026-08-28
+
+- Browsing needs no account and no API key. A scheduled job in this repository holds one
+  MUDVerse key, rebuilds the whole list every half hour and publishes it; BlindTerm downloads
+  that file. There is no key in the repository or in the program: MUDVerse issues keys for
+  servers and asks that they are not published, so only the answer is. A key stays available,
+  optionally, for reading MUDVerse live to the minute.
+- Shipping the whole list rather than proxying each query makes every sort and filter instant
+  and local, keeps a copy on disk so the browser opens straight away and works offline, and
+  means nothing typed into the search box goes to anybody's server.
+- Merge in [MUDStats](https://mudstats.com), which has been sampling player counts for twenty
+  years. It brings the thirty-day average, peak, minimum and monthly trend, the year a game
+  opened, its codebase and database size, whether it charges to play, and two hundred genres.
+  Nothing else publishes the averages.
+- Two new orderings that only MUDStats makes possible: **Busiest on average over thirty days**
+  and **Highest peak in thirty days**. Both are a different question from "most players online
+  now", which only says whether a game is busy at this hour in your timezone. Also **Oldest, by
+  the year they opened**.
+- Join the two directories on the name, past punctuation and articles. Where two games share a
+  name, neither gets the other's figures: a missing statistic goes unread, a wrong one is a lie
+  about a real game.
+- MUDStats publishes no API, so that half is a scrape and is treated as one. It runs only in
+  the scheduled job, never in anybody's client; every field is optional; and if it breaks, the
+  list still publishes without the activity figures. `blindterm directory --mudstats-only`
+  reports in one line whether it still works.
+
+- Connect to MUDs over TLS. **Secure connection (TLS)** in the connect dialog, an `ssl://`
+  address anywhere an address is accepted (`telnet ssl://coremud.org 4022`,
+  `--telnet ssl://coremud.org:4022`, a remembered address), and `--tls` in the diagnostic CLI.
+  `tls://` and `telnets://` are read as the same thing. Remembered addresses keep the scheme,
+  because a MUD offering both puts them on different ports and an address without it comes
+  back as the wrong service. The encryption that was actually negotiated is written into the
+  transcript when the connection opens, rather than being implied by a checkbox.
+- Explain a certificate that does not verify instead of failing with a code. What is wrong
+  with it, who issued it, when it expires and its fingerprint in readable groups, then a
+  question with **No** as the default. A MUD on a certificate it signed itself is ordinary,
+  and that decision belongs to whoever is dialling it.
+- **Browse for MUDs...**, in the connect dialog: a directory of MUDs as a list to arrow
+  through, ordered by players online, votes this month, reviews, or how recently a game was
+  seen, and narrowed by genre, game type, roleplaying policy or a search. Each result reads
+  as one line; the details below carry the whole entry. Choosing one fills in the address,
+  and ticks the encryption box when the listing publishes an encrypted port. Web-only games
+  are left out, being nothing a terminal can open.
+- Sort by players online locally, because the directory does not publish that ordering.
+  Votes measure who campaigned; players measure who is there. The result is kept for a
+  quarter of an hour instead of being re-fetched on every keystroke.
+- Read the listings from MUDVerse, over a provider interface (`IMudDirectory`) rather than
+  wired in, so a second source is a class rather than a rewrite. **There is no API key inside
+  BlindTerm**: MUDVerse issues keys for servers and asks that they are not published, so
+  BlindTerm asks for yours once and opens the page where a free one is generated. A
+  **Directory address** setting points at a service holding a key on everybody's behalf
+  instead, and then no key is needed at this end at all.
+
 ## v0.4.3 - 2026-08-28
 
 - Put a complete unfinished prompt into output history as soon as it is spoken. This makes an

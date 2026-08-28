@@ -22,10 +22,10 @@ namespace BlindTerm.App;
 internal static partial class TelnetCommand
 {
     /// <summary>
-    /// The host and port a command line asks for, or null when it is not a plain dial and
-    /// must be left to the shell exactly as it was typed.
+    /// The host a command line asks for, or null when it is not a plain dial and must be left
+    /// to the shell exactly as it was typed.
     /// </summary>
-    public static (string Host, int Port)? Parse(string? command)
+    public static TelnetTarget? Parse(string? command)
     {
         if (command is null) return null;
 
@@ -46,7 +46,8 @@ internal static partial class TelnetCommand
         if (arguments.Length is 0 or > 2) return null;
         if (arguments.Any(argument => argument[0] is '-' or '/')) return null;
 
-        if (!TelnetAddress.TryParse(arguments[0], out string host, out int port)) return null;
+        if (!TelnetAddress.TryParse(arguments[0], out string host, out int port, out bool secure))
+            return null;
 
         if (arguments.Length == 2)
         {
@@ -54,12 +55,22 @@ internal static partial class TelnetCommand
             // separately wins, as it does for --telnet, but only when the host did not carry
             // one already: "telnet host:4000 4022" contradicts itself and is not ours to
             // resolve. A service name rather than a number is telnet.exe's to resolve too.
-            if (arguments[0].Contains(':')) return null;
+            // Past the scheme, because "ssl://" is full of colons and none of them is a port.
+            if (Bare(arguments[0]).Contains(':')) return null;
             if (!int.TryParse(arguments[1], out int separate) || separate is < 1 or > 65535) return null;
             port = separate;
         }
 
-        return (host, port);
+        // "telnet ssl://host 4022" is the spelling the other clients use for the encrypted
+        // port, and the scheme survives a port given separately.
+        return new TelnetTarget(host, port, secure);
+    }
+
+    /// <summary>The address with any "ssl://" or "telnet://" in front of it taken off.</summary>
+    private static string Bare(string address)
+    {
+        int scheme = address.IndexOf("://", StringComparison.Ordinal);
+        return scheme < 0 ? address : address[(scheme + 3)..];
     }
 
     [GeneratedRegex(@"^\s*telnet(?:\.exe)?(?<rest>(?:\s.*)?)$",

@@ -200,9 +200,18 @@ public sealed class TerminalHost : IDisposable
     /// exists to fail in, and so that a login banner arriving in the first millisecond is not
     /// delivered before the window has subscribed. Call <see cref="Begin"/> once it has.
     /// </summary>
-    public Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default)
-        => Attach(new TelnetSession()).ConnectAsync(host, port, Engine.Columns, Engine.Rows,
+    public Task ConnectAsync(TelnetTarget target, CancellationToken cancellationToken = default)
+        => Attach(new TelnetSession()).ConnectAsync(target, Engine.Columns, Engine.Rows,
                                                     cancellationToken);
+
+    /// <summary>
+    /// How the connection is encrypted, as words: "TLS 1.3". Empty when it is not, and on
+    /// anything that is not a connection at all.
+    /// </summary>
+    public string Security
+    {
+        get { lock (_gate) return _session is TelnetSession telnet ? telnet.Security : string.Empty; }
+    }
 
     /// <summary>Starts reading a connection that <see cref="ConnectAsync"/> opened.</summary>
     public void Begin()
@@ -236,7 +245,7 @@ public sealed class TerminalHost : IDisposable
     /// Throws exactly what <see cref="ConnectAsync"/> throws when the host cannot be reached,
     /// and leaves the window showing the shell untouched when it does.
     /// </summary>
-    public async Task ConnectOverAsync(string host, int port, CancellationToken cancellationToken = default)
+    public async Task ConnectOverAsync(TelnetTarget target, CancellationToken cancellationToken = default)
     {
         if (!CanConnectOver) throw new InvalidOperationException("This window has nothing to connect over.");
 
@@ -244,7 +253,7 @@ public sealed class TerminalHost : IDisposable
         Wire(telnet);
         try
         {
-            await telnet.ConnectAsync(host, port, Engine.Columns, Engine.Rows, cancellationToken);
+            await telnet.ConnectAsync(target, Engine.Columns, Engine.Rows, cancellationToken);
         }
         catch
         {

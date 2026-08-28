@@ -68,8 +68,8 @@ public class TelnetAddressTests
         var parsed = Program.TelnetArgument(args);
 
         Assert.NotNull(parsed);
-        Assert.Equal(host, parsed!.Value.Host);
-        Assert.Equal(port, parsed.Value.Port);
+        Assert.Equal(host, parsed!.Host);
+        Assert.Equal(port, parsed.Port);
     }
 
     [Fact]
@@ -89,6 +89,6 @@ public class TelnetAddressTests
         var parsed = Program.TelnetArgument(["--telnet", "coremud.org:4000", "9999"]);
 
         Assert.NotNull(parsed);
-        Assert.Equal(4000, parsed!.Value.Port);
+        Assert.Equal(4000, parsed!.Port);
     }
 }

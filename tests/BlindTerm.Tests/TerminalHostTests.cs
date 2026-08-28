@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using BlindTerm.App;
 using BlindTerm.Core;
+using BlindTerm.Core.Net;
 
 namespace BlindTerm.Tests;
 
@@ -25,7 +26,7 @@ public class TerminalHostTests
         host.Start($"\"{shell}\" /d /q");
 
         Task<TcpClient> accepting = listener.AcceptTcpClientAsync();
-        await host.ConnectOverAsync("127.0.0.1", port);
+        await host.ConnectOverAsync(new TelnetTarget("127.0.0.1", port));
         using TcpClient server = await accepting.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(TerminalSessionKind.Remote, host.Kind);

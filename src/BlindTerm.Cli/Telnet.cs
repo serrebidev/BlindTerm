@@ -20,6 +20,7 @@ internal static class Telnet
     {
         int cols = 120, rows = 30, seconds = 10, waitMs = 700;
         bool quiet = false, numbered = false, updates = false;
+        bool tls = false, insecure = false;
         string? address = null, outputPath = null, soundFolder = null;
         bool play = false;
         var send = new List<Step>();
@@ -39,6 +40,10 @@ internal static class Telnet
                 case "--numbered": numbered = true; break;
                 case "--updates": updates = true; break;
                 case "--quiet": quiet = true; break;
+                case "--tls": tls = true; break;
+                // For checking what a MUD on a self-signed certificate actually sends. The
+                // window asks before doing this; a diagnostic run has nobody to ask.
+                case "--insecure": tls = true; insecure = true; break;
                 default:
                     if (address is null) address = args[i];
                     else
@@ -50,11 +55,16 @@ internal static class Telnet
             }
         }
 
-        if (!TelnetAddress.TryParse(address, out string hostName, out int port))
+        if (!TelnetAddress.TryParse(address, out string hostName, out int port, out bool secure))
         {
-            Console.Error.WriteLine("telnet: give a host, as \"host\" or \"host:port\".");
+            Console.Error.WriteLine("telnet: give a host, as \"host\", \"host:port\" or \"ssl://host:port\".");
             return 2;
         }
+
+        var target = new TelnetTarget(hostName, port, tls || secure)
+        {
+            AllowUntrustedCertificate = insecure,
+        };
 
         var core = new TerminalCore(cols, rows);
         using var session = new TelnetSession();
@@ -108,16 +118,18 @@ internal static class Telnet
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            session.ConnectAsync(hostName, port, cols, rows, timeout.Token).GetAwaiter().GetResult();
+            session.ConnectAsync(target, cols, rows, timeout.Token).GetAwaiter().GetResult();
         }
-        catch (Exception ex) when (ex is SocketException or OperationCanceledException or IOException)
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException or IOException
+                                   or System.Security.Authentication.AuthenticationException)
         {
-            Console.Error.WriteLine($"telnet: could not connect to {TelnetAddress.Format(hostName, port)}: {ex.Message}");
+            Console.Error.WriteLine($"telnet: could not connect to {target.Address}: {ex.Message}");
             file?.Dispose();
             return 1;
         }
 
-        Console.Error.WriteLine($"telnet: {cols}x{rows} -> {TelnetAddress.Format(hostName, port)}");
+        Console.Error.WriteLine($"telnet: {cols}x{rows} -> {target.Address}"
+            + (session.IsSecure ? $" ({session.Security})" : string.Empty));
         session.Begin();
 
         foreach (var step in send)

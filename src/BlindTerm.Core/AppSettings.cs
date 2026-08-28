@@ -21,12 +21,34 @@ public sealed class AppSettings
     public bool AskAboutDefaultTerminal { get; set; } = true;
 
     /// <summary>
-    /// Telnet addresses that have been connected to, newest first, as "host" or "host:port".
+    /// Telnet addresses that have been connected to, newest first, as "host", "host:port" or
+    /// "ssl://host:port".
     ///
     /// A MUD address is exactly the kind of thing nobody types correctly twice, and arrowing
-    /// to a remembered one reads it out.
+    /// to a remembered one reads it out. The scheme is part of the entry because a MUD that
+    /// offers both puts encryption on a different port, and an address without it would come
+    /// back as the wrong connection to the right machine.
     /// </summary>
     public List<string> RecentTelnetHosts { get; set; } = new();
+
+    /// <summary>
+    /// A MUDVerse API key, for browsing the directory of MUDs.
+    ///
+    /// Empty unless somebody puts one here. MUDVerse issues keys for servers and says plainly
+    /// not to publish one, and BlindTerm is published, so there is no key inside it to share
+    /// out: this is the key belonging to whoever is running this copy. Generating one is free
+    /// and takes a minute at https://www.mudverse.com/api.
+    /// </summary>
+    public string MudDirectoryKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Where the directory is read from. Blank means MUDVerse itself.
+    ///
+    /// Here so that a service standing in front of MUDVerse -- holding the key, caching the
+    /// answers, and needing no key of its own from anybody -- can be pointed at without a new
+    /// release of BlindTerm. See <see cref="BlindTerm.Core.Mud.MudVerseDirectory"/>.
+    /// </summary>
+    public string MudDirectoryEndpoint { get; set; } = string.Empty;
 
     /// <summary>
     /// Whether a MUD may play sounds through the MUD Sound Protocol.
@@ -119,6 +141,10 @@ public sealed class AppSettings
         RecentTelnetHosts ??= new List<string>();
         RecentTelnetHosts.RemoveAll(entry => string.IsNullOrWhiteSpace(entry) || entry.Length > 300);
         Trim();
+        MudDirectoryKey ??= string.Empty;
+        MudDirectoryEndpoint ??= string.Empty;
+        if (MudDirectoryKey.Length > 1_000) MudDirectoryKey = string.Empty;
+        if (MudDirectoryEndpoint.Length > 1_000) MudDirectoryEndpoint = string.Empty;
 
         // A trigger with nothing to match is not a trigger, whatever else is on it. Anything
         // else out of range is brought back inside rather than thrown away: these are lines
@@ -136,6 +162,8 @@ public sealed class AppSettings
         Rows = Rows,
         AskAboutDefaultTerminal = AskAboutDefaultTerminal,
         RecentTelnetHosts = new List<string>(RecentTelnetHosts),
+        MudDirectoryKey = MudDirectoryKey,
+        MudDirectoryEndpoint = MudDirectoryEndpoint,
         MudSounds = MudSounds,
         SoundDirectory = SoundDirectory,
         SoundVolume = SoundVolume,

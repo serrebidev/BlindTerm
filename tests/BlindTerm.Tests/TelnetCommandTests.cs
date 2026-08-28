@@ -17,8 +17,8 @@ public class TelnetCommandTests
     {
         var parsed = TelnetCommand.Parse(command);
         Assert.NotNull(parsed);
-        Assert.Equal(host, parsed!.Value.Host);
-        Assert.Equal(port, parsed.Value.Port);
+        Assert.Equal(host, parsed!.Host);
+        Assert.Equal(port, parsed.Port);
     }
 
     [Theory]

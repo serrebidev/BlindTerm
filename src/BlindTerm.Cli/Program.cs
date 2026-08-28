@@ -19,6 +19,7 @@ internal static class Program
             "replay" => Replay.Run(args[1..]),
             "telnet" => Telnet.Run(args[1..]),
             "speak" => Speak.Run(args[1..]),
+            "directory" => Directory.Run(args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Unknown(args[0]),
         };
@@ -39,8 +40,10 @@ internal static class Program
             Usage:
               blindterm capture [options] -- <command line>
               blindterm replay <capture file> [options]
-              blindterm telnet <host[:port]> [options]
+              blindterm telnet <[ssl://]host[:port]> [options]
               blindterm speak [--probe] [--braille] [--batch] [--now] [text...]
+              blindterm directory [--out FILE] [--previous URL] [--quiet]
+              blindterm directory --mudstats-only
 
             capture options:
               --out FILE        Write raw pty bytes to FILE (default: capture.raw)
@@ -63,6 +66,26 @@ internal static class Program
               --numbered        Prefix each transcript line with its index
               --updates         Report each live transcript batch as it arrives
               --quiet           Print only the summary
+              --tls             Encrypt the connection. Same as an ssl:// address.
+              --insecure        Encrypt, and accept a certificate that does not verify.
+                                The window asks first; a diagnostic run has nobody to ask.
+
+            directory options:
+              --out FILE        Where to write the list (default: mud-directory.json)
+              --previous URL    The last list published, so addresses already looked up on
+                                MUDStats are carried over instead of fetched again
+              --endpoint URL    A MUDVerse API base other than the published one
+              --mudstats URL    A MUDStats other than mudstats.com
+              --no-mudstats     Publish MUDVerse's listings without activity figures
+              --mudstats-only   Read MUDStats and report what came back, changing nothing.
+                                Needs no key. Exits non-zero if the scrape has stopped
+                                working, which is what to run when the figures go missing.
+              --quiet           Do not report each page as it is fetched
+
+              Builds the list of MUDs that BlindTerm downloads, so that browsing needs no
+              API key from anybody using it. Merges MUDVerse (what a game is) with MUDStats
+              (how busy it has been). Reads the key from MUDVERSE_API_KEY, never from an
+              argument -- an argument ends up in a shell history and a CI log.
 
             replay options:
               --cols N          Terminal width used for assembly (default: 120)
@@ -77,7 +100,10 @@ internal static class Program
               blindterm capture --send "echo hello" -- pwsh.exe -NoLogo
               blindterm capture --out ls.raw --send "ls -la" -- wsl.exe
               blindterm telnet coremud.org:4000 --seconds 8 --numbered
+              blindterm telnet ssl://coremud.org:4022 --seconds 8
               blindterm replay ls.raw --numbered
+              blindterm directory --out mud-directory.json
+              blindterm directory --mudstats-only
             """);
         return 0;
     }
