@@ -31,6 +31,50 @@ public class PromptNewsTests
         core.Feed("Do you want to compile assets? (y/N) "u8);
 
         Assert.Equal(["Updating packages...", "Do you want to compile assets? (y/N)"], spoken);
+        Assert.Equal(["Updating packages...", "Do you want to compile assets? (y/N)"],
+            core.Transcript.Lines);
+    }
+
+    [Fact]
+    public void ARecordedChoicePromptIsRevisedInsteadOfDuplicatedAfterItsAnswer()
+    {
+        var core = new TerminalCore(80, 25);
+        var news = new TerminalNews();
+        var spoken = new List<string>();
+        core.Updated += update => spoken.AddRange(news.News(update));
+
+        core.Feed("Do you want to compile assets? (y/N) "u8);
+        news.SuppressCommandEcho("n");
+        core.Feed("n\r\ndone\r\n"u8);
+
+        Assert.Equal(["Do you want to compile assets? (y/N)", "done"], spoken);
+        Assert.Equal(["Do you want to compile assets? (y/N) n", "done"],
+            core.Transcript.Lines);
+    }
+
+    [Fact]
+    public void AChoiceHintAddedToARecordedQuestionSpeaksOnlyItsNewTail()
+    {
+        var core = new TerminalCore(80, 25);
+        var news = new TerminalNews();
+        var spoken = new List<string>();
+        core.Updated += update => spoken.AddRange(news.News(update));
+
+        core.Feed("Continue?"u8);
+        core.Feed(" (y/N)"u8);
+
+        Assert.Equal(["Continue?", "(y/N)"], spoken);
+        Assert.Equal(["Continue? (y/N)"], core.Transcript.Lines);
+    }
+
+    [Fact]
+    public void ParenthesizedProgressDoesNotEnterHistoryUntilItEnds()
+    {
+        var core = new TerminalCore(80, 25);
+
+        core.Feed("Downloading package (1/4)"u8);
+
+        Assert.Empty(core.Transcript.Lines);
     }
 
     [Fact]

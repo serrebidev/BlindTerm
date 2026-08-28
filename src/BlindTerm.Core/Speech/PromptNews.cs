@@ -4,7 +4,8 @@ namespace BlindTerm.Core.Speech;
 
 /// <summary>
 /// Finds complete prompts in the terminal's unfinished current line. Prompts deliberately do
-/// not end in a newline, so transcript-line speech alone never announces them.
+/// not end in a newline, and their provisional transcript entry is left to this prompt-aware
+/// speech path so a growing question can announce only its new tail.
 /// </summary>
 public sealed class PromptNews
 {

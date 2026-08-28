@@ -1,4 +1,5 @@
 using BlindTerm.Core.Vt;
+using BlindTerm.Core.Speech;
 
 namespace BlindTerm.Core;
 
@@ -211,13 +212,53 @@ public sealed class TranscriptBuilder
         if (readEnd > _extentRow) _extentRow = readEnd;
 
         update.LiveText = LiveText(readEnd);
+        RecordCompletePrompt(readEnd, update);
         return update;
     }
 
     /// <summary>
+    /// Records a complete prompt while the cursor is still on it. It remains mapped to its
+    /// buffer rows, so an answer, redraw, or eventual newline revises this same transcript
+    /// entry instead of appending a second copy.
+    /// </summary>
+    private void RecordCompletePrompt(int start, TerminalUpdate update)
+    {
+        if (!_engine.HasRow(start)) return;
+
+        string text = _engine.RowText(start);
+        int end = start + 1;
+        while (end < _engine.ScreenEnd && _engine.HasRow(end) && _engine.IsWrapped(end))
+        {
+            text += _engine.RowText(end);
+            end++;
+        }
+
+        if (!PromptNews.IsPrompt(text)) return;
+
+        int line;
+        if (_rowToLine.TryGetValue(start, out int existing) && existing < _lineRows.Count)
+        {
+            line = existing;
+            if (Transcript.Revise(existing, text) is { } edit) update.Edits.Add(edit);
+        }
+        else
+        {
+            line = Transcript.Append(text);
+            _lineRows.Add((start, end));
+            update.NewLines.Add(text);
+        }
+
+        _lineRows[line] = (start, end);
+        for (int row = start; row < end; row++) _rowToLine[row] = line;
+        RowBecameLine?.Invoke(start, line);
+        if (end > _extentRow) _extentRow = end;
+        update.LiveLine = line;
+    }
+
+    /// <summary>
     /// What the program has not finished printing: from the cursor's line group to the bottom
-    /// of the screen. A prompt waiting for an answer never ends in a newline, so it never
-    /// becomes a transcript line and this is the only place it is ever seen.
+    /// of the screen. A complete prompt is also recorded provisionally in the transcript, but
+    /// remains live here while it waits for an answer.
     /// </summary>
     private string LiveText(int readEnd)
     {

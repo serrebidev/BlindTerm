@@ -10,7 +10,9 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 
 - Runs Windows shells through ConPTY, with UTF-8 and xterm-compatible terminal behavior.
 - Presents shell output as logical lines instead of a guessed terminal grid.
-- Keeps prompts and unfinished output in a separately labelled current-line control.
+- Keeps unfinished output in a separately labelled current-line control, and records a
+  complete prompt in the transcript as soon as it is spoken so it can be reviewed before it
+  is answered.
 - Sends ordinary typed commands through a real command-line edit control with history.
 - Passes arrows, Tab, Escape, function keys, modifiers, and typing through to full-screen programs.
 - Reads the line the cursor moved onto instead of repeating status bars and screen furniture.

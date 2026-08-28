@@ -18,13 +18,11 @@ public sealed class LineNews
         => _pendingCommandEcho = string.IsNullOrWhiteSpace(command) ? null : command.Trim();
 
     /// <summary>
-    /// Suppresses the transcript copy of a prompt that has already been spoken as the current
-    /// line.
+    /// Suppresses a finalized transcript copy of a prompt already spoken as the current line.
     ///
     /// A prompt does not end in a newline, so it is read while the cursor is still sitting on
-    /// it. It becomes a transcript line only later, when something moves the cursor past that
-    /// row -- another program starting, or a connection taking the window over. Those are the
-    /// same words a second time, not news.
+    /// it. BlindTerm records it provisionally at that point; when something later moves the
+    /// cursor past that row, those same words are not news a second time.
     /// </summary>
     public void SuppressPromptEcho(string prompt)
         => _pendingPromptEcho = string.IsNullOrWhiteSpace(prompt) ? null : prompt.Trim();
@@ -51,6 +49,14 @@ public sealed class LineNews
         foreach (var (line, text) in byLine)
         {
             if (string.IsNullOrWhiteSpace(text)) continue;
+            if (update.LiveLine == line)
+            {
+                // The prompt pipeline announces unfinished prompts and can identify just the
+                // newly completed tail when a question grows in place. Keep its transcript
+                // copy in line history without also reading the whole row as ordinary output.
+                _announced[line] = text;
+                continue;
+            }
             if (_pendingCommandEcho is { } command && IsCommandEcho(text, command))
             {
                 _pendingCommandEcho = null;

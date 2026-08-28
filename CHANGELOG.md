@@ -4,6 +4,14 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.4.3 - 2026-08-28
+
+- Put a complete unfinished prompt into output history as soon as it is spoken. This makes an
+  SSH question such as `Do you want to upgrade Ruby? (y/N)` available when moving back to the
+  transcript before it has been answered. Its eventual answer or redraw updates the same
+  history entry instead of adding a duplicate, and ordinary progress remains live until its
+  newline arrives.
+
 ## v0.4.2 - 2026-08-28
 
 - Announce Bash questions over SSH when their unfinished prompt ends with a parenthesized answer hint such as `(y/N)` or `(default: no)`.

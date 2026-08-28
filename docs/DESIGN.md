@@ -16,8 +16,10 @@ The painted full-screen surface is not the reader's focus target while keys belo
 
 Line mode has three controls:
 
-- Transcript: completed logical lines, read natively.
-- Current line: the prompt or unfinished output that has not ended in a newline.
+- Transcript: completed logical lines, plus a complete prompt provisionally recorded while it
+  waits for an answer, read natively.
+- Current line: the prompt or unfinished output that has not ended in a newline. A complete
+  prompt remains here while its provisional transcript entry makes it available to history.
 - Command line: a normal edit control whose text and Return are sent as separate PTY writes.
 
 Remote output is always the complete transcript. BlindTerm records its line count when a

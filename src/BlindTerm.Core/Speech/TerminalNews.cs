@@ -5,9 +5,9 @@ namespace BlindTerm.Core.Speech;
 ///
 /// Two things speak: the lines the terminal has finished, and the prompt it has not. They are
 /// not independent. A prompt deliberately ends without a newline, so it is read while the
-/// cursor is still sitting on it -- and it becomes an ordinary transcript line later, when
-/// something moves past that row: a program starting, or a connection taking the window over.
-/// Decided separately, the same words are read out twice.
+/// cursor is still sitting on it -- and its provisional transcript entry becomes ordinary
+/// later, when something moves past that row: a program starting, or a connection taking the
+/// window over. Decided separately, the same words are read out twice.
 /// </summary>
 public sealed class TerminalNews
 {
@@ -41,9 +41,8 @@ public sealed class TerminalNews
         spoken.AddRange(_prompt.News(update.LiveText));
 
         // The prompt is read here, while the cursor is still on it, and it stays there while
-        // its answer is typed. Whenever it does eventually become a transcript line -- the
-        // next command's output pushing past it, a connection taking the window over -- that
-        // copy is the same words again, whether or not this is the batch that announced them.
+        // its answer is typed. Its provisional transcript copy, and the finalized copy after
+        // output pushes past it, are the same words again rather than new speech.
         string current = LastLine(update.LiveText);
         if (PromptNews.IsPrompt(current)) _lines.SuppressPromptEcho(current);
 

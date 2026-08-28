@@ -21,9 +21,9 @@ namespace BlindTerm.App;
 ///     is the whole accessibility strategy: NVDA and JAWS have read edit controls perfectly
 ///     for twenty years, so arrowing by line, word and character, say-all, braille following
 ///     the caret, the JAWS cursor, find, select and copy all work without a line of code here.
-///  2. Current line -- whatever the program has not finished printing. A prompt waiting for an
-///     answer never ends in a newline, so it never becomes a transcript line and this is the
-///     only place it is ever seen.
+///  2. Current line -- whatever the program has not finished printing. A complete prompt is
+///     recorded provisionally in the transcript as soon as it is spoken, but stays here while
+///     it waits for an answer.
 ///  3. Command line -- an ordinary text box. Enter sends.
 ///
 /// When a full-screen program takes the screen the window switches to screen mode: every

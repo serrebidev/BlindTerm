@@ -24,6 +24,13 @@ public sealed class TerminalUpdate
     public string LiveText { get; set; } = string.Empty;
 
     /// <summary>
+    /// Transcript line holding the complete prompt that is still under the cursor, when one
+    /// has already been recorded so it is available in output history before Return is
+    /// pressed. Speech treats this line as live prompt news rather than ordinary line news.
+    /// </summary>
+    public int? LiveLine { get; set; }
+
+    /// <summary>
     /// Whether these lines were written by the app rather than read from the far end: a ready
     /// message, "Connecting to...", "[Disconnected]".
     ///
