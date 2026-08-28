@@ -16,6 +16,128 @@ namespace BlindTerm.Tests;
 /// </summary>
 public class AnnouncerTests
 {
+    /// <summary>
+    /// The reported bug: with BlindTerm as the default terminal, a chat client left running
+    /// in a window nobody was looking at kept reading its status updates out over whatever
+    /// the user had gone to do. A screen reader has one voice for the whole desktop, so a
+    /// background window that talks is not informing anyone, it is interrupting them.
+    /// </summary>
+    [Fact]
+    public async Task AWindowNobodyIsInKeepsTheProgramsOutputToItself()
+    {
+        (Announcer announcer, Collector collected) = Make();
+        using (announcer)
+        {
+            announcer.Attended = false;
+            announcer.Enqueue(["Status: 3 users online"]);
+            await Task.Delay(200);
+            Assert.Empty(collected.Spoken);
+
+            // Coming back to the window makes it talk again; nothing is permanently muted.
+            announcer.Attended = true;
+            announcer.Enqueue(["Status: 4 users online"]);
+            await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(["Status: 4 users online"], collected.Spoken);
+        }
+    }
+
+    [Fact]
+    public async Task LeavingABusyTerminalDoesNotGetOneLastSentenceOverTheTop()
+    {
+        (Announcer announcer, Collector collected) = Make(idleMs: 400, maxMs: 800);
+        using (announcer)
+        {
+            announcer.Enqueue(["a line that was still waiting to be spoken"]);
+            // The window loses focus while that batch is still queued.
+            announcer.Attended = false;
+            announcer.DiscardStreamed();
+
+            await Task.Delay(600);
+            Assert.Empty(collected.Spoken);
+        }
+    }
+
+    [Fact]
+    public async Task ATriggerIsHeardWhereverTheUserHappensToBeLooking()
+    {
+        (Announcer announcer, Collector collected) = Make();
+        using (announcer)
+        {
+            announcer.Attended = false;
+
+            // A trigger is a line somebody wrote down in order to be told about it. Telling
+            // them only while they are already looking at the window defeats the point.
+            announcer.Enqueue(["Someone said your name"], attendedOnly: false);
+            await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(["Someone said your name"], collected.Spoken);
+        }
+    }
+
+    [Fact]
+    public async Task AnUrgentTriggerSurvivesTheWindowBeingLeft()
+    {
+        (Announcer announcer, Collector collected) = Make(idleMs: 400, maxMs: 800);
+        using (announcer)
+        {
+            announcer.Enqueue(["ordinary output"]);
+            announcer.Interject("Someone is attacking you");
+            announcer.Attended = false;
+            announcer.DiscardStreamed();
+
+            await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Contains(collected.Spoken, said => said.Contains("attacking"));
+        }
+    }
+
+    [Fact]
+    public async Task TurningBackgroundSpeechOnPutsTheOldBehaviourBack()
+    {
+        (Announcer announcer, Collector collected) = Make();
+        using (announcer)
+        {
+            announcer.Attended = false;
+            announcer.SpeakInBackground = true;
+
+            announcer.Enqueue(["still talking"]);
+            await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(["still talking"], collected.Spoken);
+        }
+    }
+
+    [Fact]
+    public async Task SpeakOutputOffStillWinsOverEverythingAutomatic()
+    {
+        (Announcer announcer, Collector collected) = Make();
+        using (announcer)
+        {
+            announcer.Enabled = false;
+
+            announcer.Enqueue(["output"]);
+            announcer.Enqueue(["trigger"], attendedOnly: false);
+            announcer.AnnounceIfAttended("a repaint");
+            await Task.Delay(200);
+            Assert.Empty(collected.Spoken);
+
+            // What the user asked for by hand is still said, as it always was.
+            announcer.AnnounceNow("Speak output on");
+            await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(["Speak output on"], collected.Spoken);
+        }
+    }
+
+    [Fact]
+    public async Task ARepaintInAWindowNobodyIsWatchingIsNotNews()
+    {
+        (Announcer announcer, Collector collected) = Make();
+        using (announcer)
+        {
+            announcer.Attended = false;
+            announcer.AnnounceIfAttended("line 4 of 40");
+            await Task.Delay(150);
+            Assert.Empty(collected.Spoken);
+        }
+    }
+
     private sealed class Collector
     {
         public List<string> Spoken { get; } = [];

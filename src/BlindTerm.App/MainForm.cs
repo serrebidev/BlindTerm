@@ -45,6 +45,7 @@ public sealed class MainForm : Form
     // menu navigation must see every key before the terminal's global keyboard routing does.
     private bool _menuActive;
     private readonly ToolStripMenuItem _speakOutputItem = new("Speak &output");
+    private readonly ToolStripMenuItem _speakInBackgroundItem = new("Speak output in the &background");
     private readonly ToolStripMenuItem _speakOffCursorItem = new("Speak &background changes");
     private readonly ToolStripMenuItem _mudSoundsItem = new("&MUD sounds");
     private readonly ToolStripMenuItem _downloadSoundsItem = new("&Download sounds a MUD offers");
@@ -132,6 +133,7 @@ public sealed class MainForm : Form
         _screenKeyboard = new KeyboardEchoProxy();
         _settings = settings;
         _settingsStore = settingsStore;
+        _host.Announcer.SpeakInBackground = settings.SpeakInBackground;
         ReloadTriggers();
 
         Text = "BlindTerm";
@@ -276,6 +278,14 @@ public sealed class MainForm : Form
         terminal.DropDownItems.Add(Item("&Settings...", Keys.None, ShowSettings));
         terminal.DropDownItems.Add(Item("Connect to a telnet &host...", AppShortcuts.Connect,
             ConnectToHost));
+        // In the menu in its own right, not only as a button inside the connect dialog.
+        // "Which MUD" is a different question from "what address", and somebody who has not
+        // got an address has no reason to open a dialog that asks for one.
+        var browseItem = Item("&Browse for MUDs...", AppShortcuts.BrowseMuds, BrowseForMuds);
+        browseItem.AccessibleDescription =
+            "Search a directory of MUDs by genre, players online, thirty-day average or name, "
+            + "and connect to the one you choose.";
+        terminal.DropDownItems.Add(browseItem);
         _defaultTerminalItem.CheckOnClick = false;
         _defaultTerminalItem.Click += (_, _) => ToggleDefaultTerminal();
         _defaultTerminalItem.AccessibleDescription =
@@ -305,6 +315,14 @@ public sealed class MainForm : Form
         _speakOutputItem.ShortcutKeys = AppShortcuts.ToggleSpeakOutput;
         _speakOutputItem.Click += (_, _) => ToggleSpeakOutput();
         read.DropDownItems.Add(_speakOutputItem);
+        _speakInBackgroundItem.Checked = _settings.SpeakInBackground;
+        _speakInBackgroundItem.AccessibleDescription =
+            "Whether output is spoken while you are working in another window. Off by default: "
+            + "a screen reader has one voice, and a terminal that keeps talking after you have "
+            + "left it talks over whatever you went to read. Triggers and the bell are heard "
+            + "either way.";
+        _speakInBackgroundItem.Click += (_, _) => ToggleSpeakInBackground();
+        read.DropDownItems.Add(_speakInBackgroundItem);
         _speakOffCursorItem.Click += (_, _) => ToggleOffCursor();
         read.DropDownItems.Add(_speakOffCursorItem);
         _mudSoundsItem.Checked = _settings.MudSounds;
@@ -445,8 +463,11 @@ public sealed class MainForm : Form
 
         foreach (TriggerSpeech speech in fired.Speech)
         {
+            // Not gated on the window being focused: a trigger is a line the user wrote
+            // down in order to be told about it, and being told about it only while already
+            // looking at the window would defeat the point of writing it.
             if (speech.Now) _host.Announcer.Interject(speech.Text);
-            else _host.Announcer.Enqueue([speech.Text]);
+            else _host.Announcer.Enqueue([speech.Text], attendedOnly: false);
         }
 
         foreach (string line in fired.Sends) _host.SendLine(line);
@@ -520,7 +541,7 @@ public sealed class MainForm : Form
 
         var announcement = _screenNews.News(_screen!, update.CursorRow, update.CursorColumn);
         if (!announcement.IsEmpty && !nano)
-            _host.Announcer.AnnounceNow(announcement.Text, announcement.Priority);
+            _host.Announcer.AnnounceIfAttended(announcement.Text, announcement.Priority);
     }
 
     /// <summary>
@@ -612,7 +633,7 @@ public sealed class MainForm : Form
         string? file = ScreenNews.NanoFileName(rows);
         if (file is null) return;
         _nanoAnnounced = true;
-        _host.Announcer.AnnounceNow($"New nano. {file}", SpeechPriority.Now);
+        _host.Announcer.AnnounceIfAttended($"New nano. {file}", SpeechPriority.Now);
     }
 
     private static bool IsNano(string[] rows)
@@ -631,7 +652,7 @@ public sealed class MainForm : Form
         }
         if (string.Equals(prompt, _nanoPrompt, StringComparison.Ordinal)) return;
         _nanoPrompt = prompt;
-        _host.Announcer.AnnounceNow(prompt, SpeechPriority.Now);
+        _host.Announcer.AnnounceIfAttended(prompt, SpeechPriority.Now);
     }
 
     /// <summary>
@@ -921,6 +942,39 @@ public sealed class MainForm : Form
         _host.Announcer.Enabled = !_host.Announcer.Enabled;
         _speakOutputItem.Checked = _host.Announcer.Enabled;
         Say(_host.Announcer.Enabled ? "Speak output on" : "Speak output off");
+    }
+
+    private void ToggleSpeakInBackground()
+    {
+        _settings.SpeakInBackground = !_settings.SpeakInBackground;
+        _host.Announcer.SpeakInBackground = _settings.SpeakInBackground;
+        _speakInBackgroundItem.Checked = _settings.SpeakInBackground;
+        TrySaveSettings();
+        Say(_settings.SpeakInBackground
+            ? "Speaking output from the background"
+            : "Only speaking output while this window is in front");
+    }
+
+    /// <summary>
+    /// This window has become the one the user is in, so it may speak again.
+    ///
+    /// A screen reader has one voice for the whole desktop. Every window that keeps talking
+    /// after being left behind is talking over whatever the user went to read, and with
+    /// BlindTerm as the default terminal there can be several of them at once.
+    /// </summary>
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        _host.Announcer.Attended = true;
+    }
+
+    protected override void OnDeactivate(EventArgs e)
+    {
+        base.OnDeactivate(e);
+        _host.Announcer.Attended = false;
+        // What was already waiting goes too, or leaving a busy terminal is followed by it
+        // saying one last thing into whatever was switched to.
+        _host.Announcer.DiscardStreamed();
     }
 
     /// <summary>
@@ -1325,6 +1379,23 @@ public sealed class MainForm : Form
         using var dialog = new TelnetConnectForm(_settings, SaveDirectorySettings);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         TelnetRequested?.Invoke(dialog.Target);
+    }
+
+    /// <summary>
+    /// Opens the directory straight away and connects to whatever is chosen.
+    ///
+    /// The same browser the connect dialog offers, reached without going through a dialog
+    /// asking for the address it is there to find. A listing that publishes an encrypted port
+    /// is taken at its word, which is the same rule the connect dialog applies.
+    /// </summary>
+    private void BrowseForMuds()
+    {
+        using var browser = new MudBrowserForm(_settings, SaveDirectorySettings);
+        if (browser.ShowDialog(this) != DialogResult.OK || browser.Chosen is not { } game) return;
+
+        TelnetRequested?.Invoke(game.TlsPort is int tls
+            ? new TelnetTarget(game.Host, tls, UseTls: true)
+            : new TelnetTarget(game.Host, game.Port));
     }
 
     /// <summary>

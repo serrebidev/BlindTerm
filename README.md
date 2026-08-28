@@ -18,6 +18,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Reads the line the cursor moved onto instead of repeating status bars and screen furniture.
 - Freezes a full-screen frame for normal line, word, character, say-all, and braille navigation.
 - Speaks through NVDA's controller client and JAWS' documented COM interface, using the reader's own voice and settings.
+- Speaks only the window you are actually in, so a program left running in another terminal does not read itself out over whatever you went to do.
 - Handles redraws, spinners, wrapped lines, screen wipes, alternate screens, and split UTF-8 input.
 - Can be set as the Windows 11 default terminal, so command-line programs open in BlindTerm on their own.
 - Tells the shells it starts that they are being read, so tools that can render plainly do: `ACCESSIBLE`, `TERM_A11Y`, and the flags GitHub CLI and Claude Code already understand.
@@ -99,6 +100,8 @@ That restores whatever Windows would have chosen. In fact BlindTerm cannot lock 
 
 ## Reading and keyboard commands
 
+**Output is spoken only while the window is the one you are in.** A screen reader has one voice for the whole desktop, so a terminal that carries on talking after you have switched to something else is not telling you anything — it is talking over whatever you went to read. This matters most when BlindTerm is your default terminal and something long-running is sitting in a window nobody is looking at. Two things are still heard from a background window, because both are things you asked to be told about wherever you are: the bell, and any trigger you wrote. If you do want the rest of it — waiting on a build in another workspace, say — **Read** &rarr; **Speak output in the background** turns it back on and is remembered.
+
 BlindTerm keeps its own commands under Alt. With the command line focused while a foreground command or application is running, Ctrl chords—including `Ctrl+C`, `Ctrl+X`, and `Ctrl+Z`—go directly to that program whether it uses inline output or a full-screen interface. `Ctrl+V` is the exception and always pastes into the command line, because BlindTerm owns the line being typed and that is the only way to get a pasted path into the program at all. `Alt+C` sends the interrupt when `Ctrl+C` is wanted for something else. After the program exits and the shell prompt returns, those keys resume their ordinary copy, cut, undo, and paste behavior in BlindTerm's native controls.
 
 ### Driving a program from the command line
@@ -135,12 +138,13 @@ For a telnet session, output remains the complete transcript. BlindTerm records 
 - `Alt+Up` and `Alt+Down`: move through command output blocks.
 - `Alt+D`: change directory.
 - `Alt+N`: connect to a telnet host.
+- `Alt+Shift+B`: browse for MUDs.
 
 The complete command list is also available from the menu bar. `Alt+T`, `Alt+R`, `Alt+G`, and `Alt+E` open its Terminal, Read, Go, and Edit menus, including while a full-screen program is running.
 
 ## Telnet and MUDs
 
-BlindTerm dials telnet hosts itself. **Terminal** &rarr; **Connect to a telnet host...** (`Alt+N`) asks for a host and port, remembers the addresses you have used, and opens the connection in its own window. **Browse for MUDs...** in that dialog fills the fields in from a directory. From a shortcut or a script:
+BlindTerm dials telnet hosts itself. **Terminal** &rarr; **Connect to a telnet host...** (`Alt+N`) asks for a host and port, remembers the addresses you have used, and opens the connection in its own window. If you do not have an address in mind, **Terminal** &rarr; **Browse for MUDs...** (`Alt+Shift+B`) finds one; the same browser is also a button inside the connect dialog, for filling the fields in rather than connecting straight away. From a shortcut or a script:
 
 ```
 BlindTerm.App.exe --telnet coremud.org:4000

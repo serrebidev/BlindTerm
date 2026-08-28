@@ -54,6 +54,29 @@ public sealed class Announcer : IDisposable
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// Whether the window this speaks for is the one the user is actually in.
+    ///
+    /// A screen reader has one voice for the whole desktop, so a terminal that keeps talking
+    /// after you have gone somewhere else is not providing information, it is talking over
+    /// whatever you left to go and read. That is worse than useless when BlindTerm is the
+    /// default terminal and a long-running program -- a chat client, a build, a MUD -- is
+    /// sitting in a window nobody is looking at.
+    /// </summary>
+    public bool Attended { get; set; } = true;
+
+    /// <summary>
+    /// Whether to speak output anyway while the window is in the background.
+    ///
+    /// Off by default, because the useful case is narrow -- waiting on a build in another
+    /// workspace -- and the harmful one is every other minute of the day. On, this is exactly
+    /// the old behaviour.
+    /// </summary>
+    public bool SpeakInBackground { get; set; }
+
+    /// <summary>Whether anything the program says on its own should be spoken at all.</summary>
+    private bool Listening => Enabled && (Attended || SpeakInBackground);
+
+    /// <summary>
     /// Where announcements go instead of the screen reader. Set by tests to collect them;
     /// null in normal use.
     /// </summary>
@@ -62,9 +85,14 @@ public sealed class Announcer : IDisposable
     public Announcer(IScreenReader reader) => _reader = reader;
 
     /// <summary>Queues lines of streamed output.</summary>
-    public void Enqueue(IEnumerable<string> lines)
+    /// <param name="attendedOnly">
+    /// Whether this is the program talking, which a window nobody is in should keep to
+    /// itself, or something the user asked for by writing a trigger, which they asked for
+    /// wherever they happen to be looking.
+    /// </param>
+    public void Enqueue(IEnumerable<string> lines, bool attendedOnly = true)
     {
-        if (!Enabled) return;
+        if (attendedOnly ? !Listening : !Enabled) return;
 
         var useful = lines
             .Select(l => l.Trim())
@@ -105,6 +133,19 @@ public sealed class Announcer : IDisposable
     }
 
     /// <summary>
+    /// Says something the program did rather than something the user asked for: a full-screen
+    /// program's cursor moving, a new file opening, a prompt appearing.
+    ///
+    /// Immediate like <see cref="AnnounceNow"/>, but only while somebody is actually in this
+    /// window. A repaint in a terminal nobody is looking at is not news.
+    /// </summary>
+    public void AnnounceIfAttended(string text, SpeechPriority priority = SpeechPriority.Now)
+    {
+        if (!Listening) return;
+        AnnounceNow(text, priority);
+    }
+
+    /// <summary>
     /// Puts something at the front of the batch that is waiting, and speaks the batch now.
     ///
     /// This is what a trigger means by "say this immediately". Saying it with
@@ -129,6 +170,26 @@ public sealed class Announcer : IDisposable
         }
 
         Flush(SpeechPriority.Now);
+    }
+
+    /// <summary>
+    /// Drops output that was waiting to be spoken, keeping anything a trigger called urgent.
+    ///
+    /// For the moment the window stops being the one the user is in. Without this, leaving a
+    /// busy terminal is followed a fifth of a second later by it saying one last thing into
+    /// whatever you switched to -- which is the exact interruption this is all meant to stop.
+    /// A trigger's line is kept because the user asked for that one by name.
+    /// </summary>
+    public void DiscardStreamed()
+    {
+        lock (_gate)
+        {
+            if (_pending.Count == 0) return;
+            _pending.Clear();
+            if (_urgent.Count > 0) return;
+            _flushTimer?.Dispose();
+            _flushTimer = null;
+        }
     }
 
     /// <summary>

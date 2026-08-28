@@ -59,6 +59,17 @@ public sealed class AppSettings
     /// </summary>
     public bool MudSounds { get; set; } = true;
 
+    /// <summary>
+    /// Whether output is spoken while the window is in the background.
+    ///
+    /// Off. A screen reader has one voice for the whole desktop, so a terminal that carries
+    /// on talking after it has been left behind is talking over whatever the user went to
+    /// read -- and with BlindTerm as the default terminal there can be several of them
+    /// running at once. Triggers and the bell are heard either way, because those are things
+    /// the user asked to be told about wherever they are.
+    /// </summary>
+    public bool SpeakInBackground { get; set; }
+
     /// <summary>Where sound packs live. Blank means the default folder under %APPDATA%.</summary>
     public string SoundDirectory { get; set; } = string.Empty;
 
@@ -164,6 +175,7 @@ public sealed class AppSettings
         RecentTelnetHosts = new List<string>(RecentTelnetHosts),
         MudDirectoryKey = MudDirectoryKey,
         MudDirectoryEndpoint = MudDirectoryEndpoint,
+        SpeakInBackground = SpeakInBackground,
         MudSounds = MudSounds,
         SoundDirectory = SoundDirectory,
         SoundVolume = SoundVolume,

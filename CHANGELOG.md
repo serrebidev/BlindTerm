@@ -6,6 +6,25 @@ earlier prototypes were something anyone could have run.
 
 ## v0.5.0 - 2026-08-28
 
+- Speak output only while the window is the one you are in. Reported from a session with
+  BlindTerm as the default terminal and TTCom left running in another window: it read its
+  status updates out over whatever the user had gone to do, and the only way to stop it was
+  to turn output speech off entirely. A screen reader has one voice for the whole desktop, so
+  a background window that talks is not informing anyone, it is interrupting them -- and as
+  the default terminal there can be several of them at once. Anything already queued is
+  dropped the moment the window is left, so leaving a busy terminal is not followed by one
+  last sentence over the top.
+- The bell and any trigger you wrote are still heard from a background window, because both
+  are things you asked to be told about wherever you happen to be. **Read** &rarr; **Speak
+  output in the background** puts the old behaviour back for anyone waiting on a build in
+  another workspace, and is remembered.
+- **Terminal** &rarr; **Browse for MUDs...** (`Alt+Shift+B`), because the browser was
+  reachable only as a button inside the connect dialog, and "which MUD" is a different
+  question from "what address": somebody who has not got an address has no reason to open a
+  dialog that asks for one. Choosing a game there connects to it, taking its encrypted port
+  when it publishes one. The button in the connect dialog stays, for filling the fields in
+  rather than connecting straight away.
+
 - Browsing needs no account and no API key. A scheduled job in this repository holds one
   MUDVerse key, rebuilds the whole list every half hour and publishes it; BlindTerm downloads
   that file. There is no key in the repository or in the program: MUDVerse issues keys for
