@@ -64,6 +64,17 @@ internal sealed class ForegroundProgramState
     public void Submitted(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
+        SubmittedUnknownLine();
+    }
+
+    /// <summary>
+    /// A line was submitted whose text BlindTerm does not hold, because Tab handed it to the
+    /// terminal's own editor to complete. It can start a program exactly as a typed line can,
+    /// and without the same grace the first keys afterwards would go to the shell that is
+    /// busy starting it.
+    /// </summary>
+    public void SubmittedUnknownLine()
+    {
         _submittedAt = _now();
         // The world just changed, so the previous answer is worthless.
         _probedAt = null;

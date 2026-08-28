@@ -82,13 +82,22 @@ internal static class AppShortcuts
             && (keyData & Keys.KeyCode) != Keys.V;
 
     /// <summary>
-    /// An unmodified Tab in an active inline program's input asks that program to complete
-    /// what was typed. Shift+Tab remains reverse focus navigation to the transcript, and a
-    /// Tab pressed in the transcript remains forward focus navigation to the input field.
+    /// An unmodified Tab in the terminal's input asks whatever is reading the line to
+    /// complete what was typed: the shell's own editor at an idle prompt, or an inline
+    /// program that has taken the keyboard.
+    ///
+    /// The shell prompt is where completion is used most, and it was the one place this did
+    /// not reach. A Tab nothing claimed fell through to window tab order, which moved the
+    /// reader from the input box round to the transcript and left the typed line behind in a
+    /// box the user was no longer standing in -- the text looked lost and no completion had
+    /// happened. Nobody pressing Tab at a terminal prompt is asking for that.
+    ///
+    /// Shift+Tab remains reverse focus navigation to the transcript, and a Tab pressed in the
+    /// transcript remains forward focus navigation to the input field.
     /// </summary>
-    public static bool ShouldSendCompletionTab(Keys keyData, bool foregroundProgramActive,
+    public static bool ShouldSendCompletionTab(Keys keyData, bool terminalLineLive,
         bool terminalInputFocused)
-        => foregroundProgramActive
+        => terminalLineLive
             && terminalInputFocused
             && (keyData & Keys.KeyCode) == Keys.Tab
             && (keyData & (Keys.Control | Keys.Alt | Keys.Shift)) == Keys.None;

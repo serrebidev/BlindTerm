@@ -4,6 +4,24 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.3.1 - 2026-08-27
+
+- Complete with `Tab` at the shell prompt, not only inside an inline program. This was the
+  one place completion did not reach, and it is the place it is used most: `Tab` fell through
+  to window tab order instead, which moved the reader off to the transcript and left the typed
+  line behind in a box it was no longer standing in -- no completion, and the command
+  apparently gone.
+- Say what the completion produced, and put it back in the command box. A completed line is
+  written to the terminal's unfinished current line, which is only ever spoken when it reads
+  as a prompt -- and a command ending in a file name never does -- so `Tab` was silent even
+  when it worked. The completed command is now read out once the shell has stopped redrawing
+  it, and lands in the edit box where it can be reviewed a character at a time, corrected, and
+  sent.
+- Keep an accessible agent launch accessible when its line is completed. `claude`, `codex` and
+  `opencode` are still started in their linear interfaces when `Tab` hands the line to the
+  shell, and a program started from a completed line owns the keyboard immediately rather than
+  losing its first keys to the shell.
+
 ## v0.3.0 - 2026-08-27
 
 - Read a MUD's own account of the room, its exits and your health, over GMCP. A MUD that

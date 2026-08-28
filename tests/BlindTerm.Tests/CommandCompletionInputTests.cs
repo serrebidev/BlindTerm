@@ -34,6 +34,45 @@ public class CommandCompletionInputTests
         Assert.Null(input.Character('\r'));
     }
 
+    /// <summary>
+    /// A line the terminal's own editor completed can start a program, and BlindTerm no
+    /// longer holds the text to tell. What it does know is whether the line is bare.
+    /// </summary>
+    [Fact]
+    public void ALineHandedOverWithSomethingOnItCountsAsHavingText()
+    {
+        var input = new CommandCompletionInput();
+
+        Assert.False(input.HasText);
+        input.Begin("cod");
+        Assert.True(input.HasText);
+        input.FinishLine();
+        Assert.False(input.HasText);
+    }
+
+    [Fact]
+    public void CompletionPutsTextOnALineThatWasBareWhenTabWasPressed()
+    {
+        var input = new CommandCompletionInput();
+        input.Begin(string.Empty);
+        Assert.False(input.HasText);
+
+        input.Completed("Documents/");
+
+        Assert.True(input.HasText);
+    }
+
+    [Fact]
+    public void TypingAfterCompletionPutsTextOnABareLineToo()
+    {
+        var input = new CommandCompletionInput();
+        input.Begin(string.Empty);
+
+        input.Character('x');
+
+        Assert.True(input.HasText);
+    }
+
     [Fact]
     public void EnterEndsStreamingAndTheNextPromptIsBufferedAgain()
     {

@@ -130,7 +130,17 @@ public class AppShortcutTests
     [Fact]
     public void TabInAnActiveInlineProgramsInputRequestsCompletion()
         => Assert.True(AppShortcuts.ShouldSendCompletionTab(
-            Keys.Tab, foregroundProgramActive: true, terminalInputFocused: true));
+            Keys.Tab, terminalLineLive: true, terminalInputFocused: true));
+
+    /// <summary>
+    /// The shell prompt is where completion is used most. It used to be excluded, so Tab fell
+    /// through to window tab order: no completion, and the reader moved off to the transcript
+    /// leaving the typed line behind in a box it was no longer standing in.
+    /// </summary>
+    [Fact]
+    public void TabAtTheShellPromptRequestsTheShellsOwnCompletion()
+        => Assert.True(AppShortcuts.ShouldSendCompletionTab(
+            Keys.Tab, terminalLineLive: true, terminalInputFocused: true));
 
     [Theory]
     [InlineData(Keys.Shift | Keys.Tab)]
@@ -138,17 +148,18 @@ public class AppShortcutTests
     [InlineData(Keys.Alt | Keys.Tab)]
     public void ModifiedTabRemainsWindowFocusOrApplicationNavigation(Keys key)
         => Assert.False(AppShortcuts.ShouldSendCompletionTab(
-            key, foregroundProgramActive: true, terminalInputFocused: true));
+            key, terminalLineLive: true, terminalInputFocused: true));
 
     [Fact]
     public void TabFromOutputStillMovesFocusToInput()
         => Assert.False(AppShortcuts.ShouldSendCompletionTab(
-            Keys.Tab, foregroundProgramActive: true, terminalInputFocused: false));
+            Keys.Tab, terminalLineLive: true, terminalInputFocused: false));
 
+    /// <summary>Nothing is reading the line once the session has ended, so Tab is focus again.</summary>
     [Fact]
-    public void TabAtTheShellPromptIsNotTakenBeforeAgentLaunchAdaptation()
+    public void TabWithNoLiveSessionRemainsFocusNavigation()
         => Assert.False(AppShortcuts.ShouldSendCompletionTab(
-            Keys.Tab, foregroundProgramActive: false, terminalInputFocused: true));
+            Keys.Tab, terminalLineLive: false, terminalInputFocused: true));
 
     [Fact]
     public void ShiftTabMovesAFullScreenInputToReadableOutput()

@@ -51,6 +51,10 @@ public sealed class MainForm : Form
     // Sounds repeat by being started again when they finish, so something has to notice that
     // they have. Four times a second is under the gap anyone hears between two repeats.
     private readonly System.Windows.Forms.Timer _soundTimer = new() { Interval = 250 };
+    // A shell redraws a completed line in as many pieces as it likes -- the flushed text
+    // echoed back, then the completion replacing its last word. Reading the first piece would
+    // announce half a command; this waits for the redrawing to stop.
+    private readonly System.Windows.Forms.Timer _completionEchoTimer = new() { Interval = 120 };
 
     private readonly TerminalHost _host;
     private readonly AppSettings _settings;
@@ -60,6 +64,7 @@ public sealed class MainForm : Form
     private readonly ScreenNews _screenNews = new();
     private readonly ForegroundProgramState _foregroundProgram;
     private readonly CommandCompletionInput _completionInput = new();
+    private readonly CommandCompletionEcho _completionEcho = new();
     private readonly LatestResponse _latestResponse = new();
 
     private MspPlayer? _sounds;
@@ -134,6 +139,11 @@ public sealed class MainForm : Form
         };
 
         _soundTimer.Tick += (_, _) => _sounds?.Tick();
+        _completionEchoTimer.Tick += (_, _) =>
+        {
+            _completionEchoTimer.Stop();
+            SpeakCompletedLine();
+        };
 
         _host.Updated += OnUpdated;
         _host.Bell += OnBell;
@@ -361,6 +371,11 @@ public sealed class MainForm : Form
         {
             if (_live.Text != update.LiveText) _live.Text = update.LiveText;
             CommandAccessibility.Apply(_command, update.LiveText);
+            if (_completionEcho.Pending)
+            {
+                _completionEchoTimer.Stop();
+                _completionEchoTimer.Start();
+            }
         }
 
         _host.Announcer.Enqueue(_news.News(update));
@@ -382,6 +397,8 @@ public sealed class MainForm : Form
 
         if (entering)
         {
+            // A completion read back now would describe a line on a screen that is gone.
+            EndCompletionEcho();
             _host.Announcer.DiscardPending();
             _news.Reset();
             _screenNews.Reset();
@@ -583,6 +600,7 @@ public sealed class MainForm : Form
         }
 
         _foregroundProgram.Exited();
+        EndCompletionEcho();
 
         string message = _host.Kind switch
         {
@@ -768,6 +786,32 @@ public sealed class MainForm : Form
             return;
         }
         Say(_live.Text.Trim().Length > 0 ? _live.Text : "Current line is empty");
+    }
+
+    /// <summary>
+    /// Puts what the terminal completed back into the command box, and reads it out.
+    ///
+    /// Both halves are the point. Speaking it is the only way Tab is heard to have done
+    /// anything: the completed line sits on the terminal's unfinished current line, which is
+    /// announced only when it reads as a prompt, and a command ending in a file name never
+    /// does. Putting it in the box is what keeps it somewhere it can be reviewed a character
+    /// at a time and corrected, which is the whole reason there is a native edit in front of
+    /// a terminal here. Typing after this reaches the terminal and the box alike, so the two
+    /// stay in step.
+    /// </summary>
+    private void SpeakCompletedLine()
+    {
+        if (_completionEcho.Completed(_live.Text) is not { } completed) return;
+        if (ScreenMode || !_completionInput.Active) return;
+
+        _completionInput.Completed(completed);
+        if (_command.Text != completed)
+        {
+            _command.Text = completed;
+            _command.SelectionStart = _command.TextLength;
+        }
+
+        Say(completed);
     }
 
     private void SpeakScreen()
@@ -1256,8 +1300,15 @@ public sealed class MainForm : Form
 
         string text = _command.Text;
         BeginLatestResponse();
+        bool completedLineHasText = _completionInput.HasText;
         if (_completionInput.FinishLine())
         {
+            EndCompletionEcho();
+            // A line the terminal's own editor completed can start a program exactly as a
+            // typed one can, and BlindTerm no longer holds its text to tell. It gets the same
+            // startup grace, so the first keys afterwards reach the program rather than the
+            // shell that is busy starting it.
+            if (completedLineHasText) _foregroundProgram.SubmittedUnknownLine();
             // The pending text and every character typed after completion already reached the
             // program. Only Return remains; resending the edit control would duplicate text.
             _host.SendLine(string.Empty);
@@ -1440,12 +1491,32 @@ public sealed class MainForm : Form
         bool commandFocused = _command.Focused;
 
         if (!CommandAccessibility.IsSecret(_command) &&
-            AppShortcuts.ShouldSendCompletionTab(keyData, foregroundLineProgram, commandFocused))
+            AppShortcuts.ShouldSendCompletionTab(
+                keyData, !ScreenMode && _host.IsRunning, commandFocused))
         {
-            _host.Send(_completionInput.Begin(_command.Text));
-            // The program's rendered line is authoritative after it completes the text. The
-            // native field now mirrors only new typing; Shift+Tab moves to that output.
+            // A line the shell has not run yet is the last chance to ask an agent CLI for its
+            // linear interface: once the shell's editor owns the line, Enter is all BlindTerm
+            // sends and there is nothing left to rewrite. Doing it here is what lets Tab
+            // complete at the prompt without completion and an accessible launch becoming a
+            // choice between the two. A program reading the line, or a MUD, gets what was
+            // typed -- that text is theirs to interpret.
+            bool shellReadsTheLine = !foregroundLineProgram
+                && _host.Kind != TerminalSessionKind.Remote;
+            string pending = shellReadsTheLine
+                ? AccessibleAgentCommand.Adapt(_command.Text)
+                : _command.Text;
+
+            // The unfinished line as it stands now is the prompt alone: everything typed is
+            // still held here. That is the anchor the completed line is read back against.
+            if (_completionInput.Active) _completionEcho.ExpectAnother();
+            else _completionEcho.Expect(_live.Text);
+            _host.Send(_completionInput.Begin(pending));
+            // The terminal's rendered line is authoritative once it has completed the text.
+            // The box is refilled from it when the redrawing stops, and mirrors typing after
+            // that; Shift+Tab moves to the output.
             _command.Clear();
+            _completionEchoTimer.Stop();
+            _completionEchoTimer.Start();
             return true;
         }
 
@@ -1549,6 +1620,13 @@ public sealed class MainForm : Form
         return controlPaste || insertPaste;
     }
 
+    /// <summary>Stops waiting for a completion that is no longer worth reading back.</summary>
+    private void EndCompletionEcho()
+    {
+        _completionEchoTimer.Stop();
+        _completionEcho.Cancel();
+    }
+
     private static bool MirrorsNativeCommandEdit(Keys keyData)
         => (keyData & Keys.Alt) != Keys.Alt && (keyData & Keys.KeyCode) is
             Keys.Left or Keys.Right or Keys.Home or Keys.End or Keys.Back or Keys.Delete;
@@ -1591,6 +1669,7 @@ public sealed class MainForm : Form
         _sounds?.Dispose();
         _soundDownloads?.Dispose();
         _reviewFocusSpeechTimer.Dispose();
+        _completionEchoTimer.Dispose();
         _updates.Dispose();
         _host.Dispose();
         base.OnFormClosed(e);
