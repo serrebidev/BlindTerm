@@ -306,6 +306,100 @@ public class TelnetProtocolTests
     }
 
     [Fact]
+    public void GmcpOfferedByTheServerIsAcceptedAndSubscribedTo()
+    {
+        // Agreeing is not enough. GMCP is a subscription: a MUD sends the packages the client
+        // named and nothing else, so a client that says yes and then says nothing has agreed
+        // to receive nothing.
+        var protocol = New();
+
+        var (_, reply) = Feed(protocol, Iac, Will, OptGmcp);
+
+        Assert.True(protocol.GmcpAgreed);
+        Assert.Equal(new byte[] { Iac, Do, OptGmcp }, reply[..3]);
+
+        string said = Encoding.UTF8.GetString(reply);
+        Assert.Contains("Core.Hello", said, StringComparison.Ordinal);
+        Assert.Contains("BLINDTERM", said, StringComparison.Ordinal);
+        Assert.Contains("Core.Supports.Set", said, StringComparison.Ordinal);
+        Assert.Contains("Room 1", said, StringComparison.Ordinal);
+        Assert.Contains("Char.Vitals 1", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AgreeingTwiceDoesNotIntroduceTwice()
+    {
+        var protocol = New();
+        Feed(protocol, Iac, Will, OptGmcp);
+
+        var (_, again) = Feed(protocol, Iac, Will, OptGmcp);
+
+        Assert.Empty(again);
+    }
+
+    [Fact]
+    public void AGmcpMessageIsLiftedOutOfTheStreamAndHandedOver()
+    {
+        var protocol = New();
+        Feed(protocol, Iac, Will, OptGmcp);
+
+        byte[] payload = Encoding.UTF8.GetBytes("""Room {"short":"Apartment"}""");
+        var (text, _) = Feed(protocol,
+            [.. Encoding.UTF8.GetBytes("before "), Iac, Sb, OptGmcp, .. payload, Iac, Se,
+             .. Encoding.UTF8.GetBytes("after")]);
+
+        // None of it reaches the terminal: this is data beside the text, not text.
+        Assert.Equal("before after", text);
+
+        var received = new List<GmcpMessage>();
+        protocol.DrainGmcp(received);
+        GmcpMessage message = Assert.Single(received);
+        Assert.Equal("Room", message.Package);
+        Assert.Equal("""{"short":"Apartment"}""", message.Payload);
+
+        // And handing them over forgets them.
+        received.Clear();
+        protocol.DrainGmcp(received);
+        Assert.Empty(received);
+    }
+
+    [Fact]
+    public void NothingIsSentOverGmcpUntilItHasBeenAgreed()
+    {
+        var protocol = New();
+        var reply = new List<byte>();
+
+        Assert.False(protocol.TrySendGmcp("Core.Ping", reply));
+        Assert.Empty(reply);
+
+        Feed(protocol, Iac, Will, OptGmcp);
+        Assert.True(protocol.TrySendGmcp("Core.Ping", reply));
+        Assert.Contains("Core.Ping", Encoding.UTF8.GetString([.. reply]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheServerDescribingItselfIsReadAndKept()
+    {
+        const byte OptMssp = 70, Var = 1, Val = 2;
+        var protocol = New();
+
+        byte[] body =
+        [
+            Var, .. Encoding.UTF8.GetBytes("NAME"), Val, .. Encoding.UTF8.GetBytes("CORE MUD"),
+            Var, .. Encoding.UTF8.GetBytes("ROOMS"), Val, .. Encoding.UTF8.GetBytes("3250"),
+            Var, .. Encoding.UTF8.GetBytes("GAMEPLAY"), Val, .. Encoding.UTF8.GetBytes("Questing"),
+            Var, .. Encoding.UTF8.GetBytes("GAMEPLAY"), Val, .. Encoding.UTF8.GetBytes("Roleplaying"),
+        ];
+        var (text, _) = Feed(protocol, [Iac, Sb, OptMssp, .. body, Iac, Se]);
+
+        Assert.Equal(string.Empty, text);
+        Assert.Equal("CORE MUD", protocol.ServerStatus["NAME"]);
+        Assert.Equal("3250", protocol.ServerStatus["ROOMS"]);
+        // A variable sent twice is one variable with two values, not the second overwriting.
+        Assert.Equal("Questing, Roleplaying", protocol.ServerStatus["GAMEPLAY"]);
+    }
+
+    [Fact]
     public void AWholeMudLoginArrivesAsNothingButItsText()
     {
         var protocol = New();

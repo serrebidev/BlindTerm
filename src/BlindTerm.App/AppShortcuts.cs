@@ -24,6 +24,8 @@ internal static class AppShortcuts
     public const Keys SpeakScreen = Keys.Alt | Keys.W;
     public const Keys ToggleSpeakOutput = Keys.Alt | Keys.S;
     public const Keys ToggleMudSounds = Keys.Alt | Keys.M;
+    public const Keys SpeakVitals = Keys.Alt | Keys.V;
+    public const Keys SpeakRoom = Keys.Alt | Keys.X;
     public const Keys EndOfTranscript = Keys.Alt | Keys.End;
     public const Keys CopyAll = Keys.Alt | Keys.A;
     public const Keys CopyCommandOutput = Keys.Alt | Keys.O;
@@ -44,6 +46,8 @@ internal static class AppShortcuts
         SpeakScreen,
         ToggleSpeakOutput,
         ToggleMudSounds,
+        SpeakVitals,
+        SpeakRoom,
         EndOfTranscript,
         CopyAll,
         CopyCommandOutput,

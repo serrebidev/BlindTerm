@@ -85,6 +85,23 @@ public class TerminalNewsTests
     }
 
     [Fact]
+    public void AQuietLineIsRecordedWithoutBeingRead()
+    {
+        // Where a MUD's account of the room and the character goes: into the transcript at the
+        // moment it happened, without being read out over whatever caused it.
+        var news = new TerminalNews();
+        var quiet = new TerminalUpdate { External = true, Quiet = true };
+        quiet.NewLines.Add("[Apartment, South Dome. Exits: north.]");
+
+        Assert.Empty(news.News(quiet));
+
+        // And it is not owed later either: the line has been seen, it was simply not spoken.
+        var again = new TerminalUpdate { External = true };
+        again.NewLines.Add("[Apartment, South Dome. Exits: north.]");
+        Assert.Empty(news.News(again));
+    }
+
+    [Fact]
     public void AWrappedPromptIsSuppressedByItsLastRowOnly()
     {
         // Live text can be several rows. Only the last of them becomes the transcript line

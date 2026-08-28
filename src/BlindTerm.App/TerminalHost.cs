@@ -65,6 +65,12 @@ public sealed class TerminalHost : IDisposable
     /// <summary>A remote host asked for a sound, already on the UI thread.</summary>
     public event Action<MspTrigger>? SoundRequested;
 
+    /// <summary>
+    /// A remote host said something about the room or the character over GMCP, already on the
+    /// UI thread.
+    /// </summary>
+    public event Action<GmcpMessage>? StatusReceived;
+
     public event Action<string>? TitleChanged;
     public event Action<int?>? Exited;
 
@@ -138,6 +144,7 @@ public sealed class TerminalHost : IDisposable
             }
         };
         if (session is TelnetSession remote)
+        {
             remote.SoundRequested += trigger =>
             {
                 lock (_gate)
@@ -146,6 +153,15 @@ public sealed class TerminalHost : IDisposable
                         Post(() => SoundRequested?.Invoke(trigger));
                 }
             };
+            remote.StatusReceived += message =>
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_session, session))
+                        Post(() => StatusReceived?.Invoke(message));
+                }
+            };
+        }
         session.Exited += code =>
         {
             lock (_gate)
@@ -289,6 +305,18 @@ public sealed class TerminalHost : IDisposable
     /// <summary>Whether this window is showing a console Windows handed over.</summary>
     public bool IsHandoff => Kind == TerminalSessionKind.Handoff;
 
+    /// <summary>What the connected host said about itself over MSSP. Empty for anything else.</summary>
+    public IReadOnlyDictionary<string, string> ServerStatus
+    {
+        get
+        {
+            lock (_gate)
+                return _session is TelnetSession remote
+                    ? remote.ServerStatus
+                    : new Dictionary<string, string>();
+        }
+    }
+
     /// <summary>
     /// Adds lines the app writes itself rather than the shell: the ready message at launch,
     /// the exit message at the end.
@@ -298,12 +326,13 @@ public sealed class TerminalHost : IDisposable
     /// Appending to the document alone is not enough -- that is the transcript, not the box
     /// the user is reading.
     /// </summary>
-    public void AppendExternal(IReadOnlyList<string> lines)
+    /// <param name="quiet">Whether the lines go in without being announced.</param>
+    public void AppendExternal(IReadOnlyList<string> lines, bool quiet = false)
     {
         if (lines.Count == 0) return;
 
         TerminalUpdate update;
-        lock (_gate) update = _core.AppendExternal(lines);
+        lock (_gate) update = _core.AppendExternal(lines, quiet);
 
         Post(() => Updated?.Invoke(update));
     }

@@ -10,15 +10,24 @@ namespace BlindTerm.Core.Net;
 /// does two things: hand the text on untouched, and answer the commands. What it answers is
 /// the interesting part.
 ///
-/// BlindTerm refuses every option that would put anything but text on the wire -- the
-/// compression options, and the out-of-band data channels MUDs use (MSDP, GMCP, ATCP, MSSP,
-/// MXP). Accepting those means a stream this terminal cannot read, or markup appearing in the
-/// middle of a sentence a screen reader is speaking.
+/// BlindTerm refuses every option that would put something in the text that the text cannot
+/// carry: the compression options, which make a stream this terminal cannot read, and MXP,
+/// whose markup ends up spoken in the middle of a sentence by a client that does not render
+/// it. MSDP, ATCP and ZMP are refused as duplicates of a channel already agreed below.
 ///
-/// The MUD Sound Protocol is accepted, which is what a MUD asks about before it will send a
-/// sound at all. Its triggers arrive as text and are lifted out of the stream by
-/// <see cref="MspScanner"/>; agreeing costs nothing even with sound switched off, because a
-/// trigger left in the text is a line read aloud in the middle of a fight.
+/// It accepts the three that hand over facts rather than markup.
+///
+/// The MUD Sound Protocol is what a MUD asks about before it will send a sound at all. Its
+/// triggers arrive as text and are lifted out of the stream by <see cref="MspScanner"/>;
+/// agreeing costs nothing even with sound switched off, because a trigger left in the text is
+/// a line read aloud in the middle of a fight.
+///
+/// GMCP carries structured messages beside the text: which room this is, what its exits are,
+/// how the character is doing. For a player who cannot see the screen that is the difference
+/// between being told the exits and having to find the word "Exits" in a paragraph. It is a
+/// subscription, so agreeing to it is not enough -- see <see cref="IntroduceOverGmcp"/>.
+///
+/// MSSP is the server describing itself, and is read-only.
 ///
 /// Nothing is offered unsolicited. A telnet client that announces itself the moment it
 /// connects puts three commands in front of whatever the far end was expecting, which a MUD
@@ -50,7 +59,9 @@ public sealed class TelnetProtocol
     private const byte OptEndOfRecord = 25;
     private const byte OptWindowSize = 31;
     private const byte OptCharset = 42;
+    private const byte OptServerStatus = 70;
     private const byte OptMudSound = 90;
+    private const byte OptGmcp = 201;
 
     // Subnegotiation verbs for TERMINAL-TYPE.
     private const byte TerminalTypeIs = 0;
@@ -78,6 +89,9 @@ public sealed class TelnetProtocol
 
     private readonly List<byte> _subnegotiation = new();
     private readonly List<string> _soundRequests = new();
+    private readonly List<GmcpMessage> _gmcp = new();
+    private readonly Dictionary<string, string> _serverStatus =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly string _clientName;
 
     private State _state = State.Data;
@@ -218,7 +232,8 @@ public sealed class TelnetProtocol
     /// off, and Suppress Go Ahead because character-at-a-time is what every MUD expects.
     /// </summary>
     private static bool TheyMayPerform(byte option)
-        => option is OptEcho or OptSuppressGoAhead or OptEndOfRecord or OptCharset or OptMudSound;
+        => option is OptEcho or OptSuppressGoAhead or OptEndOfRecord or OptCharset or OptMudSound
+                  or OptGmcp or OptServerStatus;
 
     /// <summary>Whether the far end has been told it may send MUD Sound Protocol triggers.</summary>
     public bool MudSoundAgreed => _remoteOn.Contains(OptMudSound);
@@ -228,7 +243,37 @@ public sealed class TelnetProtocol
         if (!TheyMayPerform(option)) { Send(Dont, option, reply); return; }
         // Silence when nothing changes is what keeps two polite ends from answering each
         // other forever.
-        if (_remoteOn.Add(option)) Send(Do, option, reply);
+        if (!_remoteOn.Add(option)) return;
+        Send(Do, option, reply);
+        if (option == OptGmcp) IntroduceOverGmcp(reply);
+    }
+
+    /// <summary>
+    /// Says who is asking, and what it wants to hear about.
+    ///
+    /// GMCP is a subscription: a MUD sends the packages the client asked for and nothing else.
+    /// Saying nothing after agreeing therefore agrees to receive nothing, which is how a client
+    /// ends up negotiating a protocol it never sees a message from. The packages named here
+    /// are the ones with something to tell a player who cannot see the screen: where they are,
+    /// what the exits are, and how the character is doing.
+    /// </summary>
+    private void IntroduceOverGmcp(List<byte> reply)
+    {
+        SendGmcp($"Core.Hello {{ \"client\": \"{_clientName}\", \"version\": \"{VersionInfo.Current}\" }}",
+                 reply);
+        SendGmcp(
+            """Core.Supports.Set [ "Char 1", "Char.Vitals 1", "Char.Status 1", "Room 1", "Comm.Channel 1" ]""",
+            reply);
+    }
+
+    private static void SendGmcp(string message, List<byte> reply)
+    {
+        reply.Add(Iac);
+        reply.Add(Sb);
+        reply.Add(OptGmcp);
+        foreach (byte value in Encoding.UTF8.GetBytes(message)) AppendEscaped(reply, value);
+        reply.Add(Iac);
+        reply.Add(Se);
     }
 
     private void AnswerWont(byte option, List<byte> reply)
@@ -290,6 +335,89 @@ public sealed class TelnetProtocol
         _soundRequests.Clear();
     }
 
+    /// <summary>Whether the far end has been told it may send GMCP.</summary>
+    public bool GmcpAgreed => _remoteOn.Contains(OptGmcp);
+
+    /// <summary>Hands over the GMCP messages that have arrived, and forgets them.</summary>
+    public void DrainGmcp(List<GmcpMessage> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+        if (_gmcp.Count == 0) return;
+        into.AddRange(_gmcp);
+        _gmcp.Clear();
+    }
+
+    /// <summary>
+    /// Sends a message to the far end's GMCP handler. Nothing is sent when it never agreed to
+    /// the protocol: a subnegotiation for an option that was refused is a protocol error.
+    /// </summary>
+    public bool TrySendGmcp(string message, List<byte> reply)
+    {
+        ArgumentNullException.ThrowIfNull(reply);
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        if (!GmcpAgreed) return false;
+        SendGmcp(message, reply);
+        return true;
+    }
+
+    /// <summary>
+    /// What the server said about itself when asked, as MUD Server Status Protocol variables.
+    ///
+    /// Read-only and purely informational -- the name of the MUD, how long it has been up, how
+    /// many rooms it has. It is here because a server that offers it is offering the one
+    /// description of itself that does not have to be found in a banner.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ServerStatus => _serverStatus;
+
+    // MSSP packs its variables as VAR name VAL value, repeated.
+    private const byte MsspVariable = 1;
+    private const byte MsspValue = 2;
+
+    private void ReadServerStatus()
+    {
+        string? name = null;
+        var text = new List<byte>();
+        bool inValue = false;
+
+        string Take()
+        {
+            string value = Encoding.UTF8.GetString([.. text]).Trim();
+            text.Clear();
+            return value;
+        }
+
+        void Close()
+        {
+            string value = Take();
+            if (name is not { Length: > 0 }) return;
+            // A server may repeat a variable to give it several values.
+            _serverStatus[name] = _serverStatus.TryGetValue(name, out string? had) && had.Length > 0
+                ? $"{had}, {value}"
+                : value;
+        }
+
+        for (int i = 1; i < _subnegotiation.Count; i++)
+        {
+            switch (_subnegotiation[i])
+            {
+                case MsspVariable:
+                    if (inValue) Close();
+                    name = null;
+                    text.Clear();
+                    inValue = false;
+                    break;
+                case MsspValue:
+                    name = Take();
+                    inValue = true;
+                    break;
+                default:
+                    text.Add(_subnegotiation[i]);
+                    break;
+            }
+        }
+        if (inValue) Close();
+    }
+
     private void Subnegotiated(List<byte> reply)
     {
         if (_subnegotiation.Count >= 3 &&
@@ -304,6 +432,24 @@ public sealed class TelnetProtocol
         if (_subnegotiation.Count >= 2 && _subnegotiation[0] == OptMudSound)
         {
             _soundRequests.Add(Encoding.UTF8.GetString([.. _subnegotiation[1..]]));
+            _subnegotiation.Clear();
+            return;
+        }
+
+        if (_subnegotiation.Count >= 2 && _subnegotiation[0] == OptGmcp)
+        {
+            if (GmcpMessage.TryParse(Encoding.UTF8.GetString([.. _subnegotiation[1..]]),
+                                     out GmcpMessage? message))
+            {
+                _gmcp.Add(message);
+            }
+            _subnegotiation.Clear();
+            return;
+        }
+
+        if (_subnegotiation.Count >= 2 && _subnegotiation[0] == OptServerStatus)
+        {
+            ReadServerStatus();
             _subnegotiation.Clear();
             return;
         }

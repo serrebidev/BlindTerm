@@ -50,6 +50,25 @@ public sealed class AppSettings
     /// </summary>
     public bool DownloadSounds { get; set; }
 
+    /// <summary>
+    /// Whether what a MUD says about the room and the character over GMCP is written into the
+    /// transcript as it arrives.
+    ///
+    /// On by default. It is the one place a MUD states its exits as a list rather than as a
+    /// sentence to be searched, and putting it in the transcript at the moment it happens is
+    /// what makes reading back through a session find it where it belongs.
+    /// </summary>
+    public bool MudStatus { get; set; } = true;
+
+    /// <summary>
+    /// Whether those lines are also read out as they arrive.
+    ///
+    /// Off by default. A MUD sends the character's vitals after every command, and hearing
+    /// them over the fight that is changing them is not an improvement. Alt+V and Alt+X ask
+    /// for the same facts at the moment anyone actually wants them.
+    /// </summary>
+    public bool SpeakMudStatus { get; set; }
+
     /// <summary>How many remembered addresses are kept.</summary>
     public const int MaximumRecentTelnetHosts = 12;
 
@@ -94,6 +113,8 @@ public sealed class AppSettings
         SoundDirectory = SoundDirectory,
         SoundVolume = SoundVolume,
         DownloadSounds = DownloadSounds,
+        MudStatus = MudStatus,
+        SpeakMudStatus = SpeakMudStatus,
     };
 }
 

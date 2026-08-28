@@ -26,7 +26,11 @@ public sealed class TerminalNews
     public IReadOnlyList<string> News(TerminalUpdate update)
     {
         ArgumentNullException.ThrowIfNull(update);
-        var spoken = new List<string>(_lines.News(update));
+
+        // The lines still go through, so what has been said about each one stays right. Only
+        // the speaking is dropped.
+        IReadOnlyList<string> lines = _lines.News(update);
+        var spoken = new List<string>(update.Quiet ? [] : lines);
 
         // A batch the app wrote itself carries no reading of the terminal, so it says nothing
         // about the prompt the far end is waiting at. Reading its empty live text as "there is

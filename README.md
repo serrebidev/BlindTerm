@@ -23,6 +23,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Sends the arrow keys, Escape and the Ctrl chords to whatever the shell is running, so an agent's model picker, level adjustment and menus can all be driven from the command line.
 - Speaks telnet itself, so a MUD loses none of its output and is told that a screen reader is reading it — including when the connection was asked for by typing `telnet host port` at the command line.
 - Plays MUD sounds through the MUD Sound Protocol, and keeps its triggers out of the text whether sounds are on or off.
+- Reads a MUD's own account of the room, its exits and the character's health over GMCP, so the way out is a list rather than a word to be found in a paragraph.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 
@@ -119,6 +120,8 @@ For a telnet session, output remains the complete transcript. BlindTerm records 
 - `Alt+W`: speak the visible screen.
 - `Alt+S`: turn automatic output speech on or off.
 - `Alt+M`: turn MUD sounds on or off.
+- `Alt+X`: speak the room and its exits.
+- `Alt+V`: speak health and the other pools.
 - `Alt+C`: send Ctrl+C to interrupt the program.
 - `Alt+[`: send Escape.
 - `Alt+P`: pass the next supported key to the program, including an Alt chord.
@@ -164,6 +167,21 @@ Triggers are lifted out of the text **whether or not sounds are switched on**. T
 Some MUDs put their triggers in the text and some send them out of band, inside the telnet option, so that clients which do not speak the protocol never see them. Core MUD does the second. Both work.
 
 **Sounds are never downloaded unless you ask.** A trigger's `U` parameter is an address chosen by the server, so **Download sounds a MUD offers** is off by default. Turned on, the rules are narrow: an ordinary web address only, a plain sound file name with a playable extension, a destination inside your sound folder and nowhere else, a size cap, one attempt per address, and a file you already have is never overwritten.
+
+### What the MUD says about itself
+
+A MUD that speaks GMCP states the things its text only implies. BlindTerm asks for the ones worth having and turns them into plain sentences:
+
+- **`Alt+X`** &rarr; *"Apartment of Karia, South Dome. Exits: north."* The exits are a list because the MUD sent a list. Answering "which way can I go" stops meaning finding the word `Exits` somewhere in a paragraph and reading to the end of the line.
+- **`Alt+V`** &rarr; *"HP 240 of 280. SP 154 of 154. Poison venom."* Conditions are named only while they apply.
+
+The same sentences go into the transcript **at the moment they arrive**, in square brackets, so reading back through a session finds where you were and how you were doing in the right place rather than at the end. A MUD repeats these constantly &mdash; Core MUD sends the character's vitals after every command &mdash; so a line is recorded only when something actually changed. Moving between two rooms that read alike still counts as moving, because where a MUD gives a room an identity that is what decides it.
+
+They are not read out as they arrive unless you ask for that: hearing your remaining hit points spoken over the fight taking them is not an improvement. **Read** &rarr; **Speak MUD room and vitals** turns that on, and **MUD room and vitals in the transcript** turns the whole thing off.
+
+**Read** &rarr; **Server information** shows what the host said about itself over MSSP &mdash; name, uptime, codebase, room and area counts, website, Discord &mdash; as a page to arrow through rather than a recital.
+
+BlindTerm still refuses the options that would put something in the text which text cannot carry: the compression options, whose stream this terminal cannot read, and MXP, whose markup ends up spoken mid-sentence by a client that does not render it.
 
 ## Diagnostic CLI
 

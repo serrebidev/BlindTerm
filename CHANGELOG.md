@@ -4,6 +4,28 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.3.0 - 2026-08-27
+
+- Read a MUD's own account of the room, its exits and your health, over GMCP. A MUD that
+  supports it states the things its text only implies, and BlindTerm now asks for them and
+  turns them into plain sentences. `Alt+X` says the room, the area and
+  the exits -- as a list, because the MUD sent a list, so "which way can I go" stops meaning
+  finding the word "Exits" in a paragraph. `Alt+V` says health and the other pools, naming
+  conditions like poison only while they apply.
+- Write those sentences into the transcript at the moment they arrive, in square brackets, so
+  reading back through a session finds where you were and how you were doing in the right
+  place. A line is recorded only when something changed: a MUD repeats this after every
+  command. Moving between two rooms that read alike still counts as moving.
+- Keep them out of your ear unless you ask. Read, then Speak MUD room and vitals, reads them
+  aloud as they arrive; it is off, because hearing your remaining hit points spoken over the
+  fight taking them is not an improvement. Read, then MUD room and vitals in the transcript,
+  turns the whole thing off.
+- Read MSSP, and add Read, then Server information: what the host says about itself -- name,
+  uptime, codebase, rooms, areas, website, Discord -- as a page to arrow through.
+- Still refuse the options that would put something in the text which text cannot carry: the
+  compression options, whose stream this terminal cannot read, and MXP, whose markup is spoken
+  mid-sentence by a client that does not render it.
+
 ## v0.2.7 - 2026-08-27
 
 - Play the sounds a MUD asks for when it keeps them in folders. A sound name may carry a

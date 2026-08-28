@@ -43,6 +43,8 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem _speakOffCursorItem = new("Speak &background changes");
     private readonly ToolStripMenuItem _mudSoundsItem = new("&MUD sounds");
     private readonly ToolStripMenuItem _downloadSoundsItem = new("&Download sounds a MUD offers");
+    private readonly ToolStripMenuItem _mudStatusItem = new("MUD room and vitals in the &transcript");
+    private readonly ToolStripMenuItem _speakMudStatusItem = new("Speak MUD room and &vitals");
     private readonly ToolStripMenuItem _checkUpdatesItem = new("Check for &updates...");
     private readonly ToolStripMenuItem _defaultTerminalItem = new("Use BlindTerm as the &default terminal");
     private readonly System.Windows.Forms.Timer _reviewFocusSpeechTimer = new() { Interval = 120 };
@@ -136,6 +138,7 @@ public sealed class MainForm : Form
         _host.Updated += OnUpdated;
         _host.Bell += OnBell;
         _host.SoundRequested += OnSoundRequested;
+        _host.StatusReceived += OnStatusReceived;
         _host.TitleChanged += title => Text = string.IsNullOrWhiteSpace(title) ? "BlindTerm" : $"{title} — BlindTerm";
         _host.Exited += OnExited;
     }
@@ -278,6 +281,22 @@ public sealed class MainForm : Form
         _downloadSoundsItem.Click += (_, _) => ToggleDownloadSounds();
         read.DropDownItems.Add(_downloadSoundsItem);
 
+        read.DropDownItems.Add(new ToolStripSeparator());
+        read.DropDownItems.Add(Item("Speak &room and exits", AppShortcuts.SpeakRoom, SpeakRoom));
+        read.DropDownItems.Add(Item("Speak &health and other pools", AppShortcuts.SpeakVitals, SpeakVitals));
+        _mudStatusItem.Checked = _settings.MudStatus;
+        _mudStatusItem.AccessibleDescription =
+            "Whether what a MUD says about the room and the character is written into the "
+            + "transcript as it happens.";
+        _mudStatusItem.Click += (_, _) => ToggleMudStatus();
+        read.DropDownItems.Add(_mudStatusItem);
+        _speakMudStatusItem.Checked = _settings.SpeakMudStatus;
+        _speakMudStatusItem.AccessibleDescription =
+            "Whether those lines are also read out as they arrive, rather than only on request.";
+        _speakMudStatusItem.Click += (_, _) => ToggleSpeakMudStatus();
+        read.DropDownItems.Add(_speakMudStatusItem);
+        read.DropDownItems.Add(Item("&Server information", ShowServerInformation));
+
         var go = new ToolStripMenuItem("&Go");
         go.DropDownItems.Add(Item("&Transcript", AppShortcuts.FocusTranscript, FocusTranscript));
         go.DropDownItems.Add(Item("&Command line", AppShortcuts.FocusCommandLine, FocusCommandLine));
@@ -297,6 +316,13 @@ public sealed class MainForm : Form
     private static ToolStripMenuItem Item(string text, Keys shortcut, Action action)
     {
         var item = new ToolStripMenuItem(text) { ShortcutKeys = shortcut };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    private static ToolStripMenuItem Item(string text, Action action)
+    {
+        var item = new ToolStripMenuItem(text);
         item.Click += (_, _) => action();
         return item;
     }
@@ -546,6 +572,9 @@ public sealed class MainForm : Form
             // front of it. A bare Return makes it print another, so there is somewhere
             // visible to be.
             _host.SendLine(string.Empty);
+            // Whatever the MUD last said about the room and the character was about a place
+            // and a person this window is no longer showing.
+            _mud.Reset();
             _command.Enabled = true;
             _live.Text = string.Empty;
             CommandAccessibility.Apply(_command, string.Empty);
@@ -867,6 +896,133 @@ public sealed class MainForm : Form
         Say(_settings.DownloadSounds
             ? "Downloading MUD sounds on"
             : "Downloading MUD sounds off");
+    }
+
+    // ---- What the MUD says about itself ----
+
+    /// <summary>
+    /// The room and the character as the MUD last described them over GMCP, rather than as
+    /// they were printed.
+    /// </summary>
+    private readonly MudStatus _mud = new();
+
+    /// <summary>
+    /// Records what a MUD has just said about the room or the character.
+    ///
+    /// It goes into the transcript where it happened, because that is where it will be looked
+    /// for when reading back. Whether it is spoken as well is a separate choice, and off
+    /// unless asked for: Core MUD sends the character's vitals after every single command.
+    /// </summary>
+    private void OnStatusReceived(GmcpMessage message)
+    {
+        if (IsDisposed || Disposing || !_settings.MudStatus) return;
+        if (_mud.News(message) is not { } line) return;
+        _host.AppendExternal([$"[{line}]"], quiet: !_settings.SpeakMudStatus);
+    }
+
+    /// <summary>
+    /// Says where the character is and which ways out there are.
+    ///
+    /// This is the whole point of agreeing to GMCP. The exits are a list the MUD sent as a
+    /// list, so answering "which way can I go" does not mean finding the word "Exits" in a
+    /// paragraph and reading to the end of the line.
+    /// </summary>
+    private void SpeakRoom()
+        => Say(_mud.Room ?? (_host.Kind == TerminalSessionKind.Remote
+            ? "This MUD has not said what room this is."
+            : "Room information comes from a MUD."));
+
+    private void SpeakVitals()
+        => Say(_mud.Vitals ?? (_host.Kind == TerminalSessionKind.Remote
+            ? "This MUD has not said how the character is doing."
+            : "Character information comes from a MUD."));
+
+    private void ToggleMudStatus()
+    {
+        _settings.MudStatus = !_settings.MudStatus;
+        _mudStatusItem.Checked = _settings.MudStatus;
+        TrySaveSettings();
+        Say(_settings.MudStatus
+            ? "MUD room and vitals in the transcript"
+            : "MUD room and vitals out of the transcript");
+    }
+
+    private void ToggleSpeakMudStatus()
+    {
+        _settings.SpeakMudStatus = !_settings.SpeakMudStatus;
+        _speakMudStatusItem.Checked = _settings.SpeakMudStatus;
+        TrySaveSettings();
+        Say(_settings.SpeakMudStatus
+            ? "Speaking MUD room and vitals"
+            : "MUD room and vitals on request only");
+    }
+
+    /// <summary>
+    /// What the connected server said about itself when it was asked, over MSSP.
+    ///
+    /// A dialog rather than speech: it is a page of facts, and a page of facts is something to
+    /// read at your own pace with the arrow keys rather than have recited.
+    /// </summary>
+    private void ShowServerInformation()
+    {
+        IReadOnlyDictionary<string, string> status = _host.ServerStatus;
+        if (status.Count == 0)
+        {
+            Say(_host.Kind == TerminalSessionKind.Remote
+                ? "This host did not say anything about itself."
+                : "Server information comes from a MUD.");
+            return;
+        }
+
+        string text = string.Join(Environment.NewLine, status
+            .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => $"{Readable(entry.Key)}: {entry.Value}"));
+
+        using var dialog = new Form
+        {
+            Text = status.TryGetValue("NAME", out string? name)
+                ? $"{name} — server information"
+                : "Server information",
+            StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ShowInTaskbar = false,
+            ClientSize = new Size(520, 420),
+        };
+        var box = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            Dock = DockStyle.Fill,
+            Text = text,
+            AccessibleName = "Server information",
+            HideSelection = false,
+        };
+        var close = new Button
+        {
+            Text = "Close",
+            DialogResult = DialogResult.Cancel,
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AccessibleName = "Close server information",
+        };
+        dialog.Controls.Add(box);
+        dialog.Controls.Add(close);
+        // Escape closes it, which is what a window holding nothing to decide should do.
+        dialog.CancelButton = close;
+        dialog.AcceptButton = close;
+        dialog.ActiveControl = box;
+        dialog.ShowDialog(this);
+    }
+
+    /// <summary>MSSP names variables in shouting snake case; that is not how anyone reads.</summary>
+    private static string Readable(string variable)
+    {
+        string spaced = variable.Replace('_', ' ').Trim();
+        return spaced.Length == 0
+            ? variable
+            : char.ToUpperInvariant(spaced[0]) + spaced[1..].ToLowerInvariant();
     }
 
     private void ToggleOffCursor()
@@ -1204,6 +1360,7 @@ public sealed class MainForm : Form
         // Kept so the window can say what it was showing again once the connection ends.
         _shellTitle = Text;
         Text = $"{address} — BlindTerm";
+        _mud.Reset();
     }
 
     /// <summary>

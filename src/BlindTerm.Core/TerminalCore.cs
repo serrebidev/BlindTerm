@@ -40,9 +40,17 @@ public sealed class TerminalCore
     /// is marked external: nothing was read from the terminal, so it carries no verdict on the
     /// prompt the far end is sitting at.
     /// </summary>
-    public TerminalUpdate AppendExternal(IReadOnlyList<string> lines)
+    /// <param name="quiet">
+    /// Whether the lines go in without being announced. See <see cref="TerminalUpdate.Quiet"/>.
+    /// </param>
+    public TerminalUpdate AppendExternal(IReadOnlyList<string> lines, bool quiet = false)
     {
-        var update = new TerminalUpdate { FirstNewLine = Transcript.Count, External = true };
+        var update = new TerminalUpdate
+        {
+            FirstNewLine = Transcript.Count,
+            External = true,
+            Quiet = quiet,
+        };
         Builder.AppendExternal(lines);
         update.NewLines.AddRange(lines);
         return update;

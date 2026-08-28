@@ -26,6 +26,7 @@ public sealed class TelnetSession : ITerminalSession
     private readonly MspScanner _sounds = new();
     private readonly List<MspTrigger> _triggers = new();
     private readonly List<string> _outOfBandSounds = new();
+    private readonly List<GmcpMessage> _status = new();
     private readonly object _sizeLock = new();
 
     private TcpClient? _client;
@@ -44,6 +45,16 @@ public sealed class TelnetSession : ITerminalSession
     /// before the line that explains it.
     /// </summary>
     public event Action<MspTrigger>? SoundRequested;
+
+    /// <summary>
+    /// The host said something about the room or the character over GMCP. Raised on the
+    /// reading thread, after the text of the same read has gone, so a room announcement never
+    /// arrives before the description it belongs with.
+    /// </summary>
+    public event Action<GmcpMessage>? StatusReceived;
+
+    /// <summary>What the host said about itself over MSSP, or nothing if it did not.</summary>
+    public IReadOnlyDictionary<string, string> ServerStatus => _protocol.ServerStatus;
 
     public TerminalSessionKind Kind => TerminalSessionKind.Remote;
     public bool IsRunning { get; private set; }
@@ -172,6 +183,10 @@ public sealed class TelnetSession : ITerminalSession
                     }
                 }
                 foreach (MspTrigger trigger in _triggers) SoundRequested?.Invoke(trigger);
+
+                _status.Clear();
+                _protocol.DrainGmcp(_status);
+                foreach (GmcpMessage message in _status) StatusReceived?.Invoke(message);
             }
         }
         catch (Exception) when (_stopping.IsCancellationRequested || _disposed != 0)

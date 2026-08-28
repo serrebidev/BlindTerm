@@ -35,6 +35,16 @@ public sealed class TerminalUpdate
     public bool External { get; set; }
 
     /// <summary>
+    /// Whether these lines go into the transcript without being announced.
+    ///
+    /// A MUD's own account of the room and the character belongs in the transcript at the
+    /// moment it arrives, so that reading back through a session finds it in the right place.
+    /// Whether it is also read out as it happens is a separate question, and the answer is
+    /// usually no: nobody wants their remaining hit points spoken over the fight taking them.
+    /// </summary>
+    public bool Quiet { get; set; }
+
+    /// <summary>
     /// Non-null while a full-screen program owns the alternate screen -- vim, htop, an editor
     /// over ssh. The transcript is not built while this is set; the screen is what matters.
     /// </summary>
