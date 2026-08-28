@@ -40,6 +40,10 @@ public sealed class MainForm : Form
     private readonly Label _live = new();
     private readonly TextBox _command = new();
     private readonly MenuStrip _menu = new();
+    // ToolStrip menu mode does not necessarily move Win32 focus away from the control below
+    // it. Remember the MenuStrip's own activation events instead: while it is active, native
+    // menu navigation must see every key before the terminal's global keyboard routing does.
+    private bool _menuActive;
     private readonly ToolStripMenuItem _speakOutputItem = new("Speak &output");
     private readonly ToolStripMenuItem _speakOffCursorItem = new("Speak &background changes");
     private readonly ToolStripMenuItem _mudSoundsItem = new("&MUD sounds");
@@ -349,6 +353,8 @@ public sealed class MainForm : Form
 
         _menu.Items.AddRange([terminal, read, go, edit]);
         _menu.Dock = DockStyle.Top;
+        _menu.MenuActivate += (_, _) => _menuActive = true;
+        _menu.MenuDeactivate += (_, _) => _menuActive = false;
     }
 
     private static ToolStripMenuItem Item(string text, Keys shortcut, Action action)
@@ -1590,6 +1596,10 @@ public sealed class MainForm : Form
     /// </summary>
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
+        // Pressing Alt activates the bar without changing the focused control. In particular,
+        // Down must open the selected menu, not become terminal navigation or command history.
+        if (_menuActive) return base.ProcessCmdKey(ref message, keyData);
+
         if (_passThroughNext)
         {
             byte[]? passed = KeyTranslator.Translate(keyData, _host.Engine.ApplicationCursorKeys);
