@@ -71,6 +71,9 @@ public sealed class TerminalHost : IDisposable
     /// </summary>
     public event Action<GmcpMessage>? StatusReceived;
 
+    /// <summary>Structured MSDP room or character data, already on the UI thread.</summary>
+    public event Action<MsdpMessage>? MsdpStatusReceived;
+
     public event Action<string>? TitleChanged;
     public event Action<int?>? Exited;
 
@@ -159,6 +162,14 @@ public sealed class TerminalHost : IDisposable
                 {
                     if (ReferenceEquals(_session, session))
                         Post(() => StatusReceived?.Invoke(message));
+                }
+            };
+            remote.MsdpStatusReceived += message =>
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_session, session))
+                        Post(() => MsdpStatusReceived?.Invoke(message));
                 }
             };
         }

@@ -16,6 +16,17 @@ public interface IMudDirectory : IDisposable
     /// <summary>What to call this source out loud. Appears in the window and in errors.</summary>
     string Name { get; }
 
+    /// <summary>
+    /// The most listings this source will hand over in one <see cref="SearchAsync"/>.
+    ///
+    /// Asked rather than assumed, because the two answers are nothing like each other. A
+    /// source read over somebody else's API pages at whatever size that API allows; a source
+    /// that downloaded its whole list already has all of it in memory and cutting it into
+    /// twenty-fives only makes the person browsing press a button eight hundred times. Fifty
+    /// is the cautious default for anything that has not said.
+    /// </summary>
+    int PageSizeLimit => 50;
+
     /// <summary>The genres, game types and roleplaying policies this source knows about.</summary>
     Task<MudDirectoryFilters> FiltersAsync(CancellationToken cancellationToken = default);
 

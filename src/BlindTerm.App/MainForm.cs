@@ -171,6 +171,7 @@ public sealed class MainForm : Form
         _host.Bell += OnBell;
         _host.SoundRequested += OnSoundRequested;
         _host.StatusReceived += OnStatusReceived;
+        _host.MsdpStatusReceived += OnStatusReceived;
         _host.TitleChanged += title => Text = string.IsNullOrWhiteSpace(title) ? "BlindTerm" : $"{title} — BlindTerm";
         _host.Exited += OnExited;
     }
@@ -1093,8 +1094,8 @@ public sealed class MainForm : Form
     // ---- What the MUD says about itself ----
 
     /// <summary>
-    /// The room and the character as the MUD last described them over GMCP, rather than as
-    /// they were printed.
+    /// The room and the character as the MUD last described them over GMCP or MSDP, rather
+    /// than as they were printed.
     /// </summary>
     private readonly MudStatus _mud = new();
 
@@ -1112,11 +1113,19 @@ public sealed class MainForm : Form
         _host.AppendExternal([$"[{line}]"], quiet: !_settings.SpeakMudStatus);
     }
 
+    private void OnStatusReceived(MsdpMessage message)
+    {
+        if (IsDisposed || Disposing || !_settings.MudStatus) return;
+        string[] lines = _mud.News(message).Select(line => $"[{line}]").ToArray();
+        if (lines.Length > 0)
+            _host.AppendExternal(lines, quiet: !_settings.SpeakMudStatus);
+    }
+
     /// <summary>
     /// Says where the character is and which ways out there are.
     ///
-    /// This is the whole point of agreeing to GMCP. The exits are a list the MUD sent as a
-    /// list, so answering "which way can I go" does not mean finding the word "Exits" in a
+    /// This is the point of agreeing to GMCP and MSDP. The exits are structured data from the
+    /// MUD, so answering "which way can I go" does not mean finding the word "Exits" in a
     /// paragraph and reading to the end of the line.
     /// </summary>
     private void SpeakRoom()

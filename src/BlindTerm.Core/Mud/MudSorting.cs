@@ -55,6 +55,13 @@ public static class MudSorting
                 .ThenByDescending(game => game.YearOpened ?? 0)
                 .ThenBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase),
 
+            // Sorted the way the results list is then searched: by the name, not by the line
+            // that is read out. "Alter Aeon. 41 players." and "Alter Aeon" have to land in the
+            // same place or typing A twice walks somewhere unexpected.
+            MudDirectorySort.Alphabetical => games
+                .OrderBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(game => game.Host, StringComparer.OrdinalIgnoreCase),
+
             // A year of zero would sort the unknowns to the top of "oldest first", which is
             // the wrong end: not knowing when something opened is not the same as it being
             // ancient.

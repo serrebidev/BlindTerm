@@ -32,6 +32,16 @@ public enum MudDirectorySort
 
     /// <summary>By the year it opened, earliest first. Some of these predate the web.</summary>
     Oldest,
+
+    /// <summary>
+    /// By name, A to Z.
+    ///
+    /// The ordering that makes typing a letter in the results list mean something. Every other
+    /// ordering here answers "what should I play"; this one answers "where is the one I was
+    /// already told about", and in a list of eight hundred that is a different question with a
+    /// different tool.
+    /// </summary>
+    Alphabetical,
 }
 
 /// <summary>
@@ -60,6 +70,16 @@ public sealed record MudDirectoryQuery
     /// </summary>
     public bool OnlyConnectable { get; init; } = true;
 
+    /// <summary>
+    /// Whether to leave out listings that nothing has reached lately.
+    ///
+    /// Off by default, because a directory saying it could not reach a host is not the same as
+    /// the host being gone. On, it is the difference between arrowing through eight hundred
+    /// names and arrowing through the six hundred that answered -- which is what somebody
+    /// reading the list alphabetically actually wants.
+    /// </summary>
+    public bool OnlyAnswering { get; init; }
+
     /// <summary>One-based.</summary>
     public int Page { get; init; } = 1;
 
@@ -70,7 +90,8 @@ public sealed record MudDirectoryQuery
     /// the same filters can share one fetch of the directory.
     /// </summary>
     public string FilterKey => string.Join('|',
-        Search.Trim().ToLowerInvariant(), ThemeTagId, TypeTagId, RoleplayingTagId, OnlyConnectable);
+        Search.Trim().ToLowerInvariant(), ThemeTagId, TypeTagId, RoleplayingTagId, OnlyConnectable,
+        OnlyAnswering);
 }
 
 /// <summary>One page of results, and enough to know whether to offer another.</summary>

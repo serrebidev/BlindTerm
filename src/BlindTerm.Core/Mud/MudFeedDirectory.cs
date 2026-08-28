@@ -56,6 +56,16 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
 
     public string Name => _feed?.Source ?? "MUDVerse";
 
+    /// <summary>
+    /// The whole list at once.
+    ///
+    /// The download already happened and everything after it is a sort of a list in memory, so
+    /// there is no page to fetch and nothing to save by asking for one. Bounded rather than
+    /// unbounded only so that a feed that grows absurdly cannot hand a list box a hundred
+    /// thousand rows in one go.
+    /// </summary>
+    public int PageSizeLimit => 5000;
+
     /// <summary>When the list was built, once one has been read. Null before that.</summary>
     public DateTimeOffset? Generated => _feed?.Generated;
 
@@ -70,8 +80,52 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
     /// </summary>
     public IReadOnlyList<string> Sources => _feed?.Sources ?? [];
 
+    /// <summary>
+    /// What the list can actually be narrowed by, counted from the listings that are in it.
+    ///
+    /// Not the taxonomy the file carries. That is MUDVerse's whole vocabulary, and the list is
+    /// built from four directories of which three publish no genre at all: offering thirty-one
+    /// genres over eight hundred listings where seven hundred of them have no genre gives a
+    /// filter where most choices return one game and one returns none. Counting first means
+    /// every entry left in the box matches something, the number is beside the name, and a
+    /// category nobody uses -- the roleplaying policy, which no source in this list fills in --
+    /// disappears rather than sitting there as a way to empty the window.
+    /// </summary>
     public async Task<MudDirectoryFilters> FiltersAsync(CancellationToken cancellationToken = default)
-        => (await FeedAsync(cancellationToken).ConfigureAwait(false)).Filters;
+    {
+        MudFeed feed = await FeedAsync(cancellationToken).ConfigureAwait(false);
+        return new MudDirectoryFilters
+        {
+            Themes = Present(feed.Games, game => game.Genre),
+            GameTypes = Present(feed.Games, game => game.GameType),
+            Roleplaying = Present(feed.Games, game => game.Roleplaying),
+        };
+    }
+
+    /// <summary>
+    /// The distinct values one field takes across the list, with how many listings take each.
+    ///
+    /// The value is its own identifier. A tag number would have to be looked back up in the
+    /// file's taxonomy to find the word the listings are actually labelled with, and a value
+    /// the taxonomy has never heard of -- which happens the moment a source spells something
+    /// its own way -- would then be unreachable.
+    /// </summary>
+    private static IReadOnlyList<MudTag> Present(List<MudGame> games, Func<MudGame, string> field)
+    {
+        var counts = new Dictionary<string, (string Name, int Count)>(StringComparer.CurrentCultureIgnoreCase);
+        foreach (MudGame game in games)
+        {
+            string value = field(game).Trim();
+            if (value.Length == 0) continue;
+            counts[value] = counts.TryGetValue(value, out var seen)
+                ? (seen.Name, seen.Count + 1)
+                : (value, 1);
+        }
+
+        return [.. counts.Values
+            .OrderBy(entry => entry.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(entry => new MudTag(entry.Name, entry.Name, entry.Count))];
+    }
 
     public async Task<MudDirectoryPage> SearchAsync(MudDirectoryQuery query,
         CancellationToken cancellationToken = default)
@@ -80,13 +134,17 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
         MudFeed feed = await FeedAsync(cancellationToken).ConfigureAwait(false);
 
         IEnumerable<MudGame> matching = feed.Games;
-        // The combo boxes hold the feed's own tags, so a chosen identifier can be turned back
-        // into the name each listing carries.
-        if (Named(feed.Themes, query.ThemeTagId) is string theme)
+        if (query.OnlyConnectable) matching = matching.Where(game => game.CanConnect);
+        if (query.OnlyAnswering) matching = matching.Where(game => game.IsAnswering);
+
+        // A tag identifier from FiltersAsync is the value itself, so there is nothing to look
+        // up. A tag number from an older window, or from the file's own taxonomy, still lands
+        // here as the name it stands for.
+        if (Value(feed.Themes, query.ThemeTagId) is string theme)
             matching = matching.Where(game => Same(game.Genre, theme));
-        if (Named(feed.Types, query.TypeTagId) is string type)
+        if (Value(feed.Types, query.TypeTagId) is string type)
             matching = matching.Where(game => Same(game.GameType, type));
-        if (Named(feed.Roleplaying, query.RoleplayingTagId) is string roleplaying)
+        if (Value(feed.Roleplaying, query.RoleplayingTagId) is string roleplaying)
             matching = matching.Where(game => Same(game.Roleplaying, roleplaying));
 
         foreach (string word in Words(query.Search))
@@ -112,10 +170,21 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
         => game.Name.Contains(word, StringComparison.CurrentCultureIgnoreCase)
            || game.Intro.Contains(word, StringComparison.CurrentCultureIgnoreCase)
            || game.Genre.Contains(word, StringComparison.CurrentCultureIgnoreCase)
+           || game.GameType.Contains(word, StringComparison.CurrentCultureIgnoreCase)
+           // Searchable because it is the one thing people ask for by name that is not a name:
+           // somebody who wants an LP or a CoffeeMud is asking about the codebase.
+           || game.Codebase.Contains(word, StringComparison.CurrentCultureIgnoreCase)
            || game.Host.Contains(word, StringComparison.OrdinalIgnoreCase);
 
-    private static string? Named(List<MudTag> tags, string? id)
-        => string.IsNullOrWhiteSpace(id) ? null : tags.FirstOrDefault(tag => tag.Id == id)?.Name;
+    /// <summary>
+    /// The word a chosen filter stands for. Identifiers are the values themselves now, so this
+    /// only has anything to do when one is a number out of the file's own taxonomy.
+    /// </summary>
+    private static string? Value(List<MudTag> tags, string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        return tags.FirstOrDefault(tag => tag.Id == id)?.Name ?? id;
+    }
 
     private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.CurrentCultureIgnoreCase);
 

@@ -9,9 +9,9 @@ namespace BlindTerm.Core.Net;
 /// would want read to them.
 ///
 /// This exists because the same facts are otherwise only available by reading the room
-/// description and finding the word "Exits" somewhere in it. A MUD that speaks GMCP has
-/// already said which ways out there are, as a list; turning that back into prose to be
-/// searched would throw away the one thing that made it worth having.
+/// description and finding the word "Exits" somewhere in it. A MUD that speaks GMCP or MSDP
+/// has already said which ways out there are as structured data; turning that back into prose
+/// to be searched would throw away the one thing that made it worth having.
 ///
 /// Everything here is tolerant. Key names vary between MUDs and between codebases, and a key
 /// that is missing or is not the shape it usually is means one fact unavailable, never a
@@ -24,6 +24,9 @@ public sealed class MudStatus
         AllowTrailingCommas = true,
         CommentHandling = JsonCommentHandling.Skip,
     };
+
+    private readonly Dictionary<string, MsdpValue> _msdp =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Where the character is, as one readable sentence, or null if unknown.</summary>
     public string? Room { get; private set; }
@@ -45,6 +48,7 @@ public sealed class MudStatus
         CharacterName = null;
         Exits = [];
         _roomId = null;
+        _msdp.Clear();
     }
 
     /// <summary>
@@ -68,24 +72,71 @@ public sealed class MudStatus
         return null;
     }
 
+    /// <summary>
+    /// Takes one complete MSDP update and returns the changed facts worth recording.
+    /// Related variables are applied together so one packet becomes at most one room line and
+    /// one vitals line, rather than a burst of partial screen-reader announcements.
+    /// </summary>
+    public IReadOnlyList<string> News(MsdpMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        bool roomChanged = false;
+        bool vitalsChanged = false;
+        foreach ((string name, MsdpValue value) in message.Variables)
+        {
+            _msdp[name] = value;
+            roomChanged |= RoomVariables.Contains(name);
+            vitalsChanged |= VitalsVariables.Contains(name);
+
+            if (name.Equals("CHARACTER_NAME", StringComparison.OrdinalIgnoreCase)
+                && Scalar(value) is { Length: > 0 } character)
+            {
+                CharacterName = character;
+            }
+        }
+
+        var news = new List<string>(2);
+        if (roomChanged && NoteMsdpRoom() is { } room) news.Add(room);
+        if (vitalsChanged && NoteMsdpVitals() is { } vitals) news.Add(vitals);
+        return news;
+    }
+
+    private static readonly HashSet<string> RoomVariables =
+        new(["ROOM", "ROOM_VNUM", "ROOM_NAME", "AREA_NAME", "ROOM_EXITS"],
+            StringComparer.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> VitalsVariables =
+        new(["HEALTH", "HEALTH_MAX", "MANA", "MANA_MAX", "MOVEMENT", "MOVEMENT_MAX"],
+            StringComparer.OrdinalIgnoreCase);
+
     private string? NoteRoom(string payload)
     {
         if (Read(payload) is not { } room || room.ValueKind != JsonValueKind.Object) return null;
 
         string? name = Text(room, "short", "name", "title");
         string? area = Text(room, "area", "zone");
+        string? id = Text(room, "id", "num", "vnum", "number");
         string[] exits = ExitNames(room);
+        return NoteRoomFacts(name, area, exits, exitsKnown: true, id);
+    }
 
+    private string? NoteRoomFacts(string? name, string? area, string[] exits,
+                                  bool exitsKnown, string? id)
+    {
         var said = new StringBuilder();
         said.Append(name ?? "Unknown room");
         if (area is not null) said.Append(", ").Append(area);
-        said.Append(". ");
-        said.Append(exits.Length == 0
-            ? "No obvious exits."
-            : $"Exits: {string.Join(", ", exits)}.");
+        said.Append('.');
+        if (exitsKnown)
+        {
+            said.Append(' ');
+            said.Append(exits.Length == 0
+                ? "No obvious exits."
+                : $"Exits: {string.Join(", ", exits)}.");
+        }
 
         string sentence = said.ToString();
-        string? id = Text(room, "id", "num", "vnum", "number");
 
         // A MUD repeats the room after every command, so the same room again is not news. Two
         // adjacent rooms can read identically, though -- one corridor is much like the next --
@@ -102,6 +153,23 @@ public sealed class MudStatus
     }
 
     private string? _roomId;
+
+    private string? NoteMsdpRoom()
+    {
+        MsdpValue? room = Value("ROOM");
+        string? name = Scalar(Value("ROOM_NAME")) ?? Field(room, "NAME", "SHORT", "TITLE");
+        // Do not announce "Unknown room" merely because exits or a room number arrived before
+        // the name. The complete update will be announced when the name follows.
+        if (name is null) return null;
+
+        string? area = Scalar(Value("AREA_NAME")) ?? Field(room, "AREA", "ZONE");
+        string? id = Scalar(Value("ROOM_VNUM")) ?? Field(room, "VNUM", "ID", "NUMBER");
+        MsdpValue? exitsValue = Value("ROOM_EXITS");
+        if (exitsValue is null && room is not null) room.TryGetField("EXITS", out exitsValue);
+        bool exitsKnown = exitsValue is not null;
+        string[] exits = exitsKnown ? ExitNames(exitsValue!) : [];
+        return NoteRoomFacts(name, area, exits, exitsKnown, id);
+    }
 
     private string? NoteVitals(string payload)
     {
@@ -127,6 +195,28 @@ public sealed class MudStatus
         if (sentence == Vitals) return null;
         Vitals = sentence;
         return sentence;
+    }
+
+    private string? NoteMsdpVitals()
+    {
+        var parts = new List<string>();
+        Pool(parts, "HP", "HEALTH", "HEALTH_MAX");
+        Pool(parts, "MP", "MANA", "MANA_MAX");
+        Pool(parts, "Movement", "MOVEMENT", "MOVEMENT_MAX");
+        if (parts.Count == 0) return null;
+
+        string sentence = string.Join(". ", parts) + ".";
+        if (sentence == Vitals) return null;
+        Vitals = sentence;
+        return sentence;
+    }
+
+    private void Pool(List<string> into, string label, string current, string maximum)
+    {
+        if (Scalar(Value(current)) is not { Length: > 0 } now) return;
+        into.Add(Scalar(Value(maximum)) is { Length: > 0 } most
+            ? $"{label} {now} of {most}"
+            : $"{label} {now}");
     }
 
     private static readonly string[] Conditions =
@@ -159,16 +249,64 @@ public sealed class MudStatus
 
         return exits.ValueKind switch
         {
-            JsonValueKind.Object => [.. exits.EnumerateObject().Select(e => e.Name)],
+            JsonValueKind.Object => [.. exits.EnumerateObject().Select(e => SpokenDirection(e.Name))],
             JsonValueKind.Array => [.. exits.EnumerateArray()
                 .Where(e => e.ValueKind == JsonValueKind.String)
-                .Select(e => e.GetString()!)],
+                .Select(e => SpokenDirection(e.GetString()!))],
             JsonValueKind.String => [.. exits.GetString()!
                 .Split([',', ' '],
-                       StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+                       StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(SpokenDirection)],
             _ => [],
         };
     }
+
+    private static string[] ExitNames(MsdpValue exits) => exits.Kind switch
+    {
+        MsdpValueKind.Table => [.. exits.Fields.Keys.Select(SpokenDirection)],
+        MsdpValueKind.Array => [.. exits.ScalarValues()
+            .Where(value => value.Length > 0)
+            .Select(SpokenDirection)],
+        MsdpValueKind.Text => [.. exits.Text
+            .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(SpokenDirection)],
+        _ => [],
+    };
+
+    private MsdpValue? Value(string name) => _msdp.GetValueOrDefault(name);
+
+    private static string? Field(MsdpValue? table, params string[] names)
+    {
+        if (table is null || table.Kind != MsdpValueKind.Table) return null;
+        foreach (string name in names)
+        {
+            if (table.TryGetField(name, out MsdpValue? value)
+                && Scalar(value) is { Length: > 0 } text)
+            {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    private static string? Scalar(MsdpValue? value)
+        => value?.ScalarValues().Select(text => text.Trim())
+                 .FirstOrDefault(text => text.Length > 0);
+
+    private static string SpokenDirection(string direction) => direction.ToLowerInvariant() switch
+    {
+        "n" => "north",
+        "ne" => "northeast",
+        "e" => "east",
+        "se" => "southeast",
+        "s" => "south",
+        "sw" => "southwest",
+        "w" => "west",
+        "nw" => "northwest",
+        "u" => "up",
+        "d" => "down",
+        _ => direction,
+    };
 
     private static JsonElement? Read(string payload)
     {

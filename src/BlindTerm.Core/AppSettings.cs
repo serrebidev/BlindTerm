@@ -85,8 +85,8 @@ public sealed class AppSettings
     public bool DownloadSounds { get; set; }
 
     /// <summary>
-    /// Whether what a MUD says about the room and the character over GMCP is written into the
-    /// transcript as it arrives.
+    /// Whether what a MUD says about the room and the character over GMCP or MSDP is written
+    /// into the transcript as it arrives.
     ///
     /// On by default. It is the one place a MUD states its exits as a list rather than as a
     /// sentence to be searched, and putting it in the transcript at the moment it happens is

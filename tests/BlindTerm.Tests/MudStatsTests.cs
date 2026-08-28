@@ -247,8 +247,11 @@ public class MudStatsTests
 
         MudGame described = new()
         {
-            Source = "MUDVerse", SourceId = "1", Name = "Avalon",
-            Host = "avalon.example.com", Port = 4000,
+            Source = "MUDVerse",
+            SourceId = "1",
+            Name = "Avalon",
+            Host = "avalon.example.com",
+            Port = 4000,
         };
 
         MudGame game = Assert.Single(
@@ -265,8 +268,11 @@ public class MudStatsTests
     {
         MudGame described = new()
         {
-            Source = "MUDVerse", SourceId = "1", Name = "Penultimate Destination",
-            Host = "penultimatemush.com", Port = 9500,
+            Source = "MUDVerse",
+            SourceId = "1",
+            Name = "Penultimate Destination",
+            Host = "penultimatemush.com",
+            Port = 9500,
         };
 
         (_, IReadOnlyList<MudGame> unmatched) =

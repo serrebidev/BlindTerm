@@ -54,6 +54,9 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
 
     public string Name => "MUDStats";
 
+    /// <summary>The whole list is in hand once it has been read, so there is no page to fetch.</summary>
+    public int PageSizeLimit => 5000;
+
     public async Task<MudDirectoryFilters> FiltersAsync(CancellationToken cancellationToken = default)
     {
         IReadOnlyList<MudGame> worlds = await WorldsAsync(cancellationToken).ConfigureAwait(false);
@@ -84,6 +87,7 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
         // to filter would be another request for an answer that is in hand.
         IEnumerable<MudGame> matching = worlds;
         if (query.OnlyConnectable) matching = matching.Where(world => world.CanConnect);
+        if (query.OnlyAnswering) matching = matching.Where(world => world.IsAnswering);
         if (!string.IsNullOrWhiteSpace(query.ThemeTagId))
             matching = matching.Where(world => Same(world.Genre, query.ThemeTagId));
         if (!string.IsNullOrWhiteSpace(query.TypeTagId))

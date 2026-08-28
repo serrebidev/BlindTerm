@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace BlindTerm.Core.Net;
@@ -13,19 +14,20 @@ namespace BlindTerm.Core.Net;
 /// BlindTerm refuses every option that would put something in the text that the text cannot
 /// carry: the compression options, which make a stream this terminal cannot read, and MXP,
 /// whose markup ends up spoken in the middle of a sentence by a client that does not render
-/// it. MSDP, ATCP and ZMP are refused as duplicates of a channel already agreed below.
+/// it. ATCP and ZMP are refused as duplicates of the structured channels agreed below.
 ///
-/// It accepts the three that hand over facts rather than markup.
+/// It accepts the protocols that hand over useful facts rather than markup.
 ///
 /// The MUD Sound Protocol is what a MUD asks about before it will send a sound at all. Its
 /// triggers arrive as text and are lifted out of the stream by <see cref="MspScanner"/>;
 /// agreeing costs nothing even with sound switched off, because a trigger left in the text is
 /// a line read aloud in the middle of a fight.
 ///
-/// GMCP carries structured messages beside the text: which room this is, what its exits are,
-/// how the character is doing. For a player who cannot see the screen that is the difference
-/// between being told the exits and having to find the word "Exits" in a paragraph. It is a
-/// subscription, so agreeing to it is not enough -- see <see cref="IntroduceOverGmcp"/>.
+/// GMCP and MSDP carry structured messages beside the text: which room this is, what its exits
+/// are, how the character is doing. For a player who cannot see the screen that is the
+/// difference between being told the exits and having to find the word "Exits" in a paragraph.
+/// Both need a subscription after negotiation -- see <see cref="IntroduceOverGmcp"/> and
+/// <see cref="IntroduceOverMsdp"/>.
 ///
 /// MSSP is the server describing itself, and is read-only.
 ///
@@ -59,6 +61,7 @@ public sealed class TelnetProtocol
     private const byte OptEndOfRecord = 25;
     private const byte OptWindowSize = 31;
     private const byte OptCharset = 42;
+    private const byte OptMsdp = 69;
     private const byte OptServerStatus = 70;
     private const byte OptMudSound = 90;
     private const byte OptGmcp = 201;
@@ -90,6 +93,8 @@ public sealed class TelnetProtocol
     private readonly List<byte> _subnegotiation = new();
     private readonly List<string> _soundRequests = new();
     private readonly List<GmcpMessage> _gmcp = new();
+    private readonly List<MsdpMessage> _msdp = new();
+    private readonly HashSet<string> _msdpReported = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _serverStatus =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly string _clientName;
@@ -233,7 +238,7 @@ public sealed class TelnetProtocol
     /// </summary>
     private static bool TheyMayPerform(byte option)
         => option is OptEcho or OptSuppressGoAhead or OptEndOfRecord or OptCharset or OptMudSound
-                  or OptGmcp or OptServerStatus;
+                  or OptMsdp or OptGmcp or OptServerStatus;
 
     /// <summary>Whether the far end has been told it may send MUD Sound Protocol triggers.</summary>
     public bool MudSoundAgreed => _remoteOn.Contains(OptMudSound);
@@ -246,6 +251,7 @@ public sealed class TelnetProtocol
         if (!_remoteOn.Add(option)) return;
         Send(Do, option, reply);
         if (option == OptGmcp) IntroduceOverGmcp(reply);
+        if (option == OptMsdp) IntroduceOverMsdp(reply);
     }
 
     /// <summary>
@@ -276,9 +282,40 @@ public sealed class TelnetProtocol
         reply.Add(Se);
     }
 
+    /// <summary>
+    /// Asks which MSDP variables the server can report. The answer is intersected with the
+    /// room and character facts useful to a screen-reader user before REPORT is sent.
+    /// </summary>
+    private static void IntroduceOverMsdp(List<byte> reply)
+        => SendMsdp("LIST", ["REPORTABLE_VARIABLES"], reply);
+
+    private static readonly string[] AccessibleMsdpVariables =
+    [
+        "CHARACTER_NAME",
+        "ROOM", "ROOM_VNUM", "ROOM_NAME", "AREA_NAME", "ROOM_EXITS",
+        "HEALTH", "HEALTH_MAX", "MANA", "MANA_MAX", "MOVEMENT", "MOVEMENT_MAX",
+    ];
+
+    private static void SendMsdp(string command, IReadOnlyList<string> values, List<byte> reply)
+    {
+        reply.Add(Iac);
+        reply.Add(Sb);
+        reply.Add(OptMsdp);
+        reply.Add(1); // MSDP_VAR
+        foreach (byte value in Encoding.UTF8.GetBytes(command)) AppendEscaped(reply, value);
+        foreach (string argument in values)
+        {
+            reply.Add(2); // MSDP_VAL
+            foreach (byte value in Encoding.UTF8.GetBytes(argument)) AppendEscaped(reply, value);
+        }
+        reply.Add(Iac);
+        reply.Add(Se);
+    }
+
     private void AnswerWont(byte option, List<byte> reply)
     {
         if (_remoteOn.Remove(option) || !TheyMayPerform(option)) Send(Dont, option, reply);
+        if (option == OptMsdp) _msdpReported.Clear();
     }
 
     private void AnswerDo(byte option, List<byte> reply)
@@ -358,6 +395,18 @@ public sealed class TelnetProtocol
         if (!GmcpAgreed) return false;
         SendGmcp(message, reply);
         return true;
+    }
+
+    /// <summary>Whether the far end has been told it may send MSDP.</summary>
+    public bool MsdpAgreed => _remoteOn.Contains(OptMsdp);
+
+    /// <summary>Hands over complete MSDP updates that have arrived, and forgets them.</summary>
+    public void DrainMsdp(List<MsdpMessage> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+        if (_msdp.Count == 0) return;
+        into.AddRange(_msdp);
+        _msdp.Clear();
     }
 
     /// <summary>
@@ -447,6 +496,18 @@ public sealed class TelnetProtocol
             return;
         }
 
+        if (_subnegotiation.Count >= 2 && _subnegotiation[0] == OptMsdp)
+        {
+            if (MsdpMessage.TryParse(CollectionsMarshal.AsSpan(_subnegotiation)[1..],
+                                     out MsdpMessage? message))
+            {
+                _msdp.Add(message);
+                SubscribeToAccessibleMsdp(message, reply);
+            }
+            _subnegotiation.Clear();
+            return;
+        }
+
         if (_subnegotiation.Count >= 2 && _subnegotiation[0] == OptServerStatus)
         {
             ReadServerStatus();
@@ -468,6 +529,20 @@ public sealed class TelnetProtocol
         }
 
         _subnegotiation.Clear();
+    }
+
+    private void SubscribeToAccessibleMsdp(MsdpMessage message, List<byte> reply)
+    {
+        var supported = message.Find("REPORTABLE_VARIABLES")
+            .SelectMany(value => value.ScalarValues())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (supported.Count == 0) return;
+
+        string[] wanted = AccessibleMsdpVariables
+            .Where(supported.Contains)
+            .Where(_msdpReported.Add)
+            .ToArray();
+        if (wanted.Length > 0) SendMsdp("REPORT", wanted, reply);
     }
 
     /// <summary>

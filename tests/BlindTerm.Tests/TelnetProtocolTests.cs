@@ -7,7 +7,8 @@ public class TelnetProtocolTests
 {
     private const byte Iac = 255, Dont = 254, Do = 253, Wont = 252, Will = 251, Sb = 250, Se = 240;
     private const byte OptEcho = 1, OptSga = 3, OptTerminalType = 24, OptNaws = 31;
-    private const byte OptCharset = 42, OptCompress2 = 86, OptGmcp = 201, OptMudSound = 90;
+    private const byte OptCharset = 42, OptMsdp = 69, OptCompress2 = 86, OptGmcp = 201,
+        OptMudSound = 90;
 
     private static (string Text, byte[] Reply) Feed(TelnetProtocol protocol, params byte[] received)
     {
@@ -85,6 +86,7 @@ public class TelnetProtocolTests
 
     [Theory]
     [InlineData(OptCompress2)]
+    [InlineData(OptMsdp)]
     [InlineData(OptGmcp)]
     [InlineData((byte)34)]
     public void OptionsThatWouldPutSomethingOtherThanTextOnTheWireAreRefused(byte option)
@@ -375,6 +377,80 @@ public class TelnetProtocolTests
         Feed(protocol, Iac, Will, OptGmcp);
         Assert.True(protocol.TrySendGmcp("Core.Ping", reply));
         Assert.Contains("Core.Ping", Encoding.UTF8.GetString([.. reply]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MsdpOfferedByTheServerIsAcceptedAndItsVariablesAreDiscovered()
+    {
+        var protocol = New();
+
+        var (_, reply) = Feed(protocol, Iac, Will, OptMsdp);
+
+        Assert.True(protocol.MsdpAgreed);
+        Assert.Equal<byte[]>(
+            [Iac, Do, OptMsdp, Iac, Sb, OptMsdp, 1, .. "LIST"u8.ToArray(),
+             2, .. "REPORTABLE_VARIABLES"u8.ToArray(), Iac, Se],
+            reply);
+    }
+
+    [Fact]
+    public void AccessibleMsdpVariablesAreAutomaticallyReported()
+    {
+        var protocol = New();
+        Feed(protocol, Iac, Will, OptMsdp);
+        byte[] offered =
+        [
+            Iac, Sb, OptMsdp, 1, .. "REPORTABLE_VARIABLES"u8.ToArray(), 2, 5,
+            2, .. "HEALTH_MAX"u8.ToArray(),
+            2, .. "SOUND"u8.ToArray(),
+            2, .. "ROOM_NAME"u8.ToArray(),
+            2, .. "HEALTH"u8.ToArray(), 6, Iac, Se,
+        ];
+
+        var (text, reply) = Feed(protocol, offered);
+
+        Assert.Equal(string.Empty, text);
+        Assert.Equal<byte[]>(
+            [Iac, Sb, OptMsdp, 1, .. "REPORT"u8.ToArray(),
+             2, .. "ROOM_NAME"u8.ToArray(),
+             2, .. "HEALTH"u8.ToArray(),
+             2, .. "HEALTH_MAX"u8.ToArray(), Iac, Se],
+            reply);
+
+        var messages = new List<MsdpMessage>();
+        protocol.DrainMsdp(messages);
+        Assert.Single(messages);
+        Assert.Equal(["HEALTH_MAX", "SOUND", "ROOM_NAME", "HEALTH"],
+                     Assert.Single(messages[0].Find("REPORTABLE_VARIABLES")).ScalarValues());
+
+        // A repeated capability list must not restart all of the reports.
+        Assert.Empty(Feed(protocol, offered).Reply);
+    }
+
+    [Fact]
+    public void MsdpDataIsLiftedOutOfTheTextAndHandedOverAsOneUpdate()
+    {
+        var protocol = New();
+        Feed(protocol, Iac, Will, OptMsdp);
+        byte[] data =
+        [
+            .. "before "u8.ToArray(), Iac, Sb, OptMsdp,
+            1, .. "HEALTH"u8.ToArray(), 2, .. "80"u8.ToArray(),
+            1, .. "HEALTH_MAX"u8.ToArray(), 2, .. "100"u8.ToArray(),
+            Iac, Se, .. "after"u8.ToArray(),
+        ];
+
+        var (text, _) = Feed(protocol, data);
+
+        Assert.Equal("before after", text);
+        var messages = new List<MsdpMessage>();
+        protocol.DrainMsdp(messages);
+        MsdpMessage message = Assert.Single(messages);
+        Assert.Equal(2, message.Variables.Count);
+
+        messages.Clear();
+        protocol.DrainMsdp(messages);
+        Assert.Empty(messages);
     }
 
     [Fact]

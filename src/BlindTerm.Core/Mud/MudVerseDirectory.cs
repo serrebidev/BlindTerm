@@ -121,8 +121,11 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
         ArgumentNullException.ThrowIfNull(query);
         int perPage = Math.Clamp(query.PerPage, 1, PageSize);
 
-        if (query.Sort == MudDirectorySort.MostPlayers)
-            return Slice(await SweepAsync(query, cancellationToken).ConfigureAwait(false), query.Page, perPage);
+        if (IsSortedHere(query.Sort))
+        {
+            IReadOnlyList<MudGame> swept = await SweepAsync(query, cancellationToken).ConfigureAwait(false);
+            return Slice([.. MudSorting.Apply(swept, query.Sort)], query.Page, perPage);
+        }
 
         // MUDVerse pages what it sorts, so anything it sorts itself is one request.
         var parameters = new List<string>
@@ -139,6 +142,7 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
         using JsonDocument document = await GetAsync("/games?" + Join(parameters), cancellationToken)
             .ConfigureAwait(false);
         List<MudGame> games = ReadGames(document, query.OnlyConnectable);
+        if (query.OnlyAnswering) games.RemoveAll(game => !game.IsAnswering);
 
         int total = 0;
         if (document.RootElement.TryGetProperty("meta", out JsonElement meta)) total = Number(meta, "total") ?? 0;
@@ -156,11 +160,28 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
     }
 
     /// <summary>
-    /// Pulls the matching listings so they can be ordered by who is actually playing.
+    /// Which orderings MUDVerse cannot do, and BlindTerm therefore does itself.
+    ///
+    /// MUDVerse sorts by votes, reviews, when a host was last seen, when a listing was made
+    /// and when it was edited, and by nothing else. Everything below is a question about the
+    /// game rather than the listing -- who is playing it, how busy its month was, how long it
+    /// has existed, what it is called -- and asking MUDVerse for one of those used to fall
+    /// through to "recently updated" and quietly answer a different question.
+    /// </summary>
+    private static bool IsSortedHere(MudDirectorySort sort) => sort
+        is MudDirectorySort.MostPlayers
+        or MudDirectorySort.BusiestAverage
+        or MudDirectorySort.HighestPeak
+        or MudDirectorySort.Oldest
+        or MudDirectorySort.Alphabetical;
+
+    /// <summary>
+    /// Pulls the matching listings so they can be ordered here.
     ///
     /// Kept for a quarter of an hour, because MUDVerse crawls on its own schedule and asking
     /// again inside that window buys nothing but requests. The key is the filters, not the
-    /// page, so arrowing on to a second page of the same genre fetches nothing at all.
+    /// page and not the ordering, so arrowing on to a second page of the same genre -- or
+    /// changing the sort to another one of these -- fetches nothing at all.
     /// </summary>
     private async Task<IReadOnlyList<MudGame>> SweepAsync(MudDirectoryQuery query,
         CancellationToken cancellationToken)
@@ -178,22 +199,18 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
             using JsonDocument document = await GetAsync("/games?" + Join(parameters), cancellationToken)
                 .ConfigureAwait(false);
 
-            int before = all.Count;
-            all.AddRange(ReadGames(document, query.OnlyConnectable));
-            // A page with no next link, or one that added nothing at all, is the end of the list.
-            if (!HasNext(document) || all.Count == before) break;
+            List<MudGame> read = ReadGames(document, query.OnlyConnectable);
+            if (query.OnlyAnswering) read.RemoveAll(game => !game.IsAnswering);
+            all.AddRange(read);
+            // The server's own next link decides. A page that added nothing here is not the
+            // end of anything -- everything on it may simply have been filtered out -- and the
+            // page count is what bounds this either way.
+            if (!HasNext(document)) break;
         }
 
-        IReadOnlyList<MudGame> ordered =
-        [
-            .. all.DistinctBy(game => game.SourceId)
-                  .OrderByDescending(game => game.PlayersOnline ?? -1)
-                  .ThenByDescending(game => game.ConfirmedOnline)
-                  .ThenByDescending(game => game.MonthlyVotes)
-                  .ThenBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase)
-        ];
-        _sweeps[key] = (DateTimeOffset.UtcNow, ordered);
-        return ordered;
+        IReadOnlyList<MudGame> found = [.. all.DistinctBy(game => game.SourceId)];
+        _sweeps[key] = (DateTimeOffset.UtcNow, found);
+        return found;
     }
 
     private static MudDirectoryPage Slice(IReadOnlyList<MudGame> games, int page, int perPage)

@@ -124,6 +124,18 @@ public sealed record MudGame
     [JsonIgnore]
     public bool CanConnect => Host.Length > 0 && Port is >= 1 and <= 65535;
 
+    /// <summary>
+    /// Whether anything has reached this host lately.
+    ///
+    /// Deliberately generous: a directory that failed to connect once is not evidence a MUD is
+    /// gone, and one that answered without publishing a player count is still answering. Only
+    /// the sources' own verdicts count here, never a missing number.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsAnswering
+        => Availability != MudAvailability.Dead
+           && (ConfirmedOnline || Availability == MudAvailability.Online);
+
     /// <summary>"host:port", the form the connect dialog and the recent list both use.</summary>
     [JsonIgnore]
     public string Address => CanConnect ? Net.TelnetAddress.Format(Host, Port) : string.Empty;

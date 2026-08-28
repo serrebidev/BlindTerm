@@ -47,6 +47,9 @@ public sealed class GrapevineDirectory : IMudDirectory, IDisposable
 
     public string Name => "Grapevine";
 
+    /// <summary>The whole list is in hand once it has been read, so there is no page to fetch.</summary>
+    public int PageSizeLimit => 5000;
+
     public async Task<MudDirectoryFilters> FiltersAsync(CancellationToken cancellationToken = default)
     {
         // Grapevine publishes no genres or game types at all, so there is nothing here to
@@ -63,6 +66,7 @@ public sealed class GrapevineDirectory : IMudDirectory, IDisposable
 
         IEnumerable<MudGame> matching = games;
         if (query.OnlyConnectable) matching = matching.Where(game => game.CanConnect);
+        if (query.OnlyAnswering) matching = matching.Where(game => game.IsAnswering);
         foreach (string word in query.Search.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
             string needle = word;

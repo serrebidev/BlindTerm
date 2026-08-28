@@ -4,6 +4,26 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.6.0 - 2026-08-28
+
+- Browse hundreds of MUDs in one fetch instead of pressing **Load more** for every twenty-five.
+  The published directory is already one cached file, so it now hands the whole matching list
+  to the browser at once; a live paged source gathers up to two hundred per press.
+- Find a known MUD by choosing **By name, A to Z** and typing its first letters in the results
+  list. The search follows game names rather than the longer spoken result lines, repeated
+  letters cycle between matches, and a short pause starts a new prefix.
+- Make the browser's filters describe the list that is actually present. Genres and game types
+  include their match counts, empty categories are disabled, changes rebuild the cached list
+  without moving focus, codebases are searchable, and **Leave out the ones that are not
+  answering** removes listings no directory has reached lately.
+- Support both GMCP and native MSDP as accessible structured MUD data. MSDP option 69 is
+  negotiated, its reportable variables are discovered, and BlindTerm subscribes only to the
+  available room, exits, character and vitals facts. Scalars, arrays and nested tables are
+  parsed without letting protocol bytes enter the transcript.
+- Turn MSDP room and vitals packets into the same concise, change-only transcript lines and
+  `Alt+X`/`Alt+V` answers used for GMCP. Related values are announced together, repeated state
+  stays quiet, and abbreviated exits such as `n` and `sw` are spoken as north and southwest.
+
 ## v0.5.0 - 2026-08-28
 
 - Speak output only while the window is the one you are in. Reported from a session with

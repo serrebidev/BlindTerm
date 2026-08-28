@@ -29,7 +29,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Browses a directory of MUDs by genre, players online, thirty-day average, rating or name, so finding one to play does not mean reading a website full of banners and vote buttons.
 - Needs no account and no API key to do it: the list is published for everyone and rebuilt every half hour.
 - Plays MUD sounds through the MUD Sound Protocol, and keeps its triggers out of the text whether sounds are on or off.
-- Reads a MUD's own account of the room, its exits and the character's health over GMCP, so the way out is a list rather than a word to be found in a paragraph.
+- Reads a MUD's own account of the room, its exits and the character's health over GMCP or MSDP, so the way out is a list rather than a word to be found in a paragraph.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 
@@ -158,7 +158,7 @@ It is a real connection rather than a wrapper around Windows' `telnet.exe`, and 
 Two other things follow from speaking the protocol rather than driving a program that speaks it:
 
 - **The host is told a screen reader is in use.** When it asks what terminal this is, BlindTerm answers with the MUD convention of a client name, then `ANSI`, then an MTTS bit vector — and bit 64 of MTTS means SCREEN READER. A server that honours it drops its room maps and ASCII art without anyone having to find the setting. The window width is sent too, so text wraps to the width being read.
-- **Nothing but text reaches the transcript.** Compression and the out-of-band data channels (MSDP, GMCP, ATCP, MSSP, MXP) are declined, so no markup ever lands in the middle of a sentence a screen reader is speaking.
+- **Nothing but readable text reaches the transcript.** GMCP, MSDP and MSSP are accepted, removed from the wire text, and exposed as accessible room, character and server facts. Compression and markup-oriented channels such as MXP are declined, so protocol bytes or tags never land in the middle of a sentence a screen reader is speaking.
 
 Core MUD sends its opening ASCII logo before any client has time to answer that negotiation. BlindTerm recognizes that one unavoidable opening and rewrites it as ordinary prose, preserving the welcome, setting, story, server version, and login instructions without making NVDA read rows of dots, slashes, and bars. Later text remains byte-for-byte server output. BlindTerm also accepts a host's UTF-8 character-set offer, automatically speaks complete prompts that do not end in a newline, and changes the command line into a protected password field while a password, passphrase, passcode, or PIN is requested.
 
@@ -228,7 +228,7 @@ Some MUDs put their triggers in the text and some send them out of band, inside 
 
 ### What the MUD says about itself
 
-A MUD that speaks GMCP states the things its text only implies. BlindTerm asks for the ones worth having and turns them into plain sentences:
+A MUD that speaks GMCP or MSDP states the things its text only implies. BlindTerm negotiates either protocol, asks for the room and character facts worth having, and turns them into plain sentences. With MSDP it first discovers what that particular server can report, then subscribes only to the relevant supported variables:
 
 - **`Alt+X`** &rarr; *"Apartment of Karia, South Dome. Exits: north."* The exits are a list because the MUD sent a list. Answering "which way can I go" stops meaning finding the word `Exits` somewhere in a paragraph and reading to the end of the line.
 - **`Alt+V`** &rarr; *"HP 240 of 280. SP 154 of 154. Poison venom."* Conditions are named only while they apply.
@@ -267,7 +267,7 @@ dotnet test
 pwsh -File tests\run-replay-tests.ps1
 ```
 
-The test suite covers the VT engine, transcript assembly, screen speech, key translation and encoding, ConPTY captures, screen wipes, redraws, wrapping, alternate-screen programs, and the whole default-terminal path: the registry values Windows parses, the marshalling registration, the COM wrappers, and a complete inbound console handoff driven with real pipes and process handles. SSH captures are included as development corpus and are replayed by hand because their login banners and disconnect text are host-specific.
+The test suite covers the VT engine, transcript assembly, screen speech, key translation and encoding, GMCP and MSDP negotiation and parsing, ConPTY captures, screen wipes, redraws, wrapping, alternate-screen programs, and the whole default-terminal path: the registry values Windows parses, the marshalling registration, the COM wrappers, and a complete inbound console handoff driven with real pipes and process handles. SSH captures are included as development corpus and are replayed by hand because their login banners and disconnect text are host-specific.
 
 ## Updating
 

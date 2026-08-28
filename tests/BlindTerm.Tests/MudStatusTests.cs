@@ -3,15 +3,29 @@ using BlindTerm.Core.Net;
 namespace BlindTerm.Tests;
 
 /// <summary>
-/// What a MUD says about itself over GMCP, turned into the sentence a player wants read.
+/// What a MUD says about itself over GMCP or MSDP, turned into the sentence a player wants read.
 ///
 /// The payloads here are Core MUD's own, taken off the wire.
 /// </summary>
 public class MudStatusTests
 {
+    private const byte Var = 1, Val = 2, TableOpen = 3, TableClose = 4;
+
     private static GmcpMessage Message(string text)
     {
         Assert.True(GmcpMessage.TryParse(text, out GmcpMessage? message));
+        return message!;
+    }
+
+    private static MsdpMessage Msdp(params object[] parts)
+    {
+        var bytes = new List<byte>();
+        foreach (object part in parts)
+        {
+            if (part is byte value) bytes.Add(value);
+            else bytes.AddRange(System.Text.Encoding.UTF8.GetBytes((string)part));
+        }
+        Assert.True(MsdpMessage.TryParse([.. bytes], out MsdpMessage? message));
         return message!;
     }
 
@@ -158,5 +172,63 @@ public class MudStatusTests
 
         Assert.Null(status.News(Message("""Client.Map {"url":"https://coremud.org/coremud.dat"}""")));
         Assert.Null(status.News(Message("""External.Discord.Info {"inviteurl":"https://x"}""")));
+    }
+
+    [Fact]
+    public void AnMsdpRoomTableBecomesAnAccessibleRoomAndExpandedExits()
+    {
+        var status = new MudStatus();
+
+        IReadOnlyList<string> news = status.News(Msdp(
+            Var, "ROOM", Val, TableOpen,
+            Var, "VNUM", Val, "6008",
+            Var, "NAME", Val, "The forest clearing",
+            Var, "AREA", Val, "Haon Dor",
+            Var, "EXITS", Val, TableOpen,
+                Var, "n", Val, "6011", Var, "e", Val, "6007",
+            TableClose, TableClose));
+
+        Assert.Equal(["The forest clearing, Haon Dor. Exits: north, east."], news);
+        Assert.Equal("The forest clearing, Haon Dor. Exits: north, east.", status.Room);
+        Assert.Equal(["north", "east"], status.Exits);
+    }
+
+    [Fact]
+    public void SeparateMsdpRoomVariablesAreCombinedBeforeTheyAreAnnounced()
+    {
+        var status = new MudStatus();
+
+        IReadOnlyList<string> news = status.News(Msdp(
+            Var, "ROOM_VNUM", Val, "12",
+            Var, "ROOM_NAME", Val, "Crossroads",
+            Var, "AREA_NAME", Val, "The Wilds",
+            Var, "ROOM_EXITS", Val, TableOpen,
+                Var, "s", Val, "11", Var, "ne", Val, "13",
+            TableClose));
+
+        Assert.Equal(["Crossroads, The Wilds. Exits: south, northeast."], news);
+    }
+
+    [Fact]
+    public void MsdpVitalsInOnePacketBecomeOneCompleteLine()
+    {
+        var status = new MudStatus();
+        MsdpMessage update = Msdp(
+            Var, "HEALTH", Val, "75", Var, "HEALTH_MAX", Val, "100",
+            Var, "MANA", Val, "40", Var, "MANA_MAX", Val, "50",
+            Var, "MOVEMENT", Val, "18", Var, "MOVEMENT_MAX", Val, "20");
+
+        Assert.Equal(["HP 75 of 100. MP 40 of 50. Movement 18 of 20."], status.News(update));
+        Assert.Empty(status.News(update));
+        Assert.Equal("HP 75 of 100. MP 40 of 50. Movement 18 of 20.", status.Vitals);
+    }
+
+    [Fact]
+    public void MsdpCharacterNameIsRememberedWithoutNoise()
+    {
+        var status = new MudStatus();
+
+        Assert.Empty(status.News(Msdp(Var, "CHARACTER_NAME", Val, "Karia")));
+        Assert.Equal("Karia", status.CharacterName);
     }
 }

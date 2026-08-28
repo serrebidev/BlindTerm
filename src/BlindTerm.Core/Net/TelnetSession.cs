@@ -31,6 +31,7 @@ public sealed class TelnetSession : ITerminalSession
     private readonly List<MspTrigger> _triggers = new();
     private readonly List<string> _outOfBandSounds = new();
     private readonly List<GmcpMessage> _status = new();
+    private readonly List<MsdpMessage> _msdpStatus = new();
     private readonly object _sizeLock = new();
 
     private TcpClient? _client;
@@ -58,6 +59,13 @@ public sealed class TelnetSession : ITerminalSession
     /// arrives before the description it belongs with.
     /// </summary>
     public event Action<GmcpMessage>? StatusReceived;
+
+    /// <summary>
+    /// The host sent structured room or character data over MSDP. One event represents one
+    /// complete subnegotiation, so related values become one accessible announcement instead
+    /// of health, maximum health, mana, and maximum mana being spoken separately.
+    /// </summary>
+    public event Action<MsdpMessage>? MsdpStatusReceived;
 
     /// <summary>What the host said about itself over MSSP, or nothing if it did not.</summary>
     public IReadOnlyDictionary<string, string> ServerStatus => _protocol.ServerStatus;
@@ -289,6 +297,10 @@ public sealed class TelnetSession : ITerminalSession
                 _status.Clear();
                 _protocol.DrainGmcp(_status);
                 foreach (GmcpMessage message in _status) StatusReceived?.Invoke(message);
+
+                _msdpStatus.Clear();
+                _protocol.DrainMsdp(_msdpStatus);
+                foreach (MsdpMessage message in _msdpStatus) MsdpStatusReceived?.Invoke(message);
             }
         }
         catch (Exception) when (_stopping.IsCancellationRequested || _disposed != 0)

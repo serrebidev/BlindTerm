@@ -16,6 +16,11 @@ namespace BlindTerm.App;
 /// The window is deliberately a stack of plain controls in tab order -- what to sort by, what
 /// to narrow it to, what to search for, the results, the details, the buttons -- because that
 /// is a shape a screen reader reads correctly without being told anything about it.
+///
+/// Two rules run through the whole window. Nothing is ever disabled while a fetch is running,
+/// because disabling the control somebody is standing on throws their focus somewhere else
+/// mid-sentence; and the whole list arrives at once wherever the source will allow it, because
+/// twenty-five at a time is a button press for every twenty-five of eight hundred names.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class MudBrowserForm : Form
@@ -29,11 +34,16 @@ internal sealed class MudBrowserForm : Form
     /// taken now says whether it is busy at this hour in this timezone -- but somebody who
     /// wants to play something tonight is asking the first question, and the second is right
     /// underneath it.
+    ///
+    /// A to Z is third because it is not a recommendation at all, it is how you find something
+    /// you were already told the name of, and with the whole list loaded and a letter key that
+    /// jumps, that is now a thing this window can actually do.
     /// </summary>
     private static readonly (string Label, MudDirectorySort Sort)[] Orders =
     [
         ("Most players online now", MudDirectorySort.MostPlayers),
         ("Busiest on average over thirty days", MudDirectorySort.BusiestAverage),
+        ("By name, A to Z", MudDirectorySort.Alphabetical),
         ("Highest peak in thirty days", MudDirectorySort.HighestPeak),
         ("Top voted this month", MudDirectorySort.TopVoted),
         ("Most reviewed", MudDirectorySort.MostReviewed),
@@ -43,27 +53,55 @@ internal sealed class MudBrowserForm : Form
         ("Oldest, by the year they opened", MudDirectorySort.Oldest),
     ];
 
+    /// <summary>
+    /// The most one press of Show MUDs or Load more will gather from a source that pages.
+    ///
+    /// It does not apply to the list BlindTerm publishes, which arrives whole in one download
+    /// and is handed over whole. This is for MUDVerse read live, which will only give fifty at
+    /// a time: four requests inside one press, rather than one request and seven more presses.
+    /// </summary>
+    private const int Batch = 200;
+
+    /// <summary>
+    /// How long a changed genre or ordering waits before the list is rebuilt under it.
+    ///
+    /// Only long enough that arrowing down a combo box does not rebuild the list once per
+    /// item. Applied only where rebuilding costs nothing -- the published list is already in
+    /// memory -- because doing it against somebody's live MUDVerse key would spend a request
+    /// per keypress.
+    /// </summary>
+    private static readonly TimeSpan Settling = TimeSpan.FromMilliseconds(600);
+
+    private const string Hint = "Type the first letters of a name to jump to it. "
+                                + "Enter connects to the selected MUD.";
+
     private readonly ComboBox _order = new();
     private readonly ComboBox _genre = new();
     private readonly ComboBox _type = new();
     private readonly ComboBox _roleplaying = new();
     private readonly TextBox _search = new();
+    private readonly CheckBox _answering = new();
     private readonly Button _show;
     private readonly Button _more;
     private readonly Button _connect;
+    private readonly Button _website;
     private readonly Label _status = new();
     private readonly ListBox _results = new();
     private readonly TextBox _details = new();
+    private readonly System.Windows.Forms.Timer _settle = new();
 
     private readonly AppSettings _settings;
     private readonly Action<string, string>? _save;
     private readonly List<MudGame> _shown = new();
+    private readonly List<string> _names = new();
+    private readonly ListTypeahead _typeahead = new();
 
     private IMudDirectory? _directory;
     private CancellationTokenSource? _running;
     private int _page = 1;
     private bool _hasMore;
     private bool _loaded;
+    private bool _ready;
 
     /// <summary>The game that was chosen, once the dialog has been answered.</summary>
     public MudGame? Chosen { get; private set; }
@@ -78,30 +116,42 @@ internal sealed class MudBrowserForm : Form
         FormBorderStyle = FormBorderStyle.Sizable;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        MinimumSize = new Size(640, 620);
-        Size = new Size(720, 700);
+        MinimumSize = new Size(640, 640);
+        Size = new Size(720, 720);
 
-        Fill(_order, "&Browse by",
+        Fill(_order, "Browse by",
             "What to order the list by. Players online now is who is there this minute; "
-            + "busiest on average is who has people in it across a month; top voted is who "
-            + "campaigned hardest.");
+            + "busiest on average is who has people in it across a month; A to Z is for "
+            + "finding one you already know the name of.");
         foreach ((string label, _) in Orders) _order.Items.Add(label);
         _order.SelectedIndex = 0;
 
-        Fill(_genre, "&Genre", "Narrow the list to one setting, such as fantasy or cyberpunk.");
-        Fill(_type, "Game &type", "Narrow the list to MUDs, MUSHes, MOOs and the rest.");
-        Fill(_roleplaying, "&Roleplaying", "Narrow the list by whether roleplaying is required.");
+        Fill(_genre, "Genre", "Narrow the list to one setting, such as fantasy or cyberpunk. "
+                              + "The number beside each is how many MUDs carry it.");
+        Fill(_type, "Game type", "Narrow the list to MUDs, MUSHes, MOOs and the rest.");
+        Fill(_roleplaying, "Roleplaying", "Narrow the list by whether roleplaying is required.");
 
         _search.Width = 360;
         _search.AccessibleName = "Search";
-        _search.AccessibleDescription = "Words to look for in a game's name or description. Leave blank to browse.";
+        _search.AccessibleDescription = "Words to look for in a game's name, description, genre, "
+            + "codebase or address. Every word has to match. Leave blank to browse.";
 
-        _show = Button("&Show MUDs", "Fetch the list with these choices.", () => Fetch(page: 1));
-        _more = Button("&More results", "Add the next page of results to the list.", () => Fetch(_page + 1));
+        _answering.Text = "Leave out the ones that are not &answering";
+        _answering.AutoSize = true;
+        _answering.AccessibleName = "Leave out the ones that are not answering";
+        _answering.AccessibleDescription =
+            "Hides listings that no directory has reached lately. Worth turning on when reading "
+            + "the list by name, where the ones that are gone are mixed in with the rest.";
+
+        _show = Button("Sho&w MUDs", "Fetch the list with these choices.", () => Fetch(page: 1));
+        _more = Button("&Load more", "Add the next results to the list.", () => Fetch(_page + 1));
         _more.Enabled = false;
         _connect = Button("&Use this MUD", "Take the address of the selected MUD back to the connect dialog.",
             Choose);
         _connect.Enabled = false;
+        _website = Button("&Open website", "Opens the selected MUD's own website in your browser.",
+            OpenWebsite);
+        _website.Enabled = false;
         Button key = Button("MUDVerse &key...", "Enter or change the API key BlindTerm reads the directory with.",
             () => AskForKey());
         var close = new Button
@@ -119,7 +169,7 @@ internal sealed class MudBrowserForm : Form
         _results.Dock = DockStyle.Fill;
         _results.IntegralHeight = false;
         _results.AccessibleName = "MUDs";
-        _results.AccessibleDescription = "Arrow through the results. The details below follow the selection.";
+        _results.AccessibleDescription = Hint;
         _results.SelectedIndexChanged += (_, _) => ShowDetails();
         _results.DoubleClick += (_, _) => Choose();
         _results.KeyDown += (_, e) =>
@@ -128,6 +178,15 @@ internal sealed class MudBrowserForm : Form
             e.Handled = true;
             e.SuppressKeyPress = true;
             Choose();
+        };
+        // Handled here rather than left to the list box, which would search the whole spoken
+        // line -- player counts and genres included -- instead of the name. Marking it handled
+        // is what keeps that search from running as well as this one.
+        _results.KeyPress += (_, e) =>
+        {
+            if (char.IsControl(e.KeyChar)) return;
+            e.Handled = true;
+            JumpTo(e.KeyChar);
         };
 
         _details.Dock = DockStyle.Fill;
@@ -152,6 +211,7 @@ internal sealed class MudBrowserForm : Form
         AddRow(layout, "Game &type", _type);
         AddRow(layout, "&Roleplaying", _roleplaying);
         AddRow(layout, "&Search", _search);
+        AddSpan(layout, _answering, grow: false);
 
         var top = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
         top.Controls.Add(_show);
@@ -169,6 +229,7 @@ internal sealed class MudBrowserForm : Form
         };
         buttons.Controls.Add(close);
         buttons.Controls.Add(_connect);
+        buttons.Controls.Add(_website);
         buttons.Controls.Add(_more);
         AddSpan(layout, buttons, grow: false);
 
@@ -184,6 +245,22 @@ internal sealed class MudBrowserForm : Form
             e.SuppressKeyPress = true;
             Fetch(page: 1);
         };
+
+        // A changed choice rebuilds the list without anybody having to find the button again.
+        // SelectionChangeCommitted rather than SelectedIndexChanged, so filling the boxes in
+        // does not count as somebody choosing something.
+        foreach (ComboBox box in new[] { _order, _genre, _type, _roleplaying })
+            box.SelectionChangeCommitted += (_, _) => Rebuild();
+        // A checkbox is a deliberate press rather than something arrowed past, so it does not
+        // wait.
+        _answering.CheckedChanged += (_, _) => { if (_ready) Fetch(page: 1, focusResults: false); };
+
+        _settle.Interval = (int)Settling.TotalMilliseconds;
+        _settle.Tick += (_, _) =>
+        {
+            _settle.Stop();
+            Fetch(page: 1, focusResults: false);
+        };
     }
 
     protected override async void OnShown(EventArgs e)
@@ -193,6 +270,7 @@ internal sealed class MudBrowserForm : Form
         _loaded = true;
 
         await LoadFilters();
+        _ready = true;
         Fetch(page: 1);
     }
 
@@ -208,6 +286,31 @@ internal sealed class MudBrowserForm : Form
     /// </summary>
     private IMudDirectory Directory()
         => _directory ??= MudDirectories.Open(_settings.MudDirectoryKey, _settings.MudDirectoryEndpoint);
+
+    /// <summary>
+    /// Whether rebuilding the list costs nothing.
+    ///
+    /// True for the published list, which is one download and then a sort of something already
+    /// in memory. False for a live MUDVerse key, where every rebuild is a request against
+    /// somebody's own allowance.
+    /// </summary>
+    private bool IsInstant() => MudDirectories.IsPublishedList(Directory());
+
+    /// <summary>A choice was changed. Rebuild, if rebuilding is free; otherwise say so.</summary>
+    private void Rebuild()
+    {
+        if (!_ready) return;
+        if (!IsInstant())
+        {
+            _status.Text = "Choose Show MUDs to fetch with these choices.";
+            return;
+        }
+
+        // Restarted rather than started, so arrowing down thirty-one genres rebuilds once at
+        // the end rather than thirty-one times on the way.
+        _settle.Stop();
+        _settle.Start();
+    }
 
     /// <summary>
     /// Asks for a key, and opens MUDVerse's own page for getting one.
@@ -251,68 +354,99 @@ internal sealed class MudBrowserForm : Form
         }
     }
 
+    /// <summary>
+    /// Fills one of the narrowing boxes.
+    ///
+    /// A box with nothing in it but "all" is switched off rather than left to be tabbed into
+    /// and arrowed through for nothing. That is not a hypothetical: no directory in the
+    /// published list records a roleplaying policy, so that box is empty every time, and
+    /// leaving it live gave a choice whose only effect was to empty the window.
+    /// </summary>
     private static void Populate(ComboBox box, string all, IReadOnlyList<MudTag> tags)
     {
         box.Items.Clear();
         box.Items.Add(new TagItem(all, null));
-        foreach (MudTag tag in tags) box.Items.Add(new TagItem(tag.Name, tag.Id));
+        foreach (MudTag tag in tags) box.Items.Add(new TagItem(Labelled(tag), tag.Id));
         box.SelectedIndex = 0;
         box.Enabled = tags.Count > 0;
+        if (tags.Count == 0) box.AccessibleDescription = "Nothing in this list of MUDs records that.";
     }
 
-    private async void Fetch(int page)
+    /// <summary>"Fantasy, 46" -- the count read as part of the name, because it decides.</summary>
+    private static string Labelled(MudTag tag) => tag.Count > 0 ? $"{tag.Name}, {tag.Count}" : tag.Name;
+
+    private void Fetch(int page) => Fetch(page, focusResults: true);
+
+    /// <summary>
+    /// Fetches results and puts them in the list.
+    ///
+    /// It keeps asking until it has a batch or the source says there is no more, which is what
+    /// turns eight hundred listings into one press rather than thirty-three. The published list
+    /// answers the first ask with all of them.
+    /// </summary>
+    /// <param name="focusResults">
+    /// False when nobody asked for this -- a genre arrowed past, a box ticked. Moving focus
+    /// then would take somebody out of the control they are still using.
+    /// </param>
+    private async void Fetch(int page, bool focusResults)
     {
         IMudDirectory directory = Directory();
+        _settle.Stop();
 
         // A second search started while the first is in flight abandons it, so the list can
         // never be filled in by the query before last. The old source is cancelled but not
         // disposed here: the call that owns it is still holding its token, and disposes it
         // itself on the way out.
         _running?.Cancel();
-        var running = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // Generous, because this is now allowed to be several requests deep. Each one has its
+        // own shorter timeout inside the directory; this only stops a window waiting forever.
+        var running = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         _running = running;
 
         bool adding = page > 1;
-        Working(true);
+        UseWaitCursor = true;
         _status.Text = adding ? "Fetching more..." : "Fetching...";
 
         try
         {
-            var query = new MudDirectoryQuery
-            {
-                Sort = Orders[Math.Max(0, _order.SelectedIndex)].Sort,
-                Search = _search.Text,
-                ThemeTagId = ChosenTag(_genre),
-                TypeTagId = ChosenTag(_type),
-                RoleplayingTagId = ChosenTag(_roleplaying),
-                Page = page,
-                PerPage = 25,
-            };
-            MudDirectoryPage results = await directory.SearchAsync(query, running.Token);
-            if (IsDisposed || Disposing || running.IsCancellationRequested) return;
+            int perPage = Math.Clamp(directory.PageSizeLimit, 25, 2000);
+            int at = Math.Max(1, page);
+            int first = adding ? _results.Items.Count : 0;
+            int gathered = 0;
+            bool cleared = false;
+            MudDirectoryPage results = MudDirectoryPage.Empty;
 
-            _page = results.Page;
-            _hasMore = results.HasMore;
-            if (!adding)
+            while (true)
             {
-                _shown.Clear();
-                _results.Items.Clear();
-            }
+                results = await directory.SearchAsync(Query(at, perPage), running.Token);
+                if (IsDisposed || Disposing || running.IsCancellationRequested) return;
 
-            int first = _results.Items.Count;
-            foreach (MudGame game in results.Games)
-            {
-                _shown.Add(game);
-                _results.Items.Add(new GameItem(game));
+                // Cleared only once the first answer is actually in hand, so a failed fetch
+                // leaves whatever was already on screen rather than emptying the window.
+                if (!adding && !cleared)
+                {
+                    Clear();
+                    cleared = true;
+                }
+                Add(results.Games);
+
+                _page = results.Page;
+                _hasMore = results.HasMore;
+                gathered += results.Games.Count;
+                if (!_hasMore || results.Games.Count == 0 || gathered >= Batch) break;
+
+                at++;
+                _status.Text = $"Fetched {_results.Items.Count} so far...";
             }
 
             _status.Text = Describe(results, adding);
+            _results.AccessibleDescription = _status.Text + " " + Hint;
             if (_results.Items.Count > 0)
             {
                 // Selecting is what makes a screen reader read an item, and the newly added
-                // ones are the point of More results, so selection lands on the first of them.
+                // ones are the point of Load more, so selection lands on the first of them.
                 _results.SelectedIndex = adding && first < _results.Items.Count ? first : 0;
-                _results.Focus();
+                if (focusResults) _results.Focus();
             }
             else
             {
@@ -321,7 +455,11 @@ internal sealed class MudBrowserForm : Form
         }
         catch (OperationCanceledException)
         {
-            if (!IsDisposed && !Disposing) _status.Text = "MUDVerse did not answer in time.";
+            // A search abandoned because a newer one started is not a failure to report. The
+            // newer one owns the status line, and saying "did not answer in time" about a
+            // query nobody is waiting for is a lie that then gets read out.
+            if (!IsDisposed && !Disposing && ReferenceEquals(_running, running))
+                _status.Text = directory.Name + " did not answer in time.";
         }
         catch (MudDirectoryException ex)
         {
@@ -334,26 +472,92 @@ internal sealed class MudBrowserForm : Form
             if (ex.IsAuthentication && AskForKey())
             {
                 await LoadFilters();
-                Fetch(page: 1);
+                Fetch(page: 1, focusResults);
             }
         }
         finally
         {
-            if (ReferenceEquals(_running, running)) _running = null;
+            // Only the fetch that is still the current one gets to put the window back the way
+            // it was. A superseded one doing it would stop the wait cursor and re-enable Load
+            // more while its replacement is still running.
+            bool current = ReferenceEquals(_running, running);
+            if (current) _running = null;
             running.Dispose();
-            if (!IsDisposed && !Disposing) Working(false);
+            if (current && !IsDisposed && !Disposing)
+            {
+                UseWaitCursor = false;
+                _more.Enabled = _hasMore;
+            }
         }
+    }
+
+    private MudDirectoryQuery Query(int page, int perPage) => new()
+    {
+        Sort = Orders[Math.Clamp(_order.SelectedIndex, 0, Orders.Length - 1)].Sort,
+        Search = _search.Text,
+        ThemeTagId = ChosenTag(_genre),
+        TypeTagId = ChosenTag(_type),
+        RoleplayingTagId = ChosenTag(_roleplaying),
+        OnlyAnswering = _answering.Checked,
+        Page = page,
+        PerPage = perPage,
+    };
+
+    private void Clear()
+    {
+        _shown.Clear();
+        _names.Clear();
+        _results.Items.Clear();
+        _typeahead.Reset();
+    }
+
+    /// <summary>
+    /// Adds a page of results.
+    ///
+    /// Between BeginUpdate and EndUpdate because this is now eight hundred at a time rather
+    /// than twenty-five, and a list box that repaints per item takes visible seconds over it.
+    /// </summary>
+    private void Add(IReadOnlyList<MudGame> games)
+    {
+        _results.BeginUpdate();
+        try
+        {
+            foreach (MudGame game in games)
+            {
+                _shown.Add(game);
+                _names.Add(game.Name);
+                _results.Items.Add(new GameItem(game));
+            }
+        }
+        finally
+        {
+            _results.EndUpdate();
+        }
+    }
+
+    /// <summary>Moves the selection to the next name starting with what has been typed.</summary>
+    private void JumpTo(char typed)
+    {
+        int? to = _typeahead.Next(_names, _results.SelectedIndex, typed, DateTimeOffset.UtcNow);
+        if (to is not int index || index == _results.SelectedIndex) return;
+        _results.SelectedIndex = index;
+        // Keeps the selection on screen for anybody who is also looking at it. The reader
+        // announces the item because the selection changed, not because of this.
+        _results.TopIndex = Math.Max(0, index - 2);
     }
 
     private string Describe(MudDirectoryPage results, bool adding)
     {
         if (_results.Items.Count == 0)
-            return "No MUDs matched. Try a wider genre, or clear the search box.";
+            return _answering.Checked
+                ? "No MUDs matched. Try a wider genre, clear the search box, or untick leaving "
+                  + "out the ones that are not answering."
+                : "No MUDs matched. Try a wider genre, or clear the search box.";
         string counted = results.Total > 0
             ? $"{_results.Items.Count} of {results.Total}"
             : $"{_results.Items.Count}";
         string what = adding ? "Added" : "Showing";
-        return $"{what} {counted}." + (_hasMore ? " More results is available." : " That is all of them.")
+        return $"{what} {counted}." + (_hasMore ? " Load more is available." : " That is all of them.")
                + Age();
     }
 
@@ -384,16 +588,6 @@ internal sealed class MudBrowserForm : Form
         return string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];
     }
 
-    private void Working(bool busy)
-    {
-        _show.Enabled = !busy;
-        _more.Enabled = !busy && _hasMore;
-        _connect.Enabled = !busy && _results.SelectedIndex >= 0;
-        _order.Enabled = !busy;
-        _search.Enabled = !busy;
-        UseWaitCursor = busy;
-    }
-
     private static string? ChosenTag(ComboBox box) => (box.SelectedItem as TagItem)?.Id;
 
     private void ShowDetails()
@@ -403,6 +597,7 @@ internal sealed class MudBrowserForm : Form
         {
             _details.Text = string.Empty;
             _connect.Enabled = false;
+            _website.Enabled = false;
             return;
         }
 
@@ -416,6 +611,33 @@ internal sealed class MudBrowserForm : Form
         _connect.AccessibleDescription = game.CanConnect
             ? $"Use {game.Name}, {game.Host} port {game.TlsPort ?? game.Port}."
             : $"{game.Name} has no telnet address.";
+
+        string? link = Link(game);
+        _website.Enabled = link is not null;
+        _website.AccessibleDescription = link is null
+            ? $"{game.Name} has no website."
+            : $"Opens {link} in your browser.";
+    }
+
+    /// <summary>
+    /// Where to send somebody who wants to read about a game before dialling it.
+    ///
+    /// The game's own site first, then the directory's page for it -- which most listings have
+    /// even when the game's own address has rotted away.
+    /// </summary>
+    private static string? Link(MudGame game)
+    {
+        if (game.Website.Length > 0) return game.Website;
+        if (game.ListingUrl.Length > 0) return game.ListingUrl;
+        return game.StatisticsUrl.Length > 0 ? game.StatisticsUrl : null;
+    }
+
+    private void OpenWebsite()
+    {
+        int at = _results.SelectedIndex;
+        if (at < 0 || at >= _shown.Count) return;
+        if (Link(_shown[at]) is not string link) return;
+        OpenLink(this, link);
     }
 
     private void Choose()
@@ -437,6 +659,23 @@ internal sealed class MudBrowserForm : Form
         Close();
     }
 
+    /// <summary>
+    /// Hands a link to whatever opens links here.
+    ///
+    /// Shared with the key dialog, and it reports the address rather than the failure when
+    /// there is nothing to open it with: an address that can be read out and typed elsewhere
+    /// is useful, and "Win32Exception" is not.
+    /// </summary>
+    internal static void OpenLink(IWin32Window owner, string url)
+    {
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(owner, "Could not open a browser. The address is " + url,
+                "BlindTerm", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
     private static Button Button(string text, string description, Action clicked)
     {
         var button = new Button
@@ -454,7 +693,7 @@ internal sealed class MudBrowserForm : Form
     {
         box.DropDownStyle = ComboBoxStyle.DropDownList;
         box.Width = 320;
-        box.AccessibleName = name.Replace("&", string.Empty);
+        box.AccessibleName = name;
         box.AccessibleDescription = description;
     }
 
@@ -485,6 +724,8 @@ internal sealed class MudBrowserForm : Form
     {
         if (disposing)
         {
+            _settle.Stop();
+            _settle.Dispose();
             _running?.Cancel();
             _running?.Dispose();
             _directory?.Dispose();
@@ -586,7 +827,7 @@ internal sealed class MudDirectoryKeyForm : Form
 
         var get = new Button { Text = "&Get a key", AutoSize = true, AccessibleName = "Get a key" };
         get.AccessibleDescription = "Opens " + MudVerseDirectory.ApiKeyPage + " in your browser.";
-        get.Click += (_, _) => Open(MudVerseDirectory.ApiKeyPage);
+        get.Click += (_, _) => MudBrowserForm.OpenLink(this, MudVerseDirectory.ApiKeyPage);
 
         var save = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true, AccessibleName = "Save" };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, AccessibleName = "Cancel" };
@@ -614,16 +855,6 @@ internal sealed class MudDirectoryKeyForm : Form
             AccessibleName = label.Replace("&", string.Empty),
         }, 0, row);
         panel.Controls.Add(control, 1, row);
-    }
-
-    private void Open(string url)
-    {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            MessageBox.Show(this, "Could not open a browser. The address is " + url,
-                "MUDVerse", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

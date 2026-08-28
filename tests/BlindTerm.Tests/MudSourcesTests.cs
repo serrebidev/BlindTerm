@@ -153,20 +153,33 @@ public class MudSourcesTests
         // has the encrypted port and the tagline, TMC has the address.
         MudGame fromMudVerse = new()
         {
-            Source = "MUDVerse", SourceId = "1", Name = "Core MUD",
-            Genre = "Science Fiction", Rating = 4.5, ReviewCount = 3,
+            Source = "MUDVerse",
+            SourceId = "1",
+            Name = "Core MUD",
+            Genre = "Science Fiction",
+            Rating = 4.5,
+            ReviewCount = 3,
         };
         MudGame fromGrapevine = new()
         {
-            Source = "Grapevine", SourceId = "CoreMUD", Name = "CoreMUD",
-            Host = "coremud.org", Port = 4000, TlsPort = 4022,
+            Source = "Grapevine",
+            SourceId = "CoreMUD",
+            Name = "CoreMUD",
+            Host = "coremud.org",
+            Port = 4000,
+            TlsPort = 4022,
             Intro = "Company mining colony.",
         };
         MudGame fromConnector = new()
         {
-            Source = "The Mud Connector", SourceId = "CoreMUD", Name = "Core MUD",
-            Host = "coremud.org", Port = 4000, Website = "https://coremud.org",
-            Availability = MudAvailability.Online, ConfirmedOnline = true,
+            Source = "The Mud Connector",
+            SourceId = "CoreMUD",
+            Name = "Core MUD",
+            Host = "coremud.org",
+            Port = 4000,
+            Website = "https://coremud.org",
+            Availability = MudAvailability.Online,
+            ConfirmedOnline = true,
         };
 
         MudGame merged = Assert.Single(
@@ -189,13 +202,19 @@ public class MudSourcesTests
     {
         MudGame known = new()
         {
-            Source = "MUDVerse", SourceId = "1", Name = "Known",
-            Host = "known.example.com", Port = 4000,
+            Source = "MUDVerse",
+            SourceId = "1",
+            Name = "Known",
+            Host = "known.example.com",
+            Port = 4000,
         };
         MudGame onlyThere = new()
         {
-            Source = "The Mud Connector", SourceId = "Obscure", Name = "Obscure MUD",
-            Host = "obscure.example.com", Port = 5000,
+            Source = "The Mud Connector",
+            SourceId = "Obscure",
+            Name = "Obscure MUD",
+            Host = "obscure.example.com",
+            Port = 5000,
         };
 
         IReadOnlyList<MudGame> merged = MudMerge.Describe([known], [], [onlyThere]);

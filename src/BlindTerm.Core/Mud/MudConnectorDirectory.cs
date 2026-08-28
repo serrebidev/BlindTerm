@@ -46,6 +46,9 @@ public sealed partial class MudConnectorDirectory : IMudDirectory, IDisposable
 
     public string Name => "The Mud Connector";
 
+    /// <summary>The whole list is in hand once it has been read, so there is no page to fetch.</summary>
+    public int PageSizeLimit => 5000;
+
     public async Task<MudDirectoryFilters> FiltersAsync(CancellationToken cancellationToken = default)
     {
         // The Big List carries no genre. TMC has genres on each game's own page, which is six
@@ -62,6 +65,7 @@ public sealed partial class MudConnectorDirectory : IMudDirectory, IDisposable
 
         IEnumerable<MudGame> matching = games;
         if (query.OnlyConnectable) matching = matching.Where(game => game.CanConnect);
+        if (query.OnlyAnswering) matching = matching.Where(game => game.IsAnswering);
         foreach (string word in query.Search.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
             string needle = word;
