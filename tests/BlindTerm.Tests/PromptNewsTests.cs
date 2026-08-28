@@ -1,3 +1,4 @@
+using BlindTerm.Core;
 using BlindTerm.Core.Speech;
 
 namespace BlindTerm.Tests;
@@ -8,12 +9,28 @@ public class PromptNewsTests
     [InlineData("By what name is your character known?")]
     [InlineData("Please enter a name for your character:")]
     [InlineData("CORE>")]
+    [InlineData("Do you want to upgrade Ruby? (y/N)")]
+    [InlineData("Do you want to compile assets? (default: no)")]
     public void CompletePromptsAreAnnounced(string prompt)
     {
         var news = new PromptNews();
 
         Assert.Equal([prompt], news.News(prompt));
         Assert.Empty(news.News(prompt));
+    }
+
+    [Fact]
+    public void ABashChoicePromptIsAnnouncedWithoutANewline()
+    {
+        var core = new TerminalCore(80, 25);
+        var news = new TerminalNews();
+        var spoken = new List<string>();
+        core.Updated += update => spoken.AddRange(news.News(update));
+
+        core.Feed("Updating packages...\r\n"u8);
+        core.Feed("Do you want to compile assets? (y/N) "u8);
+
+        Assert.Equal(["Updating packages...", "Do you want to compile assets? (y/N)"], spoken);
     }
 
     [Fact]
@@ -24,6 +41,15 @@ public class PromptNewsTests
         Assert.Empty(news.News("By what name is your"));
         Assert.Equal(["By what name is your character known?"],
             news.News("By what name is your character known? "));
+    }
+
+    [Fact]
+    public void ParenthesizedProgressIsNotMistakenForAChoicePrompt()
+    {
+        var news = new PromptNews();
+
+        Assert.Empty(news.News("Downloading package (1/4)"));
+        Assert.Empty(news.News("Checking Ruby (yes/no)"));
     }
 
     [Fact]

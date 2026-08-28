@@ -55,5 +55,18 @@ public sealed class PromptNews
     }
 
     private static bool LooksComplete(string prompt)
-        => RequestsSecret(prompt) || prompt[^1] is '?' or ':' or '>' or ']';
+    {
+        if (RequestsSecret(prompt) || prompt[^1] is '?' or ':' or '>' or ']') return true;
+        if (prompt[^1] != ')') return false;
+
+        // Bash scripts commonly put an answer hint after the question mark, which makes the
+        // unfinished line end in a closing parenthesis: "Continue? (y/N)" or
+        // "Continue? (default: no)". The punctuation before a nonempty hint distinguishes it
+        // from ordinary progress such as "Downloading package (1/4)".
+        int hintStart = prompt.LastIndexOf('(');
+        if (hintStart <= 0 || prompt[(hintStart + 1)..^1].Trim().Length == 0) return false;
+
+        string question = prompt[..hintStart].TrimEnd();
+        return question.Length > 0 && question[^1] is '?' or ':';
+    }
 }

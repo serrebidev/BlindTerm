@@ -4,6 +4,13 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.4.2 - 2026-08-28
+
+- Announce Bash questions over SSH when their unfinished prompt ends with a parenthesized answer hint such as `(y/N)` or `(default: no)`.
+  Ordinary progress such as
+  `Downloading package (1/4)` still waits for its newline instead of being mistaken for a
+  question.
+
 ## v0.4.1 - 2026-08-27
 
 - Open the selected menu with Down Arrow as soon as the menu bar is activated. The terminal's
