@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BlindTerm.Core.Triggers;
 
 namespace BlindTerm.Core;
 
@@ -69,6 +70,24 @@ public sealed class AppSettings
     /// </summary>
     public bool SpeakMudStatus { get; set; }
 
+    /// <summary>
+    /// Things to watch the output for, and what to do about each, in the order they are
+    /// checked. See <see cref="BlindTerm.Core.Triggers.Trigger"/>.
+    /// </summary>
+    public List<Trigger> Triggers { get; set; } = new();
+
+    /// <summary>
+    /// The master switch over all of them.
+    ///
+    /// On by default, because an empty trigger list does nothing anyway, and because someone
+    /// who has just written their first trigger should not have to find a second switch
+    /// before it works. Turning it off leaves the list alone.
+    /// </summary>
+    public bool TriggersEnabled { get; set; } = true;
+
+    /// <summary>How many triggers are kept. Far more than anyone lists, and a bound.</summary>
+    public const int MaximumTriggers = 500;
+
     /// <summary>How many remembered addresses are kept.</summary>
     public const int MaximumRecentTelnetHosts = 12;
 
@@ -100,6 +119,14 @@ public sealed class AppSettings
         RecentTelnetHosts ??= new List<string>();
         RecentTelnetHosts.RemoveAll(entry => string.IsNullOrWhiteSpace(entry) || entry.Length > 300);
         Trim();
+
+        // A trigger with nothing to match is not a trigger, whatever else is on it. Anything
+        // else out of range is brought back inside rather than thrown away: these are lines
+        // the user wrote, and a file that has been edited by hand is not a reason to lose them.
+        Triggers ??= new List<Trigger>();
+        Triggers.RemoveAll(trigger => trigger is null || string.IsNullOrWhiteSpace(trigger.Pattern));
+        foreach (Trigger trigger in Triggers) trigger.Clamp();
+        if (Triggers.Count > MaximumTriggers) Triggers.RemoveRange(MaximumTriggers, Triggers.Count - MaximumTriggers);
     }
 
     public AppSettings Copy() => new()
@@ -115,6 +142,8 @@ public sealed class AppSettings
         DownloadSounds = DownloadSounds,
         MudStatus = MudStatus,
         SpeakMudStatus = SpeakMudStatus,
+        Triggers = [.. Triggers.Select(trigger => trigger.Copy())],
+        TriggersEnabled = TriggersEnabled,
     };
 }
 

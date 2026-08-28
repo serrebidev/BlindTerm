@@ -16,6 +16,10 @@ internal static class AppShortcuts
     public const Keys ToggleReview = Keys.Alt | Keys.D3;
 
     public const Keys ChangeDirectory = Keys.Alt | Keys.D;
+    // Shift, because plain Alt+T is how the Terminal menu itself is opened and a menu
+    // mnemonic must keep working. Alt+Shift is still inside BlindTerm's Alt namespace.
+    public const Keys Triggers = Keys.Alt | Keys.Shift | Keys.T;
+    public const Keys ToggleTriggers = Keys.Alt | Keys.Shift | Keys.G;
     public const Keys Connect = Keys.Alt | Keys.N;
     public const Keys Interrupt = Keys.Alt | Keys.C;
     public const Keys Escape = Keys.Alt | Keys.OemOpenBrackets;
@@ -38,6 +42,8 @@ internal static class AppShortcuts
         FocusCommandLine,
         ToggleReview,
         ChangeDirectory,
+        Triggers,
+        ToggleTriggers,
         Connect,
         Interrupt,
         Escape,

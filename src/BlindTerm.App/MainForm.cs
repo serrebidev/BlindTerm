@@ -9,6 +9,7 @@ using BlindTerm.Core.DefaultTerminal;
 using BlindTerm.Core.Net;
 using BlindTerm.Core.Sound;
 using BlindTerm.Core.Speech;
+using BlindTerm.Core.Triggers;
 using BlindTerm.Core.Updates;
 
 namespace BlindTerm.App;
@@ -45,6 +46,7 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem _downloadSoundsItem = new("&Download sounds a MUD offers");
     private readonly ToolStripMenuItem _mudStatusItem = new("MUD room and vitals in the &transcript");
     private readonly ToolStripMenuItem _speakMudStatusItem = new("Speak MUD room and &vitals");
+    private readonly ToolStripMenuItem _triggersActiveItem = new("Trigg&ers are active");
     private readonly ToolStripMenuItem _checkUpdatesItem = new("Check for &updates...");
     private readonly ToolStripMenuItem _defaultTerminalItem = new("Use BlindTerm as the &default terminal");
     private readonly System.Windows.Forms.Timer _reviewFocusSpeechTimer = new() { Interval = 120 };
@@ -69,6 +71,15 @@ public sealed class MainForm : Form
 
     private MspPlayer? _sounds;
     private SoundDownloader? _soundDownloads;
+
+    /// <summary>
+    /// What the user has asked to be told about, and what to do about each. Loaded from the
+    /// settings when the window is built, and reloaded whenever the dialog changes them.
+    /// </summary>
+    private readonly TriggerEngine _triggers = new();
+
+    /// <summary>Where a trigger's own sounds are played. Built the first time one asks.</summary>
+    private SoundBoard? _triggerSounds;
 
     private readonly List<string> _history = new();
     private int _historyIndex;
@@ -117,6 +128,7 @@ public sealed class MainForm : Form
         _screenKeyboard = new KeyboardEchoProxy();
         _settings = settings;
         _settingsStore = settingsStore;
+        ReloadTriggers();
 
         Text = "BlindTerm";
         Width = 1000;
@@ -138,7 +150,11 @@ public sealed class MainForm : Form
             else if (ScreenMode) Say("Back to the program");
         };
 
-        _soundTimer.Tick += (_, _) => _sounds?.Tick();
+        _soundTimer.Tick += (_, _) =>
+        {
+            _sounds?.Tick();
+            _triggerSounds?.Tick();
+        };
         _completionEchoTimer.Tick += (_, _) =>
         {
             _completionEchoTimer.Stop();
@@ -241,6 +257,18 @@ public sealed class MainForm : Form
         var terminal = new ToolStripMenuItem("&Terminal");
         terminal.DropDownItems.Add(Item("Change &directory...", AppShortcuts.ChangeDirectory,
             ChangeDirectory));
+        var triggersItem = Item("T&riggers...", AppShortcuts.Triggers, ShowTriggers);
+        triggersItem.AccessibleDescription =
+            "Things to watch the output for, and what to do when one of them happens: say "
+            + "something, play a sound, keep a line quiet, or send a line back.";
+        terminal.DropDownItems.Add(triggersItem);
+        _triggersActiveItem.Checked = _settings.TriggersEnabled;
+        _triggersActiveItem.ShortcutKeys = AppShortcuts.ToggleTriggers;
+        _triggersActiveItem.AccessibleDescription =
+            "The master switch over every trigger. Turning it off stops them all without "
+            + "changing any of them.";
+        _triggersActiveItem.Click += (_, _) => ToggleTriggers();
+        terminal.DropDownItems.Add(_triggersActiveItem);
         terminal.DropDownItems.Add(Item("&Settings...", Keys.None, ShowSettings));
         terminal.DropDownItems.Add(Item("Connect to a telnet &host...", AppShortcuts.Connect,
             ConnectToHost));
@@ -378,7 +406,67 @@ public sealed class MainForm : Form
             }
         }
 
-        _host.Announcer.Enqueue(_news.News(update));
+        // Worked out before anything is spoken, because one of the things a trigger can ask
+        // for is that a line is not.
+        TriggerOutcome fired = _triggers.Run(update.NewLines, SessionKind);
+
+        IReadOnlyList<string> news = _news.News(update);
+        if (fired.AnySilenced) news = [.. news.Where(line => !fired.IsSilenced(line))];
+        _host.Announcer.Enqueue(news);
+
+        Apply(fired);
+    }
+
+    /// <summary>Which kind of far end this window is showing, as a trigger asks about it.</summary>
+    private TriggerWhere SessionKind
+        => _host.Kind == TerminalSessionKind.Remote ? TriggerWhere.Mud : TriggerWhere.Shell;
+
+    /// <summary>
+    /// Does what a batch of lines asked the triggers for, in one order every time.
+    ///
+    /// Sounds first, because they are the fastest thing to hear and the one that says
+    /// "something happened" before any words have arrived. Then speech, urgent lines going in
+    /// at the head of the batch that is about to be spoken rather than ahead of it -- a line
+    /// said now and cut off a twentieth of a second later by the output it was about is not a
+    /// warning. Sending is last: it is the only one that changes anything at the far end.
+    /// </summary>
+    private void Apply(TriggerOutcome fired)
+    {
+        if (fired.IsEmpty) return;
+
+        if (fired.Beep) SystemSounds.Exclamation.Play();
+        foreach (string sound in fired.Sounds) PlayTriggerSound(sound);
+
+        foreach (TriggerSpeech speech in fired.Speech)
+        {
+            if (speech.Now) _host.Announcer.Interject(speech.Text);
+            else _host.Announcer.Enqueue([speech.Text]);
+        }
+
+        foreach (string line in fired.Sends) _host.SendLine(line);
+
+        // A trigger that has been switched off for running away is a change to the list, and
+        // it has to still be off tomorrow or the loop starts again on the next connection.
+        if (fired.Notes.Count > 0)
+        {
+            TrySaveSettings();
+            foreach (string note in fired.Notes) _host.Announcer.Interject(note);
+        }
+    }
+
+    /// <summary>
+    /// Plays a file a trigger named.
+    ///
+    /// The board is built the first time one is asked for rather than with the window: most
+    /// sessions have no trigger with a sound on it, and there is no reason for them to open
+    /// the multimedia layer at all. Nothing is said when a file will not play -- the dialog
+    /// checks that when the trigger is saved, which is where it can be corrected.
+    /// </summary>
+    private void PlayTriggerSound(string path)
+    {
+        _triggerSounds ??= new SoundBoard(new MciSoundOutput());
+        _triggerSounds.Volume = _settings.SoundVolume;
+        if (_triggerSounds.Play(path) && !_soundTimer.Enabled) _soundTimer.Start();
     }
 
     private void EnterOrUpdateScreenMode(TerminalUpdate update)
@@ -1131,6 +1219,58 @@ public sealed class MainForm : Form
         Say("Copied");
     }
 
+    // ---- Triggers ----
+
+    /// <summary>
+    /// Compiles the trigger list as it now stands, and says what could not be compiled.
+    ///
+    /// Saying so matters more here than anywhere else in the app. A pattern that will not
+    /// compile makes no sound, sends nothing and changes no text: it is indistinguishable
+    /// from a trigger that is simply never matched, and a user who cannot see the dialog has
+    /// no other way to tell the two apart.
+    /// </summary>
+    private void ReloadTriggers()
+    {
+        _triggers.Enabled = _settings.TriggersEnabled;
+        _triggers.Load(_settings.Triggers);
+    }
+
+    private void ShowTriggers()
+    {
+        using var dialog = new TriggersForm(_settings.Triggers, _settings.TriggersEnabled);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        _settings.Triggers = [.. dialog.Triggers];
+        _settings.TriggersEnabled = dialog.Active;
+        _triggersActiveItem.Checked = _settings.TriggersEnabled;
+        ReloadTriggers();
+        TrySaveSettings();
+
+        int on = _settings.Triggers.Count(trigger => trigger.Enabled);
+        string saved = _settings.TriggersEnabled
+            ? $"{_settings.Triggers.Count} triggers saved, {on} on"
+            : $"{_settings.Triggers.Count} triggers saved. Triggers are off";
+        Say(_triggers.Problems.Count == 0
+            ? saved
+            : $"{saved}. {_triggers.Problems.Count} could not be used: {string.Join(" ", _triggers.Problems)}");
+    }
+
+    private void ToggleTriggers()
+    {
+        _settings.TriggersEnabled = !_settings.TriggersEnabled;
+        _triggersActiveItem.Checked = _settings.TriggersEnabled;
+        _triggers.Enabled = _settings.TriggersEnabled;
+        if (!_settings.TriggersEnabled) _triggerSounds?.StopAll();
+        TrySaveSettings();
+
+        Say(_settings.TriggersEnabled
+            ? _settings.Triggers.Count == 0
+                ? "Triggers on. There are none yet; Alt+Shift+T writes one"
+                : $"Triggers on. {_settings.Triggers.Count(trigger => trigger.Enabled)} of "
+                  + $"{_settings.Triggers.Count} are on"
+            : "Triggers off");
+    }
+
     private void ShowSettings()
     {
         using var dialog = new SettingsForm(_settings);
@@ -1151,6 +1291,8 @@ public sealed class MainForm : Form
             _settings.DownloadSounds = next.DownloadSounds;
             _mudSoundsItem.Checked = _settings.MudSounds;
             _downloadSoundsItem.Checked = _settings.DownloadSounds;
+            // A trigger's own sounds are scaled by the same volume, so the board follows it.
+            if (_triggerSounds is not null) _triggerSounds.Volume = _settings.SoundVolume;
             // The player holds the old folder, volume and download choice, so it is built
             // again from the new ones rather than asked to change its mind.
             _soundTimer.Stop();
@@ -1667,6 +1809,7 @@ public sealed class MainForm : Form
     {
         _soundTimer.Dispose();
         _sounds?.Dispose();
+        _triggerSounds?.Dispose();
         _soundDownloads?.Dispose();
         _reviewFocusSpeechTimer.Dispose();
         _completionEchoTimer.Dispose();

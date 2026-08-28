@@ -161,6 +161,70 @@ public class AnnouncerTests
         Assert.Empty(collected.Spoken);
     }
 
+    /// <summary>
+    /// What a trigger means by "say this at once".
+    ///
+    /// Saying it and letting the batch follow a twentieth of a second later would have the
+    /// reader drop it mid-word: the urgent line has to lead the batch, not precede it.
+    /// </summary>
+    [Fact]
+    public void AnUrgentLineLeadsTheBatchItInterruptsAndIsSpokenStraightAway()
+    {
+        var spoken = new List<(string Text, SpeechPriority Priority)>();
+        using var announcer = new Announcer(new NullScreenReader())
+        {
+            Sink = (text, priority) => spoken.Add((text, priority)),
+            IdleWindow = TimeSpan.FromSeconds(30),
+            MaxWindow = TimeSpan.FromSeconds(30),
+        };
+
+        announcer.Enqueue(["ordinary output"]);
+        announcer.Interject("your health is low");
+
+        (string text, SpeechPriority priority) = Assert.Single(spoken);
+        Assert.Equal("your health is low\nordinary output", text);
+        Assert.Equal(SpeechPriority.Now, priority);
+    }
+
+    /// <summary>
+    /// The batch a trigger fires in is often exactly the huge one that gets summarised. The
+    /// urgent line is the one part of it that must not be summarised away.
+    /// </summary>
+    [Fact]
+    public void AnUrgentLineSurvivesABatchLongEnoughToBeSummarised()
+    {
+        var spoken = new List<string>();
+        using var announcer = new Announcer(new NullScreenReader())
+        {
+            Sink = (text, _) => spoken.Add(text),
+            IdleWindow = TimeSpan.FromSeconds(30),
+            MaxWindow = TimeSpan.FromSeconds(30),
+            MaxLinesPerAnnouncement = 5,
+        };
+
+        announcer.Enqueue(Enumerable.Range(0, 40).Select(i => $"line {i}"));
+        announcer.Interject("your health is low");
+
+        Assert.StartsWith("your health is low", Assert.Single(spoken));
+        Assert.Contains("40 lines of output", spoken[0]);
+    }
+
+    [Fact]
+    public void AnUrgentLineIsSaidEvenWhenStreamedOutputHasBeenTurnedOff()
+    {
+        var spoken = new List<string>();
+        using var announcer = new Announcer(new NullScreenReader())
+        {
+            Sink = (text, _) => spoken.Add(text),
+            Enabled = false,
+        };
+
+        announcer.Enqueue(["ordinary output"]);
+        announcer.Interject("your health is low");
+
+        Assert.Equal(["your health is low"], spoken);
+    }
+
     private sealed class NullScreenReader : IScreenReader
     {
         public string Name => "none";

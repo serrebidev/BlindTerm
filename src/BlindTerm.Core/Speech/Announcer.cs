@@ -17,6 +17,11 @@ public sealed class Announcer : IDisposable
     private readonly IScreenReader _reader;
     private readonly Lock _gate = new();
     private readonly List<string> _pending = new();
+    /// <summary>
+    /// Lines a trigger asked to have said at once. Kept apart from the rest so that they go
+    /// first and are never the part a long batch summarises away.
+    /// </summary>
+    private readonly List<string> _urgent = new();
     private Timer? _flushTimer;
     private long _batchStarted;
     private bool _disposed;
@@ -100,6 +105,33 @@ public sealed class Announcer : IDisposable
     }
 
     /// <summary>
+    /// Puts something at the front of the batch that is waiting, and speaks the batch now.
+    ///
+    /// This is what a trigger means by "say this immediately". Saying it with
+    /// <see cref="AnnounceNow"/> instead would have it spoken and then cut off a twentieth of
+    /// a second later by the very output it was about -- both readers drop what they are
+    /// saying when the next utterance arrives. Going out at the head of that batch is the
+    /// only arrangement where the urgent line is heard first and heard whole.
+    ///
+    /// Not subject to <see cref="Enabled"/>: someone who has turned streamed output off has
+    /// still asked for this one line.
+    /// </summary>
+    public void Interject(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _urgent.Add(text.Trim());
+            _flushTimer?.Dispose();
+            _flushTimer = null;
+        }
+
+        Flush(SpeechPriority.Now);
+    }
+
+    /// <summary>
     /// Drops queued line-mode output without cancelling speech that the reader is already
     /// speaking. A full-screen program has taken over, so a delayed shell utterance would be
     /// stale and would compete with the program's own screen speech.
@@ -109,34 +141,43 @@ public sealed class Announcer : IDisposable
         lock (_gate)
         {
             _pending.Clear();
+            _urgent.Clear();
             _flushTimer?.Dispose();
             _flushTimer = null;
         }
     }
 
-    private void Flush()
+    private void Flush(SpeechPriority priority = SpeechPriority.Normal)
     {
         string text;
         lock (_gate)
         {
             _flushTimer?.Dispose();
             _flushTimer = null;
-            if (_pending.Count == 0 || _disposed) return;
+            if (_disposed || _pending.Count + _urgent.Count == 0) return;
 
+            string body;
             if (_pending.Count > MaxLinesPerAnnouncement)
             {
                 var tail = _pending.Skip(_pending.Count - MaxLinesPerAnnouncement);
-                text = $"{_pending.Count} lines of output. Last {MaxLinesPerAnnouncement}: "
+                body = $"{_pending.Count} lines of output. Last {MaxLinesPerAnnouncement}: "
                      + string.Join("\n", tail);
             }
             else
             {
-                text = string.Join("\n", _pending);
+                body = string.Join("\n", _pending);
             }
+
+            // What a trigger called urgent leads, whatever else is waiting behind it -- and
+            // is never the part a long batch summarises away.
+            text = _urgent.Count == 0
+                ? body
+                : string.Join("\n", _urgent) + (body.Length > 0 ? "\n" + body : string.Empty);
             _pending.Clear();
+            _urgent.Clear();
         }
 
-        Speak(text, SpeechPriority.Normal);
+        Speak(text, priority);
     }
 
     private void Speak(string text, SpeechPriority priority)
@@ -153,6 +194,7 @@ public sealed class Announcer : IDisposable
             _flushTimer?.Dispose();
             _flushTimer = null;
             _pending.Clear();
+            _urgent.Clear();
         }
     }
 }
