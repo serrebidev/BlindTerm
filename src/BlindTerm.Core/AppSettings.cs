@@ -11,6 +11,16 @@ public sealed class AppSettings
     public int Columns { get; set; } = 120;
     public int Rows { get; set; } = 30;
 
+    /// <summary>Whether BlindTerm checks for a newer release at startup and periodically.</summary>
+    public bool AutomaticallyCheckForUpdates { get; set; } = true;
+
+    /// <summary>Minutes between automatic update checks. One hour by default.</summary>
+    public int UpdateCheckIntervalMinutes { get; set; } = DefaultUpdateCheckIntervalMinutes;
+
+    public const int DefaultUpdateCheckIntervalMinutes = 60;
+    public const int MinimumUpdateCheckIntervalMinutes = 5;
+    public const int MaximumUpdateCheckIntervalMinutes = 10_080;
+
     /// <summary>
     /// Whether to offer to make BlindTerm the default terminal at startup.
     ///
@@ -30,6 +40,9 @@ public sealed class AppSettings
     /// back as the wrong connection to the right machine.
     /// </summary>
     public List<string> RecentTelnetHosts { get; set; } = new();
+
+    /// <summary>SSH destinations used recently, newest first, as user@host or user@host:port.</summary>
+    public List<string> RecentSshHosts { get; set; } = new();
 
     /// <summary>
     /// A MUDVerse API key, for browsing the directory of MUDs.
@@ -123,6 +136,7 @@ public sealed class AppSettings
 
     /// <summary>How many remembered addresses are kept.</summary>
     public const int MaximumRecentTelnetHosts = 12;
+    public const int MaximumRecentSshHosts = 12;
 
     /// <summary>Puts an address at the top of the list, without letting it appear twice.</summary>
     public void RememberTelnetHost(string address)
@@ -133,11 +147,23 @@ public sealed class AppSettings
         Trim();
     }
 
+    public void RememberSshHost(string address)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(address);
+        RecentSshHosts.RemoveAll(entry =>
+            string.Equals(entry, address, StringComparison.OrdinalIgnoreCase));
+        RecentSshHosts.Insert(0, address);
+        Trim();
+    }
+
     private void Trim()
     {
         if (RecentTelnetHosts.Count > MaximumRecentTelnetHosts)
             RecentTelnetHosts.RemoveRange(MaximumRecentTelnetHosts,
                                           RecentTelnetHosts.Count - MaximumRecentTelnetHosts);
+        if (RecentSshHosts.Count > MaximumRecentSshHosts)
+            RecentSshHosts.RemoveRange(MaximumRecentSshHosts,
+                                       RecentSshHosts.Count - MaximumRecentSshHosts);
     }
 
     public void Validate()
@@ -147,10 +173,14 @@ public sealed class AppSettings
         if (SoundDirectory is null || SoundDirectory.Length > 32_768)
             throw new ArgumentOutOfRangeException(nameof(SoundDirectory));
         SoundVolume = Math.Clamp(SoundVolume, 0, 100);
+        UpdateCheckIntervalMinutes = Math.Clamp(UpdateCheckIntervalMinutes,
+            MinimumUpdateCheckIntervalMinutes, MaximumUpdateCheckIntervalMinutes);
         // A settings file edited by hand, or written by a later version, must not be able to
         // make the menu unusable.
         RecentTelnetHosts ??= new List<string>();
         RecentTelnetHosts.RemoveAll(entry => string.IsNullOrWhiteSpace(entry) || entry.Length > 300);
+        RecentSshHosts ??= new List<string>();
+        RecentSshHosts.RemoveAll(entry => string.IsNullOrWhiteSpace(entry) || entry.Length > 300);
         Trim();
         MudDirectoryKey ??= string.Empty;
         MudDirectoryEndpoint ??= string.Empty;
@@ -171,8 +201,11 @@ public sealed class AppSettings
         Shell = Shell,
         Columns = Columns,
         Rows = Rows,
+        AutomaticallyCheckForUpdates = AutomaticallyCheckForUpdates,
+        UpdateCheckIntervalMinutes = UpdateCheckIntervalMinutes,
         AskAboutDefaultTerminal = AskAboutDefaultTerminal,
         RecentTelnetHosts = new List<string>(RecentTelnetHosts),
+        RecentSshHosts = new List<string>(RecentSshHosts),
         MudDirectoryKey = MudDirectoryKey,
         MudDirectoryEndpoint = MudDirectoryEndpoint,
         SpeakInBackground = SpeakInBackground,

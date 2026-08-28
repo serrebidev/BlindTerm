@@ -26,6 +26,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Sends the arrow keys, Escape and the Ctrl chords to whatever the shell is running, so an agent's model picker, level adjustment and menus can all be driven from the command line.
 - Speaks telnet itself, so a MUD loses none of its output and is told that a screen reader is reading it — including when the connection was asked for by typing `telnet host port` at the command line.
 - Connects over TLS to the MUDs that offer it, and explains a certificate it cannot verify instead of failing with a code.
+- Connects to an SSH host through Windows OpenSSH, so a remote shell that expects its own terminal runs inside BlindTerm and is read aloud.
 - Browses a directory of MUDs by genre, players online, thirty-day average, rating or name, so finding one to play does not mean reading a website full of banners and vote buttons.
 - Needs no account and no API key to do it: the list is published for everyone and rebuilt every half hour.
 - Plays MUD sounds through the MUD Sound Protocol, and keeps its triggers out of the text whether sounds are on or off.

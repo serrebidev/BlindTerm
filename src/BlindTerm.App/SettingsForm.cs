@@ -10,6 +10,8 @@ internal sealed class SettingsForm : Form
     private readonly TextBox _shell = new();
     private readonly NumericUpDown _columns = new();
     private readonly NumericUpDown _rows = new();
+    private readonly CheckBox _automaticUpdates = new();
+    private readonly NumericUpDown _updateInterval = new();
     private readonly CheckBox _mudSounds = new();
     private readonly TextBox _soundDirectory = new();
     private readonly NumericUpDown _soundVolume = new();
@@ -40,6 +42,28 @@ internal sealed class SettingsForm : Form
         AddField(fields, "Shell command line", _shell, "Shell command line. Leave blank for PowerShell 7, or Windows PowerShell.");
         AddField(fields, "Terminal columns", _columns, "Terminal width in columns.");
         AddField(fields, "Terminal rows", _rows, "Terminal height in rows.");
+
+        _automaticUpdates.Text = "Automatically check for updates";
+        _automaticUpdates.AutoSize = true;
+        _automaticUpdates.Checked = Settings.AutomaticallyCheckForUpdates;
+        _automaticUpdates.AccessibleName = "Automatically check for updates";
+        _automaticUpdates.AccessibleDescription =
+            "Check once when BlindTerm starts, then regularly while it remains open.";
+
+        _updateInterval.Minimum = AppSettings.MinimumUpdateCheckIntervalMinutes;
+        _updateInterval.Maximum = AppSettings.MaximumUpdateCheckIntervalMinutes;
+        _updateInterval.Value = Math.Clamp(Settings.UpdateCheckIntervalMinutes,
+            (int)_updateInterval.Minimum, (int)_updateInterval.Maximum);
+        _updateInterval.Width = 100;
+        _updateInterval.AccessibleName = "Update check interval in minutes";
+        _updateInterval.Enabled = _automaticUpdates.Checked;
+        _automaticUpdates.CheckedChanged += (_, _) =>
+            _updateInterval.Enabled = _automaticUpdates.Checked;
+
+        AddField(fields, "Automatic updates", _automaticUpdates,
+            "Whether BlindTerm checks for updates at startup and regularly afterward.");
+        AddField(fields, "Check every, minutes", _updateInterval,
+            "Minutes between automatic update checks. The default is 60 minutes.");
 
         _mudSounds.Text = "Play MUD sounds";
         _mudSounds.AutoSize = true;
@@ -114,6 +138,8 @@ internal sealed class SettingsForm : Form
             edited.Shell = _shell.Text.Trim();
             edited.Columns = (int)_columns.Value;
             edited.Rows = (int)_rows.Value;
+            edited.AutomaticallyCheckForUpdates = _automaticUpdates.Checked;
+            edited.UpdateCheckIntervalMinutes = (int)_updateInterval.Value;
             edited.MudSounds = _mudSounds.Checked;
             edited.SoundDirectory = _soundDirectory.Text.Trim();
             edited.SoundVolume = (int)_soundVolume.Value;

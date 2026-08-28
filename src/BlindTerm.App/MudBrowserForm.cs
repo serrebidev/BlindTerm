@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.Versioning;
 using BlindTerm.Core;
 using BlindTerm.Core.Mud;
@@ -637,7 +636,7 @@ internal sealed class MudBrowserForm : Form
         int at = _results.SelectedIndex;
         if (at < 0 || at >= _shown.Count) return;
         if (Link(_shown[at]) is not string link) return;
-        OpenLink(this, link);
+        ExternalLinks.Open(this, link);
     }
 
     private void Choose()
@@ -657,23 +656,6 @@ internal sealed class MudBrowserForm : Form
         Chosen = game;
         DialogResult = DialogResult.OK;
         Close();
-    }
-
-    /// <summary>
-    /// Hands a link to whatever opens links here.
-    ///
-    /// Shared with the key dialog, and it reports the address rather than the failure when
-    /// there is nothing to open it with: an address that can be read out and typed elsewhere
-    /// is useful, and "Win32Exception" is not.
-    /// </summary>
-    internal static void OpenLink(IWin32Window owner, string url)
-    {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            MessageBox.Show(owner, "Could not open a browser. The address is " + url,
-                "BlindTerm", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
     }
 
     private static Button Button(string text, string description, Action clicked)
@@ -827,7 +809,7 @@ internal sealed class MudDirectoryKeyForm : Form
 
         var get = new Button { Text = "&Get a key", AutoSize = true, AccessibleName = "Get a key" };
         get.AccessibleDescription = "Opens " + MudVerseDirectory.ApiKeyPage + " in your browser.";
-        get.Click += (_, _) => MudBrowserForm.OpenLink(this, MudVerseDirectory.ApiKeyPage);
+        get.Click += (_, _) => ExternalLinks.Open(this, MudVerseDirectory.ApiKeyPage);
 
         var save = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true, AccessibleName = "Save" };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, AccessibleName = "Cancel" };

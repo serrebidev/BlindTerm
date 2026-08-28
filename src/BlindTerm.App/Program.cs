@@ -55,7 +55,11 @@ internal static class Program
         DefaultTerminalServer.Start(SynchronizationContext.Current!,
             handoff => windows.OpenHandoff(handoff, settings, settingsStore));
 
-        if (!embedding && TelnetArgument(args) is TelnetTarget target)
+        if (!embedding && SshArgument(args) is SshTarget ssh)
+        {
+            windows.OpenSsh(ssh, settings, settingsStore);
+        }
+        else if (!embedding && TelnetArgument(args) is TelnetTarget target)
         {
             windows.OpenTelnet(target, settings, settingsStore);
         }
@@ -99,6 +103,22 @@ internal static class Program
             port = separate;
 
         return new TelnetTarget(host, port, secure);
+    }
+
+    /// <summary>The destination in "--ssh user@host[:port]" or "--ssh user@host port".</summary>
+    internal static SshTarget? SshArgument(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        int at = Array.FindIndex(args, argument =>
+            argument.Equals("--ssh", StringComparison.OrdinalIgnoreCase));
+        if (at < 0 || at + 1 >= args.Length ||
+            !SshTarget.TryParse(args[at + 1], out SshTarget? parsed) || parsed is null) return null;
+        SshTarget target = parsed;
+
+        if (at + 2 < args.Length && int.TryParse(args[at + 2], out int separate)
+            && separate is >= 1 and <= 65_535)
+            target = new SshTarget(target.Host, separate, target.Username);
+        return target;
     }
 
     /// <summary>
@@ -182,6 +202,38 @@ internal sealed class TerminalWindows : ApplicationContext
         var host = new TerminalHost(settings.Columns, settings.Rows, SynchronizationContext.Current!);
         var form = new MainForm(host, settings, store);
         form.Shown += (_, _) => host.Start(shell);
+        Track(form, settings, store);
+        form.Show();
+    }
+
+    /// <summary>Opens Windows OpenSSH inside BlindTerm's accessible terminal surface.</summary>
+    public void OpenSsh(SshTarget target, AppSettings settings, SettingsStore store)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        var host = new TerminalHost(settings.Columns, settings.Rows, SynchronizationContext.Current!);
+        var form = new MainForm(host, settings, store)
+        {
+            Text = $"SSH {target.Address} — BlindTerm",
+        };
+        form.Shown += (_, _) =>
+        {
+            try
+            {
+                host.StartSsh(target);
+                settings.RememberSshHost(target.Address);
+                TrySave(settings, store);
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+                                       or IOException or ArgumentException
+                                       or InvalidOperationException)
+            {
+                MessageBox.Show(form,
+                    "Could not start Windows OpenSSH." + Environment.NewLine
+                    + Environment.NewLine + ex.Message,
+                    "BlindTerm could not connect", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                form.Close();
+            }
+        };
         Track(form, settings, store);
         form.Show();
     }
@@ -315,6 +367,7 @@ internal sealed class TerminalWindows : ApplicationContext
         _open++;
         // A window cannot open another window, so the connection request comes back here.
         form.TelnetRequested += target => OpenTelnet(target, settings, store);
+        form.SshRequested += target => OpenSsh(target, settings, store);
         form.FormClosed += (_, _) =>
         {
             if (--_open <= 0) ExitThread();

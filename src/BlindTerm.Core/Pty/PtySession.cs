@@ -21,6 +21,8 @@ namespace BlindTerm.Core.Pty;
 [SupportedOSPlatform("windows")]
 public sealed class PtySession : ITerminalSession
 {
+    private readonly TerminalSessionKind _kind;
+    private readonly bool _alwaysOwnsInput;
     private IntPtr _handle = IntPtr.Zero;
     private SafeFileHandle? _inputWrite;
     private SafeFileHandle? _outputRead;
@@ -44,6 +46,15 @@ public sealed class PtySession : ITerminalSession
     private Thread? _waitThread;
     private int _disposed;
 
+    public PtySession(TerminalSessionKind kind = TerminalSessionKind.Shell,
+        bool alwaysOwnsInput = false)
+    {
+        if (kind is not (TerminalSessionKind.Shell or TerminalSessionKind.Ssh))
+            throw new ArgumentOutOfRangeException(nameof(kind));
+        _kind = kind;
+        _alwaysOwnsInput = alwaysOwnsInput;
+    }
+
     /// <summary>
     /// Raw bytes from the child, exactly as they arrived. Never reordered.
     ///
@@ -65,7 +76,7 @@ public sealed class PtySession : ITerminalSession
     public bool IsHandoff => _handoff is not null;
 
     public TerminalSessionKind Kind
-        => _handoff is not null ? TerminalSessionKind.Handoff : TerminalSessionKind.Shell;
+        => _handoff is not null ? TerminalSessionKind.Handoff : _kind;
 
     /// <summary>
     /// Whether something other than an idle shell prompt is reading what is typed.
@@ -76,7 +87,8 @@ public sealed class PtySession : ITerminalSession
     /// 7 prompt emits none. A handed-over console has no shell in front of it at all: the
     /// program Windows started is the whole session.
     /// </summary>
-    public bool ProgramOwnsInput => _handoff is not null || ProcessTree.HasChild(ProcessId);
+    public bool ProgramOwnsInput
+        => _handoff is not null || _alwaysOwnsInput || ProcessTree.HasChild(ProcessId);
 
     /// <summary>A pseudo console's line discipline turns the Return into a new line itself.</summary>
     public string LineTerminator => "\r";

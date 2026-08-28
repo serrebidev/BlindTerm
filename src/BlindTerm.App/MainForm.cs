@@ -62,6 +62,7 @@ public sealed class MainForm : Form
     // echoed back, then the completion replacing its last word. Reading the first piece would
     // announce half a command; this waits for the redrawing to stop.
     private readonly System.Windows.Forms.Timer _completionEchoTimer = new() { Interval = 120 };
+    private readonly System.Windows.Forms.Timer _updateTimer = new();
 
     private readonly TerminalHost _host;
     private readonly AppSettings _settings;
@@ -91,6 +92,8 @@ public sealed class MainForm : Form
     private int _commandBlockIndex = -1;
     private bool _nanoAnnounced;
     private bool _askedAboutDefaultTerminal;
+    private bool _checkingForUpdates;
+    private string? _offeredUpdateVersion;
     private string? _nanoPrompt;
     private int _proxyNanoRow = -1;
 
@@ -166,6 +169,8 @@ public sealed class MainForm : Form
             _completionEchoTimer.Stop();
             SpeakCompletedLine();
         };
+        _updateTimer.Tick += async (_, _) => await CheckForUpdates(automatic: true);
+        ConfigureAutomaticUpdates();
 
         _host.Updated += OnUpdated;
         _host.Bell += OnBell;
@@ -264,21 +269,10 @@ public sealed class MainForm : Form
         var terminal = new ToolStripMenuItem("&Terminal");
         terminal.DropDownItems.Add(Item("Change &directory...", AppShortcuts.ChangeDirectory,
             ChangeDirectory));
-        var triggersItem = Item("T&riggers...", AppShortcuts.Triggers, ShowTriggers);
-        triggersItem.AccessibleDescription =
-            "Things to watch the output for, and what to do when one of them happens: say "
-            + "something, play a sound, keep a line quiet, or send a line back.";
-        terminal.DropDownItems.Add(triggersItem);
-        _triggersActiveItem.Checked = _settings.TriggersEnabled;
-        _triggersActiveItem.ShortcutKeys = AppShortcuts.ToggleTriggers;
-        _triggersActiveItem.AccessibleDescription =
-            "The master switch over every trigger. Turning it off stops them all without "
-            + "changing any of them.";
-        _triggersActiveItem.Click += (_, _) => ToggleTriggers();
-        terminal.DropDownItems.Add(_triggersActiveItem);
-        terminal.DropDownItems.Add(Item("&Settings...", Keys.None, ShowSettings));
         terminal.DropDownItems.Add(Item("Connect to a telnet &host...", AppShortcuts.Connect,
             ConnectToHost));
+        terminal.DropDownItems.Add(Item("Connect to an &SSH host...", AppShortcuts.ConnectSsh,
+            ConnectToSshHost));
         // In the menu in its own right, not only as a button inside the connect dialog.
         // "Which MUD" is a different question from "what address", and somebody who has not
         // got an address has no reason to open a dialog that asks for one.
@@ -287,14 +281,6 @@ public sealed class MainForm : Form
             "Search a directory of MUDs by genre, players online, thirty-day average or name, "
             + "and connect to the one you choose.";
         terminal.DropDownItems.Add(browseItem);
-        _defaultTerminalItem.CheckOnClick = false;
-        _defaultTerminalItem.Click += (_, _) => ToggleDefaultTerminal();
-        _defaultTerminalItem.AccessibleDescription =
-            "Whether Windows opens BlindTerm when a command-line program needs a terminal.";
-        RefreshDefaultTerminalItem();
-        terminal.DropDownItems.Add(_defaultTerminalItem);
-        _checkUpdatesItem.Click += async (_, _) => await CheckForUpdates();
-        terminal.DropDownItems.Add(_checkUpdatesItem);
         terminal.DropDownItems.Add(new ToolStripSeparator());
         terminal.DropDownItems.Add(Item("Send Ctrl+&C (interrupt)", AppShortcuts.Interrupt,
             () => _host.Send([0x03])));
@@ -308,7 +294,45 @@ public sealed class MainForm : Form
         terminal.DropDownItems.Add(new ToolStripSeparator());
         terminal.DropDownItems.Add(Item("E&xit", Keys.None, Close));
 
-        var read = new ToolStripMenuItem("&Read");
+        var edit = new ToolStripMenuItem("&Edit");
+        edit.DropDownItems.Add(Item("Copy &all", AppShortcuts.CopyAll, CopyAll));
+        edit.DropDownItems.Add(Item("Copy current command &output", AppShortcuts.CopyCommandOutput,
+            CopyCommandOutput));
+        edit.DropDownItems.Add(new ToolStripSeparator());
+        edit.DropDownItems.Add(Item("&Transcript", AppShortcuts.FocusTranscript, FocusTranscript));
+        edit.DropDownItems.Add(Item("&Command line", AppShortcuts.FocusCommandLine,
+            FocusCommandLine));
+        edit.DropDownItems.Add(Item("&End of transcript", AppShortcuts.EndOfTranscript, GoToEnd));
+        edit.DropDownItems.Add(new ToolStripSeparator());
+        edit.DropDownItems.Add(Item("&Previous command", AppShortcuts.PreviousCommand,
+            PreviousCommand));
+        edit.DropDownItems.Add(Item("&Next command", AppShortcuts.NextCommand, NextCommand));
+
+        var tools = new ToolStripMenuItem("T&ools");
+        tools.DropDownItems.Add(Item("&Settings...", Keys.None, ShowSettings));
+        _defaultTerminalItem.CheckOnClick = false;
+        _defaultTerminalItem.Click += (_, _) => ToggleDefaultTerminal();
+        _defaultTerminalItem.AccessibleDescription =
+            "Whether Windows opens BlindTerm when a command-line program needs a terminal.";
+        RefreshDefaultTerminalItem();
+        tools.DropDownItems.Add(_defaultTerminalItem);
+        tools.DropDownItems.Add(new ToolStripSeparator());
+
+        var triggersItem = Item("T&riggers...", AppShortcuts.Triggers, ShowTriggers);
+        triggersItem.AccessibleDescription =
+            "Things to watch the output for, and what to do when one of them happens: say "
+            + "something, play a sound, keep a line quiet, or send a line back.";
+        tools.DropDownItems.Add(triggersItem);
+        _triggersActiveItem.Checked = _settings.TriggersEnabled;
+        _triggersActiveItem.ShortcutKeys = AppShortcuts.ToggleTriggers;
+        _triggersActiveItem.AccessibleDescription =
+            "The master switch over every trigger. Turning it off stops them all without "
+            + "changing any of them.";
+        _triggersActiveItem.Click += (_, _) => ToggleTriggers();
+        tools.DropDownItems.Add(_triggersActiveItem);
+        tools.DropDownItems.Add(new ToolStripSeparator());
+
+        var read = new ToolStripMenuItem("&Reading");
         read.DropDownItems.Add(Item("&Read the screen (freeze and navigate)", AppShortcuts.ToggleReview, ToggleReview));
         read.DropDownItems.Add(Item("Speak &current line", AppShortcuts.SpeakCurrentLine, SpeakCurrentLine));
         read.DropDownItems.Add(Item("Speak whole &screen", AppShortcuts.SpeakScreen, SpeakScreen));
@@ -357,20 +381,15 @@ public sealed class MainForm : Form
         _speakMudStatusItem.Click += (_, _) => ToggleSpeakMudStatus();
         read.DropDownItems.Add(_speakMudStatusItem);
         read.DropDownItems.Add(Item("&Server information", ShowServerInformation));
+        tools.DropDownItems.Add(read);
 
-        var go = new ToolStripMenuItem("&Go");
-        go.DropDownItems.Add(Item("&Transcript", AppShortcuts.FocusTranscript, FocusTranscript));
-        go.DropDownItems.Add(Item("&Command line", AppShortcuts.FocusCommandLine, FocusCommandLine));
-        go.DropDownItems.Add(Item("&End of transcript", AppShortcuts.EndOfTranscript, GoToEnd));
+        var help = new ToolStripMenuItem("&Help");
+        _checkUpdatesItem.Click += async (_, _) => await CheckForUpdates();
+        help.DropDownItems.Add(_checkUpdatesItem);
+        help.DropDownItems.Add(new ToolStripSeparator());
+        help.DropDownItems.Add(Item("&About BlindTerm...", ShowAbout));
 
-        var edit = new ToolStripMenuItem("&Edit");
-        edit.DropDownItems.Add(Item("Copy &all", AppShortcuts.CopyAll, CopyAll));
-        edit.DropDownItems.Add(Item("Copy current command &output", AppShortcuts.CopyCommandOutput, CopyCommandOutput));
-
-        go.DropDownItems.Add(Item("&Previous command", AppShortcuts.PreviousCommand, PreviousCommand));
-        go.DropDownItems.Add(Item("&Next command", AppShortcuts.NextCommand, NextCommand));
-
-        _menu.Items.AddRange([terminal, read, go, edit]);
+        _menu.Items.AddRange([terminal, edit, tools, help]);
         _menu.Dock = DockStyle.Top;
         _menu.MenuActivate += (_, _) => _menuActive = true;
         _menu.MenuDeactivate += (_, _) => _menuActive = false;
@@ -723,6 +742,8 @@ public sealed class MainForm : Form
             // A closed socket has no exit code, and "exited with code 0" would be a lie about
             // a connection that simply ended.
             TerminalSessionKind.Remote => "[Disconnected]",
+            TerminalSessionKind.Ssh when code is null or 0 => "[SSH disconnected]",
+            TerminalSessionKind.Ssh => $"[SSH exited with code {code}]",
             TerminalSessionKind.Handoff when code is null => "[Program exited]",
             TerminalSessionKind.Handoff => $"[Program exited with code {code}]",
             _ when code is null => "[Shell exited]",
@@ -1354,6 +1375,8 @@ public sealed class MainForm : Form
             _settings.Shell = next.Shell;
             _settings.Columns = next.Columns;
             _settings.Rows = next.Rows;
+            _settings.AutomaticallyCheckForUpdates = next.AutomaticallyCheckForUpdates;
+            _settings.UpdateCheckIntervalMinutes = next.UpdateCheckIntervalMinutes;
             _settings.MudSounds = next.MudSounds;
             _settings.SoundDirectory = next.SoundDirectory;
             _settings.SoundVolume = next.SoundVolume;
@@ -1369,6 +1392,7 @@ public sealed class MainForm : Form
             _sounds = null;
             _soundDownloads?.Dispose();
             _soundDownloads = null;
+            ConfigureAutomaticUpdates();
             Say(resized ? "Settings saved and terminal resized" : "Settings saved");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
@@ -1383,11 +1407,21 @@ public sealed class MainForm : Form
     /// </summary>
     public event Action<TelnetTarget>? TelnetRequested;
 
+    /// <summary>The user asked the application to open a separate SSH terminal window.</summary>
+    public event Action<SshTarget>? SshRequested;
+
     private void ConnectToHost()
     {
         using var dialog = new TelnetConnectForm(_settings, SaveDirectorySettings);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         TelnetRequested?.Invoke(dialog.Target);
+    }
+
+    private void ConnectToSshHost()
+    {
+        using var dialog = new SshConnectForm(_settings);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        SshRequested?.Invoke(dialog.Target);
     }
 
     /// <summary>
@@ -1467,17 +1501,40 @@ public sealed class MainForm : Form
         Say("Copied command output");
     }
 
-    private async Task CheckForUpdates()
+    private void ShowAbout()
     {
+        using var dialog = new AboutForm();
+        dialog.ShowDialog(this);
+    }
+
+    private void ConfigureAutomaticUpdates()
+    {
+        _updateTimer.Stop();
+        if (!_settings.AutomaticallyCheckForUpdates) return;
+
+        int minutes = Math.Clamp(_settings.UpdateCheckIntervalMinutes,
+            AppSettings.MinimumUpdateCheckIntervalMinutes,
+            AppSettings.MaximumUpdateCheckIntervalMinutes);
+        _updateTimer.Interval = checked(minutes * 60 * 1000);
+        _updateTimer.Start();
+    }
+
+    private async Task CheckForUpdates(bool automatic = false)
+    {
+        if (_checkingForUpdates) return;
+        _checkingForUpdates = true;
         _checkUpdatesItem.Enabled = false;
         try
         {
             UpdateManifest? manifest = await _updates.CheckAsync();
             if (manifest is null)
             {
-                Say($"BlindTerm {VersionInfo.Display} is up to date");
+                if (!automatic) Say($"BlindTerm {VersionInfo.Display} is up to date");
                 return;
             }
+            if (automatic && string.Equals(_offeredUpdateVersion, manifest.Version,
+                    StringComparison.OrdinalIgnoreCase)) return;
+            _offeredUpdateVersion = manifest.Version;
 
             string notes = string.IsNullOrWhiteSpace(manifest.NotesSummary)
                 ? $"BlindTerm {manifest.Version} is available."
@@ -1496,11 +1553,16 @@ public sealed class MainForm : Form
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException
                                    or InvalidOperationException or UnauthorizedAccessException)
         {
-            MessageBox.Show(this, ex.Message, "Could not update BlindTerm", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            Say("Update failed");
+            if (!automatic)
+            {
+                MessageBox.Show(this, ex.Message, "Could not update BlindTerm",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Say("Update failed");
+            }
         }
         finally
         {
+            _checkingForUpdates = false;
             if (!IsDisposed) _checkUpdatesItem.Enabled = true;
         }
     }
@@ -1944,6 +2006,8 @@ public sealed class MainForm : Form
         else _command.Focus();
 
         OfferDefaultTerminal();
+        if (_settings.AutomaticallyCheckForUpdates)
+            BeginInvoke(async () => await CheckForUpdates(automatic: true));
     }
 
     /// <summary>
@@ -1974,6 +2038,7 @@ public sealed class MainForm : Form
         _soundDownloads?.Dispose();
         _reviewFocusSpeechTimer.Dispose();
         _completionEchoTimer.Dispose();
+        _updateTimer.Dispose();
         _updates.Dispose();
         _host.Dispose();
         base.OnFormClosed(e);

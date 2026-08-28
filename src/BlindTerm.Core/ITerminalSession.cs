@@ -11,6 +11,9 @@ public enum TerminalSessionKind
 
     /// <summary>A host on the network, spoken to directly.</summary>
     Remote,
+
+    /// <summary>A remote shell reached through the Windows OpenSSH client.</summary>
+    Ssh,
 }
 
 /// <summary>

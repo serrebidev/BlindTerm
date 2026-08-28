@@ -21,6 +21,7 @@ internal static class AppShortcuts
     public const Keys Triggers = Keys.Alt | Keys.Shift | Keys.T;
     public const Keys ToggleTriggers = Keys.Alt | Keys.Shift | Keys.G;
     public const Keys Connect = Keys.Alt | Keys.N;
+    public const Keys ConnectSsh = Keys.Alt | Keys.Shift | Keys.N;
     // Shift, because plain Alt+B is not free: it is how a menu mnemonic would be reached.
     public const Keys BrowseMuds = Keys.Alt | Keys.Shift | Keys.B;
     public const Keys Interrupt = Keys.Alt | Keys.C;
@@ -47,6 +48,7 @@ internal static class AppShortcuts
         Triggers,
         ToggleTriggers,
         Connect,
+        ConnectSsh,
         BrowseMuds,
         Interrupt,
         Escape,

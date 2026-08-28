@@ -4,6 +4,18 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.0 - 2026-08-28
+
+- Connect to an SSH host through Windows OpenSSH, so a remote shell that expects its own
+  terminal (such as PuTTY or `ssh.exe`) still runs inside BlindTerm and is read aloud. Choose
+  **Terminal** &rarr; **Connect to an SSH host**, or start BlindTerm with `--ssh user@host[:port]`.
+- Reorganise the menu bar into **Terminal**, **Edit**, **Tools** and **Help**. Settings, Triggers
+  and the Reading commands now live under **Tools**, where they belong.
+- Add a **Help** &rarr; **About BlindTerm** page with links to the GitHub repository, a Follow
+  button for the author, and a button to join the Serrebi Projects Telegram channel.
+- Move **Check for updates** into the **Help** menu, and add a setting to check automatically on
+  startup and again on a regular interval, set to once an hour by default.
+
 ## v0.6.1 - 2026-08-28
 
 - Run triggers against terminal lines rewritten in place as well as newly appended lines, so

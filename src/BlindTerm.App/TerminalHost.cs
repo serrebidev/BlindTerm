@@ -197,6 +197,14 @@ public sealed class TerminalHost : IDisposable
         => Attach(new PtySession()).Start(commandLine, Engine.Columns, Engine.Rows,
                                           TerminalEnvironment.ForChild(), workingDirectory);
 
+    /// <summary>Starts Windows OpenSSH inside BlindTerm's pseudo console.</summary>
+    public void StartSsh(SshTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        Attach(new PtySession(TerminalSessionKind.Ssh, alwaysOwnsInput: true)).Start(
+            target.CommandLine, Engine.Columns, Engine.Rows, TerminalEnvironment.ForChild());
+    }
+
     /// <summary>
     /// Takes over a console Windows has already created for a program, because BlindTerm is
     /// the default terminal. Nothing above this line can tell the difference.
