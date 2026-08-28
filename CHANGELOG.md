@@ -4,6 +4,15 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.4.0 - 2026-08-27
+
+- Watch the output for a pattern, and do something when it arrives. **Terminal** -> **Triggers...** (`Alt+Shift+T`) is the list, and `Alt+Shift+G` is the master switch over it. A screen reader reads what a terminal sends in the order it sends it, so the one line that mattered -- the build finishing, the health warning, someone saying your name -- goes past in the middle of forty that did not. A trigger is how that line gets to sound different from the rest, or be the only one that makes a sound at all.
+- Match the way the line was written, not the way a programmer writes. A pattern can be plain text anywhere in the line; a wildcard, where `*` is any run of characters and `?` is one, and the whole line has to line up; or a regular expression, matched as written. Whatever a wildcard or capturing group stood for comes back as `$1` onwards, to be dropped into what the trigger says or sends -- so `* arrives from *` can say "$1 from the $2".
+- Give every action to one trigger, because the useful ones combine: say something, or say it at once ahead of everything waiting; keep the matching line itself out of the speech; play a sound file; play the system alert; send a line back as though it had been typed; and stop checking the triggers listed after this one, which is how "everything from this channel, except when it mentions me" is written.
+- Test a pattern before it has to work. The editor's Try a line box takes a line the way it would arrive and says whether the pattern matches, what each wildcard stood for, and exactly what would be said, played and sent. The editor refuses to save a trigger that could not do anything, and names the control to go back to.
+- Keep a trigger from talking to itself. A trigger that sends is the dangerous one: a MUD echoes what it is sent, the echo matches the pattern, and the two ends spend the evening shouting at each other. Twenty firings in two seconds and the trigger is switched off for the session and announced, because a trigger that has stopped for a reason nobody can hear is worse than one that never ran. A wait between firings, in milliseconds, is there for the alarms that would otherwise become drones.
+- Order is the user's and it matters, so the list moves up and down and each item is a sentence that says what it watches for and what it does, not a name to open a dialog about. Space turns one on and off, Enter opens it, Delete removes it, and Duplicate is there because the second trigger is usually the first one with one thing changed.
+
 ## v0.3.1 - 2026-08-27
 
 - Complete with `Tab` at the shell prompt, not only inside an inline program. This was the
