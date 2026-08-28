@@ -14,6 +14,19 @@ earlier prototypes were something anyone could have run.
 - Shipping the whole list rather than proxying each query makes every sort and filter instant
   and local, keeps a copy on disk so the browser opens straight away and works offline, and
   means nothing typed into the search box goes to anybody's server.
+- Read four directories rather than one, because each has something the others lack, and
+  because four sites that can be having a bad day are better than one that must not.
+  [Grapevine](https://grapevine.haus) is the only source that states an encrypted port
+  outright instead of leaving it to be guessed; its games page serves clean paginated JSON to
+  `Accept: application/json`, though its documented API is a WebSocket one needing an account.
+  [The Mud Connector](https://mudconnect.com), listing MUDs since 1994, has the most addresses
+  by a wide margin -- six hundred and sixty in a single request -- each with a website and a
+  connect status it checked while building the page. Its ranking has been inactive since 2021,
+  so the rank is kept but nothing sorts by it.
+- Fill in gaps rather than overwrite: the richest source goes first and each one after supplies
+  only what is still blank, so a game listed everywhere ends up with everybody's half and one
+  listed only in the last still ends up connectable. Any source failing makes the list smaller,
+  never absent.
 - Merge in [MUDStats](https://mudstats.com), which has been sampling player counts for twenty
   years. It brings the thirty-day average, peak, minimum and monthly trend, the year a game
   opened, its codebase and database size, whether it charges to play, and two hundred genres.

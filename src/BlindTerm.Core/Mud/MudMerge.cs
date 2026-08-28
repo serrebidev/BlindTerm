@@ -20,6 +20,84 @@ namespace BlindTerm.Core.Mud;
 public static class MudMerge
 {
     /// <summary>
+    /// Folds several directories' listings of the same games into one set, keyed by name.
+    ///
+    /// The sources are passed richest first, and each one after fills in only what is still
+    /// blank. Nobody overwrites anybody: MUDVerse has the genre and the ratings, Grapevine
+    /// has the encrypted ports and the taglines, The Mud Connector has the addresses and a
+    /// connect status it checked while building the page. A game listed in all three ends up
+    /// with all three halves, and one listed in only the last still ends up connectable.
+    /// </summary>
+    public static IReadOnlyList<MudGame> Describe(params IEnumerable<MudGame>[] sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        var byName = new Dictionary<string, MudGame>(StringComparer.Ordinal);
+        var order = new List<string>();
+
+        foreach (IEnumerable<MudGame> source in sources)
+        {
+            foreach (MudGame game in source)
+            {
+                string key = Key(game.Name);
+                if (key.Length == 0) continue;
+                if (byName.TryGetValue(key, out MudGame? already))
+                {
+                    byName[key] = Fill(already, game);
+                }
+                else
+                {
+                    byName[key] = game;
+                    order.Add(key);
+                }
+            }
+        }
+        return [.. order.Select(key => byName[key])];
+    }
+
+    /// <summary>
+    /// The first listing, with the second's answers used only where the first had none.
+    ///
+    /// An address is the exception worth spelling out: a listing that cannot be connected to
+    /// takes the other's host and port outright, because a genre and a rating attached to no
+    /// address is a row in a list that cannot be chosen.
+    /// </summary>
+    public static MudGame Fill(MudGame first, MudGame second)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+
+        return first with
+        {
+            Host = first.CanConnect ? first.Host : second.Host,
+            Port = first.CanConnect ? first.Port : second.Port,
+            TlsPort = first.TlsPort ?? (first.CanConnect || second.TlsPort is null
+                ? first.TlsPort ?? second.TlsPort
+                : second.TlsPort),
+            Intro = first.Intro.Length > 0 ? first.Intro : second.Intro,
+            Genre = first.Genre.Length > 0 ? first.Genre : second.Genre,
+            GameType = first.GameType.Length > 0 ? first.GameType : second.GameType,
+            Roleplaying = first.Roleplaying.Length > 0 ? first.Roleplaying : second.Roleplaying,
+            Codebase = first.Codebase.Length > 0 ? first.Codebase : second.Codebase,
+            Website = first.Website.Length > 0 ? first.Website : second.Website,
+            ListingUrl = first.ListingUrl.Length > 0 ? first.ListingUrl : second.ListingUrl,
+            PlayersOnline = first.PlayersOnline ?? second.PlayersOnline,
+            Rating = first.Rating ?? second.Rating,
+            ReviewCount = first.ReviewCount > 0 ? first.ReviewCount : second.ReviewCount,
+            MonthlyVotes = first.MonthlyVotes > 0 ? first.MonthlyVotes : second.MonthlyVotes,
+            Rank = first.Rank ?? second.Rank,
+            YearOpened = first.YearOpened ?? second.YearOpened,
+            // Either directory having reached the host is enough to say somebody reached it.
+            ConfirmedOnline = first.ConfirmedOnline || second.ConfirmedOnline,
+            Availability = first.Availability != MudAvailability.Unknown
+                ? first.Availability
+                : second.Availability,
+            Updated = first.Updated ?? second.Updated,
+            Listed = first.Listed ?? second.Listed,
+            LastSeen = first.LastSeen ?? second.LastSeen,
+        };
+    }
+
+    /// <summary>
     /// Copies MUDStats' activity figures onto the games that MUDVerse described.
     ///
     /// Returns the merged games and the MUDStats worlds that matched nothing, which the

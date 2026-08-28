@@ -47,7 +47,7 @@ internal static class Directory
     public static int Run(string[] args)
     {
         string output = "mud-directory.json";
-        string? endpoint = null, previous = null, mudstats = null;
+        string? endpoint = null, previous = null, mudstats = null, grapevine = null, connector = null;
         bool quiet = false, skipStats = false, statsOnly = false;
 
         for (int i = 0; i < args.Length; i++)
@@ -58,6 +58,8 @@ internal static class Directory
                 case "--endpoint": endpoint = Next(args, ref i); break;
                 case "--previous": previous = Next(args, ref i); break;
                 case "--mudstats": mudstats = Next(args, ref i); break;
+                case "--grapevine": grapevine = Next(args, ref i); break;
+                case "--mudconnector": connector = Next(args, ref i); break;
                 case "--no-mudstats": skipStats = true; break;
                 case "--mudstats-only": statsOnly = true; break;
                 case "--quiet": quiet = true; break;
@@ -81,7 +83,7 @@ internal static class Directory
                 return 2;
             }
 
-            MudFeed feed = Build(key, endpoint, mudstats, previous, skipStats, quiet)
+            MudFeed feed = Build(key, endpoint, mudstats, grapevine, connector, previous, skipStats, quiet)
                 .GetAwaiter().GetResult();
             if (feed.Games.Count == 0)
             {
@@ -143,8 +145,32 @@ internal static class Directory
         return worlds.Count > 0 && worlds.Any(world => world.AveragePlayers is not null) ? 0 : 1;
     }
 
+    /// <summary>
+    /// Reads one directory, and treats it being down as a smaller list rather than no list.
+    ///
+    /// Every source here is somebody else's website. Four of them means four things that can
+    /// be having a bad day, and any one of them taking the whole run down with it would make
+    /// the published list less reliable than the worst of its sources rather than more
+    /// reliable than the best.
+    /// </summary>
+    private static async Task<IReadOnlyList<MudGame>> Gather(string name, bool quiet,
+        Func<Task<IReadOnlyList<MudGame>>> read)
+    {
+        try
+        {
+            IReadOnlyList<MudGame> games = await read();
+            if (!quiet) Console.Error.WriteLine($"directory: {name} returned {games.Count} games");
+            return games;
+        }
+        catch (MudDirectoryException ex)
+        {
+            Console.Error.WriteLine($"directory: {name} unavailable, carrying on without it: {ex.Message}");
+            return [];
+        }
+    }
+
     private static async Task<MudFeed> Build(string key, string? endpoint, string? mudstatsSite,
-        string? previous, bool skipStats, bool quiet)
+        string? grapevineSite, string? connectorSite, string? previous, bool skipStats, bool quiet)
     {
         using var mudverse = new MudVerseDirectory(key, endpoint);
         // Always reported, even under --quiet: a run that is retrying is a run in trouble, and
@@ -160,7 +186,20 @@ internal static class Directory
             Roleplaying = [.. filters.Roleplaying],
         };
 
-        List<MudGame> games = [.. (await Harvest(mudverse, quiet)).Values];
+        // Richest first. Each source after fills in only what is still blank, so a game
+        // listed in all of them ends up with everybody's half and one listed only in the
+        // last still ends up connectable. See MudMerge.Describe.
+        IReadOnlyList<MudGame> fromMudVerse = [.. (await Harvest(mudverse, quiet)).Values];
+        IReadOnlyList<MudGame> fromGrapevine = await Gather("Grapevine", quiet,
+            () => new GrapevineDirectory(grapevineSite).GamesAsync());
+        IReadOnlyList<MudGame> fromConnector = await Gather("The Mud Connector", quiet,
+            () => new MudConnectorDirectory(connectorSite).GamesAsync());
+
+        List<MudGame> games = [.. MudMerge.Describe(fromMudVerse, fromGrapevine, fromConnector)];
+        if (!quiet)
+            Console.Error.WriteLine($"directory: {fromMudVerse.Count} from MUDVerse, "
+                + $"{fromGrapevine.Count} from Grapevine, {fromConnector.Count} from The Mud "
+                + $"Connector, {games.Count} distinct games");
         if (!skipStats)
         {
             try
@@ -176,7 +215,16 @@ internal static class Directory
             }
         }
 
-        feed.Games = [.. games.OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase)];
+        // Anything without a host and port is dropped here rather than left for the reader to
+        // drop, so the count this job reports is the count that actually ships. A Grapevine
+        // listing with only a web client is the usual case.
+        feed.Games =
+        [
+            .. games.Where(game => game.CanConnect)
+                    .OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase)
+        ];
+        int dropped = games.Count - feed.Games.Count;
+        if (dropped > 0) Console.Error.WriteLine($"directory: {dropped} listings had no telnet address");
         feed.Sources = [.. feed.Games.Select(game => game.Source).Distinct().OrderBy(name => name)];
         return feed;
     }

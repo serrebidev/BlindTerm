@@ -189,12 +189,16 @@ Only games with a real host and port are listed, because a game that is played o
 
 #### Where the list comes from
 
-Two directories, merged, because they are good at different halves:
+Four directories, merged, because each is good at something the others are not:
 
-- **[MUDVerse](https://www.mudverse.com)** knows what a game *is*: its address, its encrypted port, its blurb, its genre and game type, its roleplaying policy, what players voted and reviewed.
+- **[MUDVerse](https://www.mudverse.com)** has the genre and game type, the roleplaying policy, and what players voted and reviewed.
+- **[Grapevine](https://grapevine.haus)** has the cleanest connection data of any of them, and is the only one that states an **encrypted port** outright rather than leaving it to be guessed. Also taglines, homepages and Discord invites.
+- **[The Mud Connector](https://mudconnect.com)**, listing MUDs since 1994, has the most addresses by a wide margin — six hundred and sixty in one request — each with a website and a connect status it checked while building the page.
 - **[MUDStats](https://mudstats.com)** has been sampling player counts for twenty years and knows how busy games actually *are*: thirty-day average, peak and minimum, this month's trend, the year a game opened, its codebase, its database size, whether it charges to play, and over two hundred genres down to *Dresden Files* and *ARPANet Simulation*. Nothing else publishes the averages, and they are the most useful thing here.
 
-They are joined on the name, with the punctuation and the articles taken out. Where two games share a name, neither gets the other's figures — a missing statistic is a line that goes unread, a wrong one is a lie about a real game.
+They are joined on the name, with the punctuation and the articles taken out. The richest source goes first and each one after fills in only what is still blank, so nobody overwrites anybody: a game listed in all four ends up with all four halves, and one listed only in the last still ends up connectable. Where two games share a name, neither gets the other's figures — a missing statistic is a line that goes unread, a wrong one is a lie about a real game.
+
+Four sources also means four sites that can be having a bad day, so any of them failing makes the list smaller rather than absent. That is not theoretical: MUDVerse's API cannot currently be paged past its third page, and several of its orderings time out on the first, which is precisely why the other three are there.
 
 **You need no key for any of this.** A scheduled job in this repository holds one MUDVerse key, reads both directories every half hour, and publishes a single file that BlindTerm downloads. That arrangement exists because MUDVerse issues keys for servers and asks that they are not published — BlindTerm's source *is* published, so a key compiled in here would be a key handed to everyone who downloads it. There is no key in this repository either: it is a repository secret, and only the answer is published.
 
@@ -202,7 +206,7 @@ Publishing the whole list rather than proxying each query is also the better sha
 
 **MUDVerse key...**, in the browser, is optional and for one thing: reading MUDVerse live, so counts are current to the minute rather than to the half hour. **Directory address** beside it points BlindTerm at a different published list. The provider is an interface rather than either site wired in — `IMudDirectory` in `BlindTerm.Core.Mud`, normalising into one `MudGame` — so a third source is a class, not a rewrite.
 
-A note on MUDStats: it publishes no API, so that half is a scrape of the endpoint its own browse page reads, and it is treated accordingly. It runs only in the scheduled job, so MUDStats sees one visitor twice an hour rather than one per user per keystroke; every field is optional, so a changed column loses one figure rather than throwing; and if it breaks entirely the list still publishes, without the activity figures. `blindterm directory --mudstats-only` says in one line whether that scrape still works.
+A note on the sources without an API. MUDStats publishes none, so that half reads the endpoint its own browse page reads; The Mud Connector publishes none either, so its Big List is parsed as the single table it is; and Grapevine documents only a WebSocket API needing an account, but its games page answers to `Accept: application/json` with a clean paginated list. All three are read on sufferance and treated accordingly: only in the scheduled job, so each site sees one visitor twice an hour rather than one per user per keystroke; every field optional, so a moved column loses one figure rather than throwing; and any of them failing leaves the rest to publish. `blindterm directory --mudstats-only` says in one line whether the MUDStats half still works.
 
 ### MUD sounds
 

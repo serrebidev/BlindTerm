@@ -76,16 +76,21 @@ internal static class Program
                                 MUDStats are carried over instead of fetched again
               --endpoint URL    A MUDVerse API base other than the published one
               --mudstats URL    A MUDStats other than mudstats.com
-              --no-mudstats     Publish MUDVerse's listings without activity figures
+              --grapevine URL   A Grapevine other than grapevine.haus
+              --mudconnector URL  A Mud Connector other than mudconnect.com
+              --no-mudstats     Publish the listings without activity figures
               --mudstats-only   Read MUDStats and report what came back, changing nothing.
                                 Needs no key. Exits non-zero if the scrape has stopped
                                 working, which is what to run when the figures go missing.
               --quiet           Do not report each page as it is fetched
 
               Builds the list of MUDs that BlindTerm downloads, so that browsing needs no
-              API key from anybody using it. Merges MUDVerse (what a game is) with MUDStats
-              (how busy it has been). Reads the key from MUDVERSE_API_KEY, never from an
-              argument -- an argument ends up in a shell history and a CI log.
+              API key from anybody using it. Merges four directories: MUDVerse (genre,
+              ratings), Grapevine (encrypted ports, descriptions), The Mud Connector (the
+              most addresses) and MUDStats (how busy each one has been). Any of them being
+              down makes the list smaller, never absent. Reads the key from
+              MUDVERSE_API_KEY, never from an argument -- an argument ends up in a shell
+              history and a CI log.
 
             replay options:
               --cols N          Terminal width used for assembly (default: 120)
