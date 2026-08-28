@@ -109,6 +109,62 @@ public class AppShortcutTests
             commandLineEmpty: true));
 
     [Theory]
+    [InlineData(Keys.Up)]
+    [InlineData(Keys.Down)]
+    [InlineData(Keys.Left)]
+    [InlineData(Keys.Right)]
+    public void ArrowsInOutputStayInOutput(Keys key)
+    {
+        Assert.False(AppShortcuts.ShouldRecallTelnetHistory(
+            key, remoteSession: true, terminalInputFocused: false));
+        Assert.False(AppShortcuts.ShouldPassNavigationKey(
+            key, foregroundProgramActive: true, terminalInputFocused: false,
+            commandLineEmpty: true));
+    }
+
+    [Theory]
+    [InlineData(Keys.Up)]
+    [InlineData(Keys.Down)]
+    public void PlainUpAndDownRecallLocalTelnetHistory(Keys key)
+        => Assert.True(AppShortcuts.ShouldRecallTelnetHistory(
+            key, remoteSession: true, terminalInputFocused: true));
+
+    [Theory]
+    [InlineData(Keys.Left)]
+    [InlineData(Keys.Right)]
+    [InlineData(Keys.Shift | Keys.Up)]
+    [InlineData(Keys.Control | Keys.Up)]
+    [InlineData(Keys.Alt | Keys.Up)]
+    public void EditingAndModifiedArrowsAreNotTelnetHistory(Keys key)
+        => Assert.False(AppShortcuts.ShouldRecallTelnetHistory(
+            key, remoteSession: true, terminalInputFocused: true));
+
+    [Fact]
+    public void ALocalShellDoesNotUseTheTelnetHistoryRule()
+        => Assert.False(AppShortcuts.ShouldRecallTelnetHistory(
+            Keys.Up, remoteSession: false, terminalInputFocused: true));
+
+    [Theory]
+    [InlineData('a')]
+    [InlineData('Z')]
+    [InlineData(' ')]
+    [InlineData('é')]
+    public void PrintableTypingInOutputMovesToInput(char character)
+        => Assert.True(AppShortcuts.ShouldMoveTypingToInput(
+            character, screenMode: false, outputFocused: true, inputEnabled: true));
+
+    [Theory]
+    [InlineData('\r', false, true, true)]
+    [InlineData('\b', false, true, true)]
+    [InlineData('a', true, true, false)]
+    [InlineData('a', false, false, true)]
+    [InlineData('a', false, true, false)]
+    public void ControlKeysAndNonOutputContextsDoNotMoveTyping(
+        char character, bool screenMode, bool outputFocused, bool inputEnabled)
+        => Assert.False(AppShortcuts.ShouldMoveTypingToInput(
+            character, screenMode, outputFocused, inputEnabled));
+
+    [Theory]
     [InlineData(Keys.Alt | Keys.Up)]
     [InlineData(Keys.Alt | Keys.Down)]
     [InlineData(Keys.Alt | Keys.End)]

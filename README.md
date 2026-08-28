@@ -106,17 +106,19 @@ BlindTerm keeps its own commands under Alt. With the command line focused while 
 
 ### Driving a program from the command line
 
-Codex, Claude Code, OpenCode, Freebuff and a MUD over telnet all ask questions no line of text can answer: a model list chosen with Up and Down, a reasoning level adjusted with Left and Right, a picker dismissed with Escape.
+Codex, Claude Code, OpenCode and Freebuff all ask questions no line of text can answer: a model list chosen with Up and Down, a reasoning level adjusted with Left and Right, a picker dismissed with Escape.
 
 **While a program is running, an empty command line is a remote control for it.** Up, Down, Left, Right, Home, End, Page Up, Page Down and Escape are sent straight to the program, and you hear what it does rather than a caret that has nowhere to go.
 
 **As soon as there is text in the command line, it is an ordinary edit box again.** Arrows move the caret through what you have typed, so a typo in a long prompt can still be fixed. Clear the line to get the remote control back, or use `Alt+P` to pass one key either way.
 
+Telnet keeps its own sent-line history in BlindTerm: Up and Down in the command line recall what you sent, and Enter sends the recalled line again. This history is separate from shell commands and never records protected password input.
+
 **Tab asks whatever is reading the line to complete what you typed.** That is the shell's own completion at an idle prompt -- file names, commands, parameters -- and the program's own completion in Claude Code, Codex, OpenCode and similar inline programs. BlindTerm sends the pending edit text followed by Tab, reads the completed command aloud once the terminal has stopped redrawing it, and puts it back in the command box, where it can be reviewed a character at a time, corrected and sent. New typing and editing stay synchronized with the terminal until Enter, and its rendered line is authoritative after completion. Press `Shift+Tab` to move from input to the readable output, and press `Tab` in output to return to input. Freebuff and other full-screen programs use the same focus pair between live input and frozen review output. If a program itself needs `Shift+Tab`, press `Alt+P` first or choose **Terminal** &rarr; **Send Shift+Tab**.
 
 Whether a program is running is decided by whether the shell has actually started one, so this turns itself on when you launch `codex` and off again the moment it exits—no shell configuration, and it works the same in PowerShell, `cmd.exe` and a handed-over console.
 
-Focus decides which surface owns editing keys. In the transcript/output, standard Windows selection and clipboard commands remain local even while a program runs: `Ctrl+A`, `Ctrl+C`, `Ctrl+Shift+Home`, `Ctrl+Shift+End`, Shift with arrows or page keys, and the rest of the native edit-control behavior work with NVDA's system caret. Move to the command line with `Alt+2` when Ctrl chords should go to the program; return to output with `Alt+1` when you want to read, select, or copy.
+Focus decides which surface owns editing keys. In the transcript/output, standard Windows selection and clipboard commands remain local even while a program runs: `Ctrl+A`, `Ctrl+C`, `Ctrl+Shift+Home`, `Ctrl+Shift+End`, Shift with arrows or page keys, and the rest of the native edit-control behavior work with NVDA's system caret. Up, Down, Left and Right stay in the output for reading. Typing a printable character there moves to the command line and keeps that first character, so starting the next command does not require a separate focus shortcut. Move to the command line explicitly with `Alt+2` when Ctrl chords should go to the program; return to output with `Alt+1` when you want to read, select, or copy.
 
 For a telnet session, output remains the complete transcript. BlindTerm records where each submitted command's response begins. `Shift+Tab` moves from the command line into that full output field with its caret at the first line of the latest response; earlier rooms and the login history remain immediately available by moving upward. `Tab` returns to input, and `Alt+1` moves to the end of the full transcript.
 
@@ -162,7 +164,7 @@ Two other things follow from speaking the protocol rather than driving a program
 
 Core MUD sends its opening ASCII logo before any client has time to answer that negotiation. BlindTerm recognizes that one unavoidable opening and rewrites it as ordinary prose, preserving the welcome, setting, story, server version, and login instructions without making NVDA read rows of dots, slashes, and bars. Later text remains byte-for-byte server output. BlindTerm also accepts a host's UTF-8 character-set offer, automatically speaks complete prompts that do not end in a newline, and changes the command line into a protected password field while a password, passphrase, passcode, or PIN is requested.
 
-Typing works as it does anywhere else in BlindTerm, and with an empty command line the arrow keys, `Escape` and `Ctrl+]` reach the host, so a MUD's own history and menus behave. Nothing is sent on connect, so a plain TCP service — a mail server, a web server — can still be poked at the way people use a telnet client for.
+Typing works as it does anywhere else in BlindTerm. Up and Down recall lines sent during the telnet session, so Enter can send one again; Left and Right edit the recalled line. `Escape`, `Ctrl+]`, and other terminal controls can still reach the host. Nothing is sent on connect, so a plain TCP service — a mail server, a web server — can still be poked at the way people use a telnet client for.
 
 ### Encrypted connections
 

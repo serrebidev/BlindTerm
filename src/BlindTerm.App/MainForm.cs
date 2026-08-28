@@ -86,8 +86,8 @@ public sealed class MainForm : Form
     /// <summary>Where a trigger's own sounds are played. Built the first time one asks.</summary>
     private SoundBoard? _triggerSounds;
 
-    private readonly List<string> _history = new();
-    private int _historyIndex;
+    private readonly CommandHistory _history = new();
+    private readonly CommandHistory _telnetHistory = new();
     private int _commandBlockIndex = -1;
     private bool _nanoAnnounced;
     private bool _askedAboutDefaultTerminal;
@@ -433,7 +433,7 @@ public sealed class MainForm : Form
 
         // Worked out before anything is spoken, because one of the things a trigger can ask
         // for is that a line is not.
-        TriggerOutcome fired = _triggers.Run(update.NewLines, SessionKind);
+        TriggerOutcome fired = _triggers.Run(update, SessionKind);
 
         IReadOnlyList<string> news = _news.News(update);
         if (fired.AnySilenced) news = [.. news.Where(line => !fired.IsSilenced(line))];
@@ -1517,11 +1517,13 @@ public sealed class MainForm : Form
                 e.Handled = true;
                 break;
             case Keys.Up:
+                if (e.Modifiers != Keys.None) break;
                 StepHistory(-1);
                 e.SuppressKeyPress = true;
                 e.Handled = true;
                 break;
             case Keys.Down:
+                if (e.Modifiers != Keys.None) break;
                 StepHistory(1);
                 e.SuppressKeyPress = true;
                 e.Handled = true;
@@ -1560,22 +1562,21 @@ public sealed class MainForm : Form
 
         if (DialledOurselves(text))
         {
-            if (_history.Count == 0 || _history[^1] != text) _history.Add(text);
-            _historyIndex = _history.Count;
+            RememberHistory(text);
             _command.Clear();
             return;
         }
 
         // A line typed at a MUD is that MUD's to interpret. Rewriting "codex" into a command
         // line with flags on it would be nonsense there.
+        bool secret = CommandAccessibility.IsSecret(_command);
         string accessible = _host.Kind == TerminalSessionKind.Remote
             ? text
             : AccessibleAgentCommand.Adapt(text);
         _foregroundProgram.Submitted(text);
         _news.SuppressCommandEcho(accessible);
         _host.SendLine(accessible);
-        if (text.Length > 0 && (_history.Count == 0 || _history[^1] != text)) _history.Add(text);
-        _historyIndex = _history.Count;
+        if (!secret) RememberHistory(text);
         _command.Clear();
     }
 
@@ -1679,6 +1680,7 @@ public sealed class MainForm : Form
         _shellTitle = Text;
         Text = $"{address} — BlindTerm";
         _mud.Reset();
+        _telnetHistory.Clear();
     }
 
     /// <summary>
@@ -1702,11 +1704,15 @@ public sealed class MainForm : Form
 
     private void StepHistory(int delta)
     {
-        if (_history.Count == 0) return;
-        _historyIndex = Math.Clamp(_historyIndex + delta, 0, _history.Count);
-        _command.Text = _historyIndex == _history.Count ? string.Empty : _history[_historyIndex];
+        if (CurrentHistory.Step(delta) is not { } recalled) return;
+        _command.Text = recalled;
         _command.SelectionStart = _command.TextLength;
     }
+
+    private void RememberHistory(string text) => CurrentHistory.Remember(text);
+
+    private CommandHistory CurrentHistory
+        => _host.Kind == TerminalSessionKind.Remote ? _telnetHistory : _history;
 
     /// <summary>
     /// Claims keys before the framework can act on them. In screen mode that is nearly all of
@@ -1760,6 +1766,13 @@ public sealed class MainForm : Form
         // A handoff is itself the foreground app.
         bool foregroundLineProgram = !ScreenMode && _foregroundProgram.Active;
         bool commandFocused = _command.Focused;
+
+        if (AppShortcuts.ShouldRecallTelnetHistory(
+                keyData, _host.Kind == TerminalSessionKind.Remote, commandFocused))
+        {
+            StepHistory((keyData & Keys.KeyCode) == Keys.Up ? -1 : 1);
+            return true;
+        }
 
         if (!CommandAccessibility.IsSecret(_command) &&
             AppShortcuts.ShouldSendCompletionTab(
@@ -1863,11 +1876,30 @@ public sealed class MainForm : Form
     /// </summary>
     protected override void OnKeyPress(KeyPressEventArgs e)
     {
+        bool movedFromOutput = AppShortcuts.ShouldMoveTypingToInput(
+            e.KeyChar, ScreenMode, _transcript.Focused, _command.Enabled);
+        if (movedFromOutput) FocusCommandLine();
+
         if (!ScreenMode && _command.Focused &&
             _completionInput.Character(e.KeyChar) is byte[] streamed)
         {
             _host.Send(streamed);
+            if (movedFromOutput)
+            {
+                _command.SelectedText = e.KeyChar.ToString();
+                e.Handled = true;
+            }
             // The native edit still receives the character for keyboard echo and local review.
+            return;
+        }
+
+        if (movedFromOutput)
+        {
+            // The key message was addressed to the output control before focus moved. Insert
+            // it explicitly so the first character is not lost or turned into the read-only
+            // text box's error beep.
+            _command.SelectedText = e.KeyChar.ToString();
+            e.Handled = true;
             return;
         }
 

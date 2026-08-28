@@ -130,13 +130,34 @@ public sealed class TriggerEngine
     }
 
     /// <summary>
-    /// Runs a batch of finished lines past every trigger and returns what they asked for.
+    /// Runs every transcript line changed by one terminal update past the triggers.
+    ///
+    /// A line is not always new. MUDs commonly print a prompt without a newline and later
+    /// replace that same transcript row with an event, as Core MUD does when it changes
+    /// <c>&gt;</c> into <c>&gt; Karia chips away at the wall.</c>. Edits therefore matter just as
+    /// much as appends. When one batch both appends and edits a line, only its final text is
+    /// checked.
+    /// </summary>
+    public TriggerOutcome Run(TerminalUpdate update, TriggerWhere session)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        var byLine = new SortedDictionary<int, string>();
+        for (int i = 0; i < update.NewLines.Count; i++)
+            byLine[update.FirstNewLine + i] = update.NewLines[i];
+        foreach (Transcript.Edit edit in update.Edits) byLine[edit.Line] = edit.Text;
+
+        return Run([.. byLine.Values], session);
+    }
+
+    /// <summary>
+    /// Runs a batch of line texts past every trigger and returns what they asked for.
     ///
     /// Lines in the order they arrived, and triggers in the order the user listed them: that
     /// is what makes "stop checking later triggers" mean something, and it is the only
     /// ordering anyone can reason about when a set grows past a handful.
     /// </summary>
-    /// <param name="lines">Lines the terminal has finished. A line still being printed is not one.</param>
+    /// <param name="lines">The line texts to check.</param>
     /// <param name="session">What kind of far end the window is showing.</param>
     public TriggerOutcome Run(IReadOnlyList<string> lines, TriggerWhere session)
     {

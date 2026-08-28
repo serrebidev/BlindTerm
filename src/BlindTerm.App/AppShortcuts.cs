@@ -148,8 +148,9 @@ internal static class AppShortcuts
     ///
     /// Codex, Claude Code, OpenCode and Freebuff all ask questions no line of text can answer:
     /// a model list chosen with Up and Down, a reasoning level adjusted with Left and Right,
-    /// a picker dismissed with Escape. A MUD over telnet recalls its own history the same way.
-    /// Those keys have to reach the program.
+    /// a picker dismissed with Escape. Those keys have to reach the program. Telnet is the
+    /// exception handled by <see cref="ShouldRecallTelnetHistory"/>: BlindTerm owns its sent
+    /// line history because servers do not consistently provide one.
     ///
     /// An empty command line is the boundary. With nothing typed there is no text to move
     /// through and every one of these keys is dead weight, so the program gets them. The
@@ -169,4 +170,25 @@ internal static class AppShortcuts
         return (keyData & Keys.KeyCode) is Keys.Up or Keys.Down or Keys.Left or Keys.Right
             or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown or Keys.Escape;
     }
+
+    /// <summary>
+    /// Whether an arrow in a telnet command line recalls BlindTerm's local sent-line history.
+    /// Only unmodified Up and Down do this. Left and Right remain editing/navigation keys, and
+    /// arrows in the output stay in the output so somebody reading never gets moved away.
+    /// </summary>
+    public static bool ShouldRecallTelnetHistory(Keys keyData, bool remoteSession,
+        bool terminalInputFocused)
+        => remoteSession
+            && terminalInputFocused
+            && (keyData & (Keys.Control | Keys.Alt | Keys.Shift)) == Keys.None
+            && (keyData & Keys.KeyCode) is Keys.Up or Keys.Down;
+
+    /// <summary>
+    /// Whether a typed character in line-mode output should start typing in the command line.
+    /// Navigation and control characters are deliberately excluded, so arrows keep reading the
+    /// output exactly where its caret already is.
+    /// </summary>
+    public static bool ShouldMoveTypingToInput(char character, bool screenMode,
+        bool outputFocused, bool inputEnabled)
+        => !screenMode && outputFocused && inputEnabled && !char.IsControl(character);
 }

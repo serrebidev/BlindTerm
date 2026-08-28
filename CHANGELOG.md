@@ -4,6 +4,17 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.6.1 - 2026-08-28
+
+- Run triggers against terminal lines rewritten in place as well as newly appended lines, so
+  prompt-prefixed MUD events such as Core MUD's mining progress can send their configured action.
+- Make Up and Down in a telnet command line recall BlindTerm's local sent-line history, with
+  Enter sending the recalled line again. Telnet and shell histories are separate, and protected
+  password input is never remembered.
+- Start typing directly from line-mode output: a printable character moves focus to the command
+  line and is kept as its first character. Up, Down, Left and Right remain in the output for
+  reading and never trigger that focus change.
+
 ## v0.6.0 - 2026-08-28
 
 - Browse hundreds of MUDs in one fetch instead of pressing **Load more** for every twenty-five.

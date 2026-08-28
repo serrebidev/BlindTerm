@@ -1,3 +1,4 @@
+using BlindTerm.Core;
 using BlindTerm.Core.Triggers;
 
 namespace BlindTerm.Tests;
@@ -42,6 +43,42 @@ public class TriggerEngineTests
     [Fact]
     public void ALineNothingMatchesAsksForNothing()
         => Assert.True(Loaded(Watch("dragon")).Run(["a quiet afternoon"], TriggerWhere.Mud).IsEmpty);
+
+    [Fact]
+    public void ATriggerSeesAMudEventThatRewritesTheCurrentPromptLine()
+    {
+        TriggerEngine engine = Loaded(new Trigger
+        {
+            Pattern = "Karia chips away at the wall.",
+            Send = "drill south wall",
+            Where = TriggerWhere.Mud,
+        });
+        var update = new TerminalUpdate { LiveLine = 21 };
+        update.Edits.Add(new Transcript.Edit(
+            Line: 21, Start: 0, OldLength: 1, Text: "> Karia chips away at the wall."));
+
+        TriggerOutcome outcome = engine.Run(update, TriggerWhere.Mud);
+
+        Assert.Equal(["drill south wall"], outcome.Sends);
+    }
+
+    [Fact]
+    public void ALineAppendedAndRewrittenInOneBatchIsCheckedOnceAtItsFinalText()
+    {
+        TriggerEngine engine = Loaded(new Trigger
+        {
+            Pattern = "Karia chips away at the wall.",
+            Send = "drill south wall",
+        });
+        var update = new TerminalUpdate { FirstNewLine = 21, LiveLine = 21 };
+        update.NewLines.Add(">");
+        update.Edits.Add(new Transcript.Edit(
+            Line: 21, Start: 0, OldLength: 1, Text: "> Karia chips away at the wall."));
+
+        TriggerOutcome outcome = engine.Run(update, TriggerWhere.Mud);
+
+        Assert.Equal(["drill south wall"], outcome.Sends);
+    }
 
     [Fact]
     public void SoundsBeepsAndSendsAreAllGatheredFromOneLine()
