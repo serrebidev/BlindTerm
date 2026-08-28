@@ -4,6 +4,15 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.2.5 - 2026-08-27
+
+- Keep `telnet host port` in the BlindTerm window where it was typed. The direct telnet
+  connection now takes over the current shell window and carries on in the same transcript;
+  when the host disconnects, the live shell and its command line return in that window.
+- Serialize the shell and network reader threads while the connection takes over or returns.
+  Output from the waiting shell cannot be spliced into the MUD conversation, and simultaneous
+  terminal updates cannot corrupt the parser or transcript.
+
 ## v0.2.4 - 2026-08-27
 
 - Dial `telnet host port` typed at the command line with BlindTerm's own telnet. Windows'

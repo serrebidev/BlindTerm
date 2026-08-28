@@ -114,4 +114,21 @@ public class ForegroundProgramStateTests
 
         Assert.False(state.Active);
     }
+
+    [Fact]
+    public void ReturningToTheShellRestoresForegroundTracking()
+    {
+        var clock = new Clock();
+        bool running = false;
+        var state = new ForegroundProgramState(() => running, () => clock.Now);
+        state.Exited();
+
+        state.Resumed();
+        Assert.False(state.Active);
+
+        running = true;
+        clock.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.True(state.Active);
+    }
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Media;
+using System.Net.Sockets;
 using System.Runtime.Versioning;
 using System.Text;
 using BlindTerm.App.Defterm;
@@ -513,6 +514,26 @@ public sealed class MainForm : Form
     {
         if (IsDisposed || Disposing) return;
 
+        // A connection dialled from a prompt ends the way a program run from a prompt ends:
+        // by handing the window back to the shell that was underneath it, still where it was.
+        // ReturnToShell says no when there was no shell, or when it died behind the
+        // connection, and then this is an ordinary end of session after all.
+        if (_host.Kind == TerminalSessionKind.Remote && _host.ReturnToShell())
+        {
+            _foregroundProgram.Resumed();
+            _host.AppendExternal(["[Disconnected]"]);
+            Text = _shellTitle ?? "BlindTerm";
+            _shellTitle = null;
+            // The prompt this shell is sitting at scrolled away while the connection was in
+            // front of it. A bare Return makes it print another, so there is somewhere
+            // visible to be.
+            _host.SendLine(string.Empty);
+            _command.Enabled = true;
+            CommandAccessibility.Apply(_command, string.Empty);
+            FocusCommandLine();
+            return;
+        }
+
         _foregroundProgram.Exited();
 
         string message = _host.Kind switch
@@ -1021,28 +1042,80 @@ public sealed class MainForm : Form
     /// whole new screenful of output and whatever went past between two repaints was never
     /// readable at all.
     ///
-    /// Only an idle shell prompt is answered this way. Inside ssh, a Python prompt or a MUD,
-    /// the line was typed at something else and is that program's to interpret.
+    /// The connection takes over this window, the way running a program from a prompt does,
+    /// rather than opening another one. Only an idle shell prompt is answered this way:
+    /// inside ssh, a Python prompt or a MUD, the line was typed at something else and is
+    /// that program's to interpret.
     /// </summary>
     private bool DialledOurselves(string text)
     {
-        if (_host.Kind == TerminalSessionKind.Remote) return false;
+        if (!_host.CanConnectOver) return false;
         if (_foregroundProgram.Active) return false;
-        if (TelnetRequested is null) return false;
         if (TelnetCommand.Parse(text) is not var (host, port)) return false;
 
-        // Said through the transcript rather than spoken over the top of it, so that the
-        // answer to "what just happened to my command" is still there to read afterwards.
         // The command itself is written back the way a shell would echo it, and suppressed
         // for speech the same way, having just been read out as it was typed.
         _news.SuppressCommandEcho(text);
-        _host.AppendExternal([
-            text,
-            $"Connecting to {TelnetAddress.Format(host, port)} in a new BlindTerm window."
-            + " BlindTerm speaks telnet itself, so the conversation arrives as lines.",
-        ]);
-        TelnetRequested.Invoke(host, port);
+        _ = ConnectOver(text, host, port);
         return true;
+    }
+
+    /// <summary>How long to wait for a host to answer before giving up and saying so.</summary>
+    private const int ConnectTimeoutSeconds = 20;
+
+    /// <summary>
+    /// Dials a host into this window and reports the outcome through the transcript, so that
+    /// the answer to "what happened to my command" is there to read afterwards rather than
+    /// having been spoken once and lost.
+    /// </summary>
+    private async Task ConnectOver(string typed, string host, int port)
+    {
+        string address = TelnetAddress.Format(host, port);
+        _host.AppendExternal([typed, $"Connecting to {address}..."]);
+        _command.Enabled = false;
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(ConnectTimeoutSeconds));
+            await _host.ConnectOverAsync(host, port, timeout.Token);
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException
+                                   or IOException or ArgumentException or InvalidOperationException
+                                   or ObjectDisposedException)
+        {
+            if (IsDisposed || Disposing) return;
+            string reason = ex is OperationCanceledException
+                ? $"{host} did not answer within {ConnectTimeoutSeconds} seconds."
+                : ex.Message;
+            // The shell is untouched and still at its prompt, so there is nothing to restore.
+            _host.AppendExternal([$"Could not connect to {address}. {reason}"]);
+            _command.Enabled = _host.IsRunning;
+            if (_command.Enabled) FocusCommandLine();
+            return;
+        }
+
+        if (IsDisposed || Disposing) return;
+
+        _settings.RememberTelnetHost(address);
+        TrySaveSettings();
+
+        // Kept so the window can say what it was showing again once the connection ends.
+        _shellTitle = Text;
+        Text = $"{address} — BlindTerm";
+        _command.Enabled = true;
+        FocusCommandLine();
+    }
+
+    /// <summary>The window title before a connection took the window over.</summary>
+    private string? _shellTitle;
+
+    /// <summary>A remembered address is a convenience; failing to write one is not an error.</summary>
+    private void TrySaveSettings()
+    {
+        try { _settingsStore.Save(_settings); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or ArgumentOutOfRangeException)
+        { }
     }
 
     private void StepHistory(int delta)

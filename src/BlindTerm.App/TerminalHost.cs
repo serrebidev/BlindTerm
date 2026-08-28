@@ -23,10 +23,31 @@ public sealed class TerminalHost : IDisposable
     private readonly TerminalCore _core;
 
     /// <summary>
+    /// Serializes session changes with bytes arriving from their reader threads.
+    ///
+    /// <see cref="TerminalCore"/> is deliberately a synchronous state machine: two feeds at
+    /// once would corrupt its carried escape sequence, screen and transcript. The same lock
+    /// therefore protects both the session stack and every mutation of the core.
+    /// </summary>
+    private readonly object _gate = new();
+
+    /// <summary>
     /// The far end. It is chosen when the window opens -- a shell, a console Windows handed
     /// over, or a host on the network -- and nothing above this line can tell which.
     /// </summary>
     private ITerminalSession? _session;
+
+    /// <summary>
+    /// The shell a connection was laid over, kept running so the window can go back to it.
+    ///
+    /// This is what "telnet" typed at a prompt has always meant: the shell is still there,
+    /// still at its prompt, and comes back when the connection ends. It never received the
+    /// command, so there is nothing to return it from.
+    /// </summary>
+    private ITerminalSession? _underneath;
+
+    /// <summary>Whether that shell died while the connection was in front of it.</summary>
+    private bool _underneathExited;
 
     public TerminalCore Core => _core;
     public TerminalEngine Engine => _core.Engine;
@@ -47,17 +68,26 @@ public sealed class TerminalHost : IDisposable
     public event Action<string>? TitleChanged;
     public event Action<int?>? Exited;
 
-    public bool IsRunning => _session?.IsRunning ?? false;
+    public bool IsRunning
+    {
+        get { lock (_gate) return _session?.IsRunning ?? false; }
+    }
 
     /// <summary>What kind of far end this window is showing.</summary>
-    public TerminalSessionKind Kind => _session?.Kind ?? TerminalSessionKind.Shell;
+    public TerminalSessionKind Kind
+    {
+        get { lock (_gate) return _session?.Kind ?? TerminalSessionKind.Shell; }
+    }
 
     /// <summary>
     /// Whether something other than an idle shell prompt is reading what is typed. The
     /// keyboard follows this: a running program gets the arrow keys and the Ctrl chords, and
     /// a prompt keeps the ordinary editing keys Windows has always provided.
     /// </summary>
-    public bool ProgramOwnsInput => _session?.ProgramOwnsInput ?? false;
+    public bool ProgramOwnsInput
+    {
+        get { lock (_gate) return _session?.ProgramOwnsInput ?? false; }
+    }
 
     public TerminalHost(int columns, int rows, SynchronizationContext ui)
     {
@@ -72,23 +102,66 @@ public sealed class TerminalHost : IDisposable
 
         // Replies the terminal owes the program -- cursor position reports and the like --
         // go straight back without touching the UI thread.
-        _core.Engine.Respond += bytes => _session?.Write(bytes);
+        _core.Engine.Respond += bytes =>
+        {
+            lock (_gate) _session?.Write(bytes);
+        };
     }
 
     /// <summary>Takes ownership of a far end and starts feeding its bytes to the engine.</summary>
     private T Attach<T>(T session) where T : ITerminalSession
     {
-        if (_session is not null) throw new InvalidOperationException("This window already has a session.");
-        _session = session;
-        session.Output += memory => _core.Feed(memory.Span);
+        lock (_gate)
+        {
+            if (_session is not null)
+                throw new InvalidOperationException("This window already has a session.");
+            Wire(session);
+            _session = session;
+        }
+        return session;
+    }
+
+    /// <summary>
+    /// Subscribes to a far end, ignoring anything it says while it is not the one on top.
+    ///
+    /// The gate is what lets a connection be laid over a shell. An idle shell says nothing,
+    /// so in practice it drops nothing -- but a shell that does print while a MUD is in front
+    /// of it must not have its output spliced into the middle of the conversation being read.
+    /// </summary>
+    private void Wire(ITerminalSession session)
+    {
+        session.Output += memory =>
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_session, session)) _core.Feed(memory.Span);
+            }
+        };
         if (session is TelnetSession remote)
-            remote.SoundRequested += trigger => Post(() => SoundRequested?.Invoke(trigger));
+            remote.SoundRequested += trigger =>
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_session, session))
+                        Post(() => SoundRequested?.Invoke(trigger));
+                }
+            };
         session.Exited += code =>
         {
-            _core.Flush();
+            lock (_gate)
+            {
+                // A shell that dies underneath a connection is not the end of the window: the
+                // connection is still up and being read. It is remembered instead, because it
+                // is no longer somewhere to go back to when the connection ends.
+                if (!ReferenceEquals(_session, session))
+                {
+                    if (ReferenceEquals(_underneath, session)) _underneathExited = true;
+                    return;
+                }
+                _core.Flush();
+            }
             Post(() => Exited?.Invoke(code));
         };
-        return session;
     }
 
     private void Post(Action action) => _ui.Post(_ => action(), null);
@@ -121,6 +194,98 @@ public sealed class TerminalHost : IDisposable
         if (_session is TelnetSession telnet) telnet.Begin();
     }
 
+    /// <summary>
+    /// Whether a connection could be laid over what this window is showing. A window that is
+    /// already showing a connection has nothing to lay another over.
+    /// </summary>
+    public bool CanConnectOver
+    {
+        get
+        {
+            lock (_gate)
+                return _session is { IsRunning: true, Kind: not TerminalSessionKind.Remote }
+                       && _underneath is null;
+        }
+    }
+
+    /// <summary>
+    /// Connects to a host and puts it in front of the shell this window is already running,
+    /// rather than opening a second window for it.
+    ///
+    /// The transcript carries straight on, so what the shell printed stays above the
+    /// conversation and remains readable. Nothing is sent to the shell and nothing is taken
+    /// from it: it is left at the prompt it was already at, and <see cref="ReturnToShell"/>
+    /// brings it back when the connection ends.
+    ///
+    /// Throws exactly what <see cref="ConnectAsync"/> throws when the host cannot be reached,
+    /// and leaves the window showing the shell untouched when it does.
+    /// </summary>
+    public async Task ConnectOverAsync(string host, int port, CancellationToken cancellationToken = default)
+    {
+        if (!CanConnectOver) throw new InvalidOperationException("This window has nothing to connect over.");
+
+        var telnet = new TelnetSession();
+        Wire(telnet);
+        try
+        {
+            await telnet.ConnectAsync(host, port, Engine.Columns, Engine.Rows, cancellationToken);
+        }
+        catch
+        {
+            telnet.Dispose();
+            throw;
+        }
+
+        lock (_gate)
+        {
+            // The shell may have ended during the network connection attempt. Do not replace
+            // a dead window with a connection that can never return to what the user asked to
+            // keep underneath it.
+            if (_session is not { IsRunning: true, Kind: not TerminalSessionKind.Remote }
+                || _underneath is not null)
+            {
+                telnet.Dispose();
+                throw new InvalidOperationException("The shell ended while BlindTerm was connecting.");
+            }
+
+            // The prompt the command was typed at is an unfinished line, and the cursor is
+            // still sitting in the middle of it. Without this the host's first line would be
+            // printed onto the end of the prompt and read as part of it.
+            _core.Feed("\r\n"u8);
+
+            _underneathExited = false;
+            _underneath = _session;
+            _session = telnet;
+            // Start while the switch is still locked. A form closing on another thread must
+            // not be able to dispose the new current session in the gap before its reader is
+            // started.
+            telnet.Begin();
+        }
+    }
+
+    /// <summary>
+    /// Puts the shell back in front after a connection laid over it has ended, and says
+    /// whether there was one still alive to go back to.
+    /// </summary>
+    public bool ReturnToShell()
+    {
+        ITerminalSession? connection;
+        bool returned;
+        lock (_gate)
+        {
+            if (_underneath is null) return false;
+
+            connection = _session;
+            _session = _underneath;
+            _underneath = null;
+            returned = !_underneathExited && _session.IsRunning;
+            _underneathExited = false;
+        }
+
+        connection?.Dispose();
+        return returned;
+    }
+
     /// <summary>Whether this window is showing a console Windows handed over.</summary>
     public bool IsHandoff => Kind == TerminalSessionKind.Handoff;
 
@@ -137,10 +302,14 @@ public sealed class TerminalHost : IDisposable
     {
         if (lines.Count == 0) return;
 
-        var update = new TerminalUpdate { FirstNewLine = Transcript.Count };
-        _core.Builder.AppendExternal(lines);
-        update.NewLines.AddRange(lines);
-        update.LiveText = string.Empty;
+        TerminalUpdate update;
+        lock (_gate)
+        {
+            update = new TerminalUpdate { FirstNewLine = Transcript.Count };
+            _core.Builder.AppendExternal(lines);
+            update.NewLines.AddRange(lines);
+            update.LiveText = string.Empty;
+        }
 
         Post(() => Updated?.Invoke(update));
     }
@@ -148,24 +317,45 @@ public sealed class TerminalHost : IDisposable
     /// <summary>Sends a typed line, with the Return as a separate write. See PtySession.</summary>
     public void SendLine(string text)
     {
-        if (_session is null) return;
-        _ = _session.WriteLineSplit(text, _session.LineTerminator, 20);
+        ITerminalSession? session;
+        lock (_gate) session = _session;
+        if (session is null) return;
+        _ = session.WriteLineSplit(text, session.LineTerminator, 20);
     }
 
-    public void Send(ReadOnlySpan<byte> bytes) => _session?.Write(bytes);
+    public void Send(ReadOnlySpan<byte> bytes)
+    {
+        lock (_gate) _session?.Write(bytes);
+    }
 
     public void Resize(int columns, int rows)
     {
         TerminalSize size = TerminalSize.Validate(columns, rows);
-        // Resize the child first. If ConPTY rejects it, the parser remains at its old size and
-        // can continue consuming output consistently.
-        _session?.Resize(size.Columns, size.Rows);
-        Engine.Resize(size.Columns, size.Rows);
+        lock (_gate)
+        {
+            // Resize the child first. If ConPTY rejects it, the parser remains at its old size
+            // and can continue consuming output consistently.
+            _session?.Resize(size.Columns, size.Rows);
+            // A shell waiting behind a connection is resized too, so that the window it comes
+            // back to is the size the window actually is.
+            _underneath?.Resize(size.Columns, size.Rows);
+            Engine.Resize(size.Columns, size.Rows);
+        }
     }
 
     public void Dispose()
     {
         Announcer.Dispose();
-        _session?.Dispose();
+        ITerminalSession? session;
+        ITerminalSession? underneath;
+        lock (_gate)
+        {
+            session = _session;
+            underneath = _underneath;
+            _session = null;
+            _underneath = null;
+        }
+        session?.Dispose();
+        if (!ReferenceEquals(underneath, session)) underneath?.Dispose();
     }
 }

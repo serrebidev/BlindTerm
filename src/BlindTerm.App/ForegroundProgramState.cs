@@ -72,6 +72,18 @@ internal sealed class ForegroundProgramState
     /// <summary>The session ended. Nothing is in the foreground of a terminal that is gone.</summary>
     public void Exited() => _exited = true;
 
+    /// <summary>
+    /// The window has a live session again -- a connection that took it over has ended and
+    /// the shell underneath is back. Without this the shell would count as gone forever, and
+    /// every program started in it afterwards would be handed the keyboard it never claimed.
+    /// </summary>
+    public void Resumed()
+    {
+        _exited = false;
+        _submittedAt = null;
+        _probedAt = null;
+    }
+
     private bool Probe()
     {
         TimeSpan now = _now();
