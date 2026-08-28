@@ -31,6 +31,24 @@ public sealed class TerminalCore
     }
 
     /// <summary>
+    /// Adds lines the app writes itself rather than the far end: a ready message, "Connecting
+    /// to...", an exit message.
+    ///
+    /// They take transcript numbers like any other line, so anything counting lines is not
+    /// thrown out, and they come back as a batch to publish so the window mirrors them and the
+    /// reader announces them without anything having to know where they came from. The batch
+    /// is marked external: nothing was read from the terminal, so it carries no verdict on the
+    /// prompt the far end is sitting at.
+    /// </summary>
+    public TerminalUpdate AppendExternal(IReadOnlyList<string> lines)
+    {
+        var update = new TerminalUpdate { FirstNewLine = Transcript.Count, External = true };
+        Builder.AppendExternal(lines);
+        update.NewLines.AddRange(lines);
+        return update;
+    }
+
+    /// <summary>
     /// Feeds bytes from the pty and publishes what they changed.
     ///
     /// What is on the screen becomes lines before anything wipes it. Otherwise the line a

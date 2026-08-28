@@ -27,12 +27,32 @@ public sealed class PromptNews
         if (!LooksComplete(prompt) || prompt.Equals(_lastAnnounced, StringComparison.Ordinal))
             return [];
 
+        // A prompt that follows another on the same unfinished line -- "Password:" printed
+        // after "By what name is your character known?" without a newline between them -- is
+        // new only in its tail. Reading the whole line again makes every further question
+        // repeat everything already asked and answered on it.
+        string news = _lastAnnounced is { Length: > 0 } said
+                      && prompt.StartsWith(said, StringComparison.Ordinal)
+            ? prompt[said.Length..].Trim()
+            : prompt;
+
         _lastAnnounced = prompt;
-        return [prompt];
+        return news.Length == 0 ? [] : [news];
     }
 
     /// <summary>Whether input for this prompt must be hidden from display and keyboard echo.</summary>
     public static bool RequestsSecret(string liveText) => SecretWord.IsMatch(liveText);
+
+    /// <summary>
+    /// Whether an unfinished line reads as a prompt waiting for an answer, rather than as a
+    /// line still being printed. Independent of what has been announced: a prompt the user was
+    /// told about a minute ago is still the prompt they are sitting at.
+    /// </summary>
+    public static bool IsPrompt(string liveText)
+    {
+        string prompt = liveText.Trim();
+        return prompt.Length > 0 && LooksComplete(prompt);
+    }
 
     private static bool LooksComplete(string prompt)
         => RequestsSecret(prompt) || prompt[^1] is '?' or ':' or '>' or ']';

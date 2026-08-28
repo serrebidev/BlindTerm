@@ -1,0 +1,58 @@
+namespace BlindTerm.Core.Speech;
+
+/// <summary>
+/// What a batch of terminal changes is worth saying, as one decision.
+///
+/// Two things speak: the lines the terminal has finished, and the prompt it has not. They are
+/// not independent. A prompt deliberately ends without a newline, so it is read while the
+/// cursor is still sitting on it -- and it becomes an ordinary transcript line later, when
+/// something moves past that row: a program starting, or a connection taking the window over.
+/// Decided separately, the same words are read out twice.
+/// </summary>
+public sealed class TerminalNews
+{
+    private readonly LineNews _lines = new();
+    private readonly PromptNews _prompt = new();
+
+    /// <summary>Suppresses the shell's one-line echo of a command already spoken while typing.</summary>
+    public void SuppressCommandEcho(string command) => _lines.SuppressCommandEcho(command);
+
+    /// <summary>
+    /// Forgets what has been said about which line. The screen has been wiped or handed to a
+    /// full-screen program, so line numbers no longer mean what they meant.
+    /// </summary>
+    public void Reset() => _lines.Reset();
+
+    public IReadOnlyList<string> News(TerminalUpdate update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        var spoken = new List<string>(_lines.News(update));
+
+        // A batch the app wrote itself carries no reading of the terminal, so it says nothing
+        // about the prompt the far end is waiting at. Reading its empty live text as "there is
+        // no prompt any more" makes the prompt look new again the next time the terminal is
+        // read, and it is announced a second time.
+        if (update.External) return spoken;
+
+        spoken.AddRange(_prompt.News(update.LiveText));
+
+        // The prompt is read here, while the cursor is still on it, and it stays there while
+        // its answer is typed. Whenever it does eventually become a transcript line -- the
+        // next command's output pushing past it, a connection taking the window over -- that
+        // copy is the same words again, whether or not this is the batch that announced them.
+        string current = LastLine(update.LiveText);
+        if (PromptNews.IsPrompt(current)) _lines.SuppressPromptEcho(current);
+
+        return spoken;
+    }
+
+    /// <summary>
+    /// The prompt within the current line. Everything at and below the cursor can be several
+    /// rows; only the last of them is the row that will become a transcript line.
+    /// </summary>
+    private static string LastLine(string liveText)
+    {
+        int end = liveText.LastIndexOf('\n');
+        return end < 0 ? liveText : liveText[(end + 1)..];
+    }
+}

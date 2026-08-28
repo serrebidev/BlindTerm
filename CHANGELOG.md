@@ -4,6 +4,24 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.2.6 - 2026-08-27
+
+- Keep the caret where you put it. Dialling a host, answering a password prompt and opening
+  the window no longer move focus off the command line and back, so a screen reader stops
+  reading the output pane and the whole field over the top of what you were doing.
+- Stop announcing the shell prompt a second time when a connection takes the window over. The
+  prompt is read while the cursor is still sitting on it; the transcript line it turns into
+  afterwards holds the same words and is no longer read again.
+- Stop reading a MUD's prompt back before every reply, for the same reason.
+- Read only the new question when a login writes several onto one unfinished line. "Password:"
+  after "By what name is your character known?" is announced by itself instead of repeating
+  everything already asked and answered on that line.
+- Hide password input without recreating the command box. Windows treated the old way of
+  switching as destroying the focused control and making another, which readers announce as a
+  focus change in the middle of a login.
+- Refuse a typed line while a connection is still being dialled, with "Still connecting",
+  rather than disabling the command box and handing focus to the output pane.
+
 ## v0.2.5 - 2026-08-27
 
 - Keep `telnet host port` in the BlindTerm window where it was typed. The direct telnet

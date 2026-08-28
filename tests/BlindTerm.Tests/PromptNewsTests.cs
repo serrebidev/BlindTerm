@@ -27,6 +27,30 @@ public class PromptNewsTests
     }
 
     [Fact]
+    public void AFurtherQuestionOnTheSameLineIsAnnouncedByItself()
+    {
+        // A MUD login writes its questions one after another onto the same unfinished line.
+        // Reading the whole line each time makes every answer replay the conversation.
+        var news = new PromptNews();
+
+        Assert.Equal(["By what name is your character known?"],
+            news.News("By what name is your character known?"));
+        Assert.Equal(["Password:"],
+            news.News("By what name is your character known? Password:"));
+        Assert.Equal(["Reconnected."],
+            news.News("By what name is your character known? Password: Reconnected."));
+    }
+
+    [Fact]
+    public void AReplacedPromptIsAnnouncedWhole()
+    {
+        var news = new PromptNews();
+
+        Assert.Equal(["PS C:\\Windows>"], news.News("PS C:\\Windows>"));
+        Assert.Equal(["PS C:\\Users>"], news.News("PS C:\\Users>"));
+    }
+
+    [Fact]
     public void TheSamePromptCanBeAnnouncedAgainAfterTheCurrentLineClears()
     {
         var news = new PromptNews();

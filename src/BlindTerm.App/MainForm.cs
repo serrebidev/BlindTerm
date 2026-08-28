@@ -53,8 +53,7 @@ public sealed class MainForm : Form
     private readonly AppSettings _settings;
     private readonly SettingsStore _settingsStore;
     private readonly UpdateClient _updates = new();
-    private readonly LineNews _news = new();
-    private readonly PromptNews _promptNews = new();
+    private readonly TerminalNews _news = new();
     private readonly ScreenNews _screenNews = new();
     private readonly ForegroundProgramState _foregroundProgram;
     private readonly CommandCompletionInput _completionInput = new();
@@ -210,6 +209,12 @@ public sealed class MainForm : Form
         Controls.Add(layout);
         Controls.Add(_menu);
         MainMenuStrip = _menu;
+
+        // Where the window opens, rather than where it lands and is then moved to. Without
+        // this the output pane takes focus first because it is first in the tab order, and a
+        // screen reader reads it out before the command line takes over -- so the window
+        // announces itself twice before anything has happened.
+        ActiveControl = _command;
     }
 
     /// <summary>
@@ -313,13 +318,16 @@ public sealed class MainForm : Form
         MirrorEdits(update.Edits);
         MirrorAppended(update.NewLines);
 
-        if (_live.Text != update.LiveText) _live.Text = update.LiveText;
-        CommandAccessibility.Apply(_command, update.LiveText);
+        // A batch the app wrote itself carries no reading of the terminal, so the prompt the
+        // shell is sitting at is whatever it already was. Applying this batch's empty live
+        // text would blank the current line and drop password mode halfway through a login.
+        if (!update.External)
+        {
+            if (_live.Text != update.LiveText) _live.Text = update.LiveText;
+            CommandAccessibility.Apply(_command, update.LiveText);
+        }
 
-        var announcements = new List<string>();
-        announcements.AddRange(_news.News(update));
-        announcements.AddRange(_promptNews.News(update.LiveText));
-        _host.Announcer.Enqueue(announcements);
+        _host.Announcer.Enqueue(_news.News(update));
     }
 
     private void EnterOrUpdateScreenMode(TerminalUpdate update)
@@ -529,8 +537,9 @@ public sealed class MainForm : Form
             // visible to be.
             _host.SendLine(string.Empty);
             _command.Enabled = true;
+            _live.Text = string.Empty;
             CommandAccessibility.Apply(_command, string.Empty);
-            FocusCommandLine();
+            KeepFocus();
             return;
         }
 
@@ -674,6 +683,17 @@ public sealed class MainForm : Form
     private void FocusCommandLine()
     {
         if (_command.Enabled) _command.Focus();
+    }
+
+    /// <summary>
+    /// Puts focus on the command line only when it is not already somewhere the user chose to
+    /// put it. A session ending underneath someone who is reading the output is not a reason
+    /// to move them out of it.
+    /// </summary>
+    private void KeepFocus()
+    {
+        if (_command.Focused || _transcript.Focused) return;
+        FocusCommandLine();
     }
 
     private void GoToEnd()
@@ -1003,6 +1023,15 @@ public sealed class MainForm : Form
 
     private void Submit()
     {
+        // A dial in progress owns the window for the few seconds it lasts. Saying so is the
+        // whole response: nothing is sent, and the line stays in the box to be sent, resent or
+        // edited once there is an end to send it to.
+        if (_connecting)
+        {
+            Say("Still connecting");
+            return;
+        }
+
         string text = _command.Text;
         BeginLatestResponse();
         if (_completionInput.FinishLine())
@@ -1072,7 +1101,12 @@ public sealed class MainForm : Form
     {
         string address = TelnetAddress.Format(host, port);
         _host.AppendExternal([typed, $"Connecting to {address}..."]);
-        _command.Enabled = false;
+        // Nothing here touches focus or the enabled state of the command box. Disabling the
+        // focused control hands focus to the next one, which Windows announces, and taking it
+        // back afterwards announces that too -- so dialling a host read as a trip through the
+        // output pane and back for no reason. The dial is refused for the few seconds it runs
+        // instead, and the caret stays exactly where it was typed.
+        _connecting = true;
 
         try
         {
@@ -1089,9 +1123,11 @@ public sealed class MainForm : Form
                 : ex.Message;
             // The shell is untouched and still at its prompt, so there is nothing to restore.
             _host.AppendExternal([$"Could not connect to {address}. {reason}"]);
-            _command.Enabled = _host.IsRunning;
-            if (_command.Enabled) FocusCommandLine();
             return;
+        }
+        finally
+        {
+            _connecting = false;
         }
 
         if (IsDisposed || Disposing) return;
@@ -1102,9 +1138,14 @@ public sealed class MainForm : Form
         // Kept so the window can say what it was showing again once the connection ends.
         _shellTitle = Text;
         Text = $"{address} — BlindTerm";
-        _command.Enabled = true;
-        FocusCommandLine();
     }
+
+    /// <summary>
+    /// Whether a connection dialled from this window's prompt is still being opened. What is
+    /// typed meanwhile belongs to neither end: the shell is about to be covered, and the host
+    /// has not answered yet.
+    /// </summary>
+    private bool _connecting;
 
     /// <summary>The window title before a connection took the window over.</summary>
     private string? _shellTitle;
@@ -1175,7 +1216,7 @@ public sealed class MainForm : Form
         bool foregroundLineProgram = !ScreenMode && _foregroundProgram.Active;
         bool commandFocused = _command.Focused;
 
-        if (!_command.UseSystemPasswordChar &&
+        if (!CommandAccessibility.IsSecret(_command) &&
             AppShortcuts.ShouldSendCompletionTab(keyData, foregroundLineProgram, commandFocused))
         {
             _host.Send(_completionInput.Begin(_command.Text));

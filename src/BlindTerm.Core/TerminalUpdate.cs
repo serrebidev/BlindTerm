@@ -24,6 +24,17 @@ public sealed class TerminalUpdate
     public string LiveText { get; set; } = string.Empty;
 
     /// <summary>
+    /// Whether these lines were written by the app rather than read from the far end: a ready
+    /// message, "Connecting to...", "[Disconnected]".
+    ///
+    /// Such a batch says nothing about the terminal's unfinished current line, which is why
+    /// <see cref="LiveText"/> must not be read from it. Treating its empty value as "the
+    /// prompt is gone" makes the prompt look new again the moment it is published next, and
+    /// it is then announced a second time.
+    /// </summary>
+    public bool External { get; set; }
+
+    /// <summary>
     /// Non-null while a full-screen program owns the alternate screen -- vim, htop, an editor
     /// over ssh. The transcript is not built while this is set; the screen is what matters.
     /// </summary>

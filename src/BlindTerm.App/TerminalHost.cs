@@ -303,13 +303,7 @@ public sealed class TerminalHost : IDisposable
         if (lines.Count == 0) return;
 
         TerminalUpdate update;
-        lock (_gate)
-        {
-            update = new TerminalUpdate { FirstNewLine = Transcript.Count };
-            _core.Builder.AppendExternal(lines);
-            update.NewLines.AddRange(lines);
-            update.LiveText = string.Empty;
-        }
+        lock (_gate) update = _core.AppendExternal(lines);
 
         Post(() => Updated?.Invoke(update));
     }

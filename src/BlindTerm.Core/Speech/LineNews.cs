@@ -11,10 +11,23 @@ public sealed class LineNews
 {
     private readonly Dictionary<int, string> _announced = new();
     private string? _pendingCommandEcho;
+    private string? _pendingPromptEcho;
 
     /// <summary>Suppresses the shell's one-line echo of a command already spoken while typing.</summary>
     public void SuppressCommandEcho(string command)
         => _pendingCommandEcho = string.IsNullOrWhiteSpace(command) ? null : command.Trim();
+
+    /// <summary>
+    /// Suppresses the transcript copy of a prompt that has already been spoken as the current
+    /// line.
+    ///
+    /// A prompt does not end in a newline, so it is read while the cursor is still sitting on
+    /// it. It becomes a transcript line only later, when something moves the cursor past that
+    /// row -- another program starting, or a connection taking the window over. Those are the
+    /// same words a second time, not news.
+    /// </summary>
+    public void SuppressPromptEcho(string prompt)
+        => _pendingPromptEcho = string.IsNullOrWhiteSpace(prompt) ? null : prompt.Trim();
 
     /// <summary>
     /// How many lines of announcement history to keep. The transcript can run to a hundred
@@ -41,6 +54,13 @@ public sealed class LineNews
             if (_pendingCommandEcho is { } command && IsCommandEcho(text, command))
             {
                 _pendingCommandEcho = null;
+                _announced[line] = text;
+                continue;
+            }
+            if (_pendingPromptEcho is { } prompt
+                && text.Trim().Equals(prompt, StringComparison.Ordinal))
+            {
+                _pendingPromptEcho = null;
                 _announced[line] = text;
                 continue;
             }
