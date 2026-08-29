@@ -10,8 +10,9 @@ name: MUD directory
 # nothing else publishes, and merges the two. That half is a scrape of an undocumented
 # endpoint, so it is allowed to fail: the list still publishes without the activity figures.
 #
-# One-time setup: add a secret named MUDVERSE_API_KEY, from the API tab of a MUDVerse account
-# (https://www.mudverse.com/api). Nothing else. The job then runs on its own.
+# One-time setup: add MUDVERSE_API_KEY from the API tab of a MUDVerse account
+# (https://www.mudverse.com/api), and MUD_DIRECTORY_DEPLOY_KEY for the write-enabled deploy
+# key on serrebidev/BlindTerm-directory. The job then runs on its own.
 
 on:
   schedule:
@@ -20,7 +21,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  MUD_DIRECTORY_REPOSITORY: serrebidev/BlindTerm-directory
 
 concurrency:
   # Two of these pushing the same branch would race. Later wins; nothing is lost, because
@@ -50,7 +54,7 @@ jobs:
           fi
           # --previous carries over the MUDStats addresses already looked up, so each world's
           # page is fetched once ever rather than once every half hour.
-          PREVIOUS="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/directory/mud-directory.json"
+          PREVIOUS="https://raw.githubusercontent.com/${MUD_DIRECTORY_REPOSITORY}/directory/mud-directory.json"
           dotnet run --project src/BlindTerm.Cli -c Release -- directory --out mud-directory.json --previous "$PREVIOUS" --quiet
 
       - name: Check MUDStats is still readable
@@ -72,10 +76,19 @@ jobs:
 
       - name: Publish to the directory branch
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MUD_DIRECTORY_DEPLOY_KEY: ${{ secrets.MUD_DIRECTORY_DEPLOY_KEY }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "$MUD_DIRECTORY_DEPLOY_KEY" ]; then
+            echo "::error::MUD_DIRECTORY_DEPLOY_KEY is not set. Add the private half of the BlindTerm-directory deploy key."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MUD_DIRECTORY_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/id_ed25519' EXIT
           # A fresh single-commit orphan branch, force-pushed. The file changes every half
           # hour; keeping history of that would grow the repository forever for no reader.
           mkdir -p publish
@@ -87,6 +100,5 @@ jobs:
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "MUD directory $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -q --force \
-              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" directory
-          echo "Published to https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/directory/mud-directory.json"
+          git push -q --force "git@github.com:${MUD_DIRECTORY_REPOSITORY}.git" directory
+          echo "Published to https://raw.githubusercontent.com/${MUD_DIRECTORY_REPOSITORY}/directory/mud-directory.json"

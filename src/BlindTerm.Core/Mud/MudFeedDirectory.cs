@@ -19,11 +19,11 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
     /// <summary>
     /// Where the published list lives.
     ///
-    /// The same repository the updates come from, on a branch of its own so that rewriting a
-    /// file every half hour never touches the history anybody reads.
+    /// The generated data has a repository of its own, so rewriting the file every half hour
+    /// never touches BlindTerm's history or its project notifications.
     /// </summary>
     public const string DefaultFeedUrl =
-        "https://raw.githubusercontent.com/serrebidev/BlindTerm/directory/mud-directory.json";
+        "https://raw.githubusercontent.com/serrebidev/BlindTerm-directory/directory/mud-directory.json";
 
     /// <summary>
     /// How old the copy on disk may be before BlindTerm asks for a newer one.

@@ -18,6 +18,14 @@ public class MudFeedTests : IDisposable
     private string CachePath => Path.Combine(_folder, "mud-directory.json");
 
     [Fact]
+    public void TheDefaultFeedLivesOutsideTheApplicationRepository()
+    {
+        Assert.Equal(
+            "https://raw.githubusercontent.com/serrebidev/BlindTerm-directory/directory/mud-directory.json",
+            MudFeedDirectory.DefaultFeedUrl);
+    }
+
+    [Fact]
     public void AFeedSurvivesBeingWrittenDownAndReadBack()
     {
         var feed = new MudFeed

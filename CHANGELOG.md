@@ -4,6 +4,11 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.2 - 2026-08-29
+
+- Move the automatically refreshed MUD directory into its own repository, so its twice-hourly
+  generated commits no longer flood BlindTerm's Telegram group while the list stays current.
+
 ## v0.7.1 - 2026-08-28
 
 - Stop Left, Right, Home and End from being forwarded to a remote shell at an empty command
