@@ -39,13 +39,34 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
+        var settingsStore = new SettingsStore();
+        AppSettings settings = settingsStore.Load();
+
+        // Read once, here, because Windows Forms fixes the colours a window is built from
+        // before that window exists: this has to run before the first form is created, which
+        // is why the settings are loaded this early rather than alongside the other startup
+        // work below.
+        //
+        // SetColorMode is still marked experimental in .NET 9, which is what WFO5001 is about.
+        // It is also the only supported way to get dark system colours and a dark title bar
+        // together. Setting the controls' colours by hand instead reaches everything except
+        // the non-client area, and a dark window wearing a light title bar reads as a bug.
+        // The two native edit controls in MainForm do still need saying out loud on top of
+        // this; see the note there.
+#pragma warning disable WFO5001
+        Application.SetColorMode(settings.Theme switch
+        {
+            AppTheme.Light => SystemColorMode.Classic,
+            AppTheme.Dark => SystemColorMode.Dark,
+            _ => SystemColorMode.System,
+        });
+#pragma warning restore WFO5001
+
         // WinForms needs a synchronisation context before anything can be marshalled onto the
         // UI thread, and it only installs one once a message loop exists.
         if (SynchronizationContext.Current is null)
             SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
 
-        var settingsStore = new SettingsStore();
-        AppSettings settings = settingsStore.Load();
         var windows = new TerminalWindows();
 
         // COM starts BlindTerm with -Embedding when a command-line program needs a terminal

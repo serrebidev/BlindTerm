@@ -4,6 +4,19 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.3 - 2026-08-29
+
+- Add a dark mode. BlindTerm's windows can follow Windows' own light or dark setting, or be
+  held to one of them, from the new Colours box in settings. Following Windows is the default,
+  and a change applies the next time BlindTerm starts.
+- Start command line tools that are installed as shims rather than as programs. Everything npm
+  installs -- codex, claude and opencode among them -- is a .cmd file with no .exe beside it,
+  and CreateProcess cannot run one: opening an agent closed the window with an unhandled "The
+  system cannot find the file specified". BlindTerm now does the search a shell would do, and
+  runs a shim the way a shell runs one.
+- Name the program that could not be found when a command does not exist. "The system cannot
+  find the file specified" never said which file, and it is read out rather than looked at.
+
 ## v0.7.2 - 2026-08-29
 
 - Move the automatically refreshed MUD directory into its own repository, so its twice-hourly

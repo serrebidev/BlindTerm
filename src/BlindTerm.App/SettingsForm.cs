@@ -10,12 +10,24 @@ internal sealed class SettingsForm : Form
     private readonly TextBox _shell = new();
     private readonly NumericUpDown _columns = new();
     private readonly NumericUpDown _rows = new();
+    private readonly ComboBox _theme = new();
     private readonly CheckBox _automaticUpdates = new();
     private readonly NumericUpDown _updateInterval = new();
     private readonly CheckBox _mudSounds = new();
     private readonly TextBox _soundDirectory = new();
     private readonly NumericUpDown _soundVolume = new();
     private readonly CheckBox _downloadSounds = new();
+
+    /// <summary>
+    /// The colour choices and their order in the box. One list, so what is offered and what
+    /// is saved cannot drift apart.
+    /// </summary>
+    private static readonly (AppTheme Theme, string Label)[] Themes =
+    [
+        (AppTheme.System, "Follow Windows"),
+        (AppTheme.Light, "Light"),
+        (AppTheme.Dark, "Dark"),
+    ];
 
     public AppSettings Settings { get; private set; }
 
@@ -42,6 +54,18 @@ internal sealed class SettingsForm : Form
         AddField(fields, "Shell command line", _shell, "Shell command line. Leave blank for PowerShell 7, or Windows PowerShell.");
         AddField(fields, "Terminal columns", _columns, "Terminal width in columns.");
         AddField(fields, "Terminal rows", _rows, "Terminal height in rows.");
+
+        // DropDownList so the arrows move between real choices and nothing can be typed into
+        // it: there are three answers and no fourth one worth spelling out.
+        _theme.DropDownStyle = ComboBoxStyle.DropDownList;
+        _theme.Width = 200;
+        _theme.AccessibleName = "Colours";
+        foreach ((_, string label) in Themes) _theme.Items.Add(label);
+        _theme.SelectedIndex = Math.Max(0, Array.FindIndex(Themes, entry => entry.Theme == Settings.Theme));
+        AddField(fields, "Colours", _theme,
+            "Which colours BlindTerm draws its windows in. Follow Windows uses the desktop's "
+            + "own light or dark setting. A change here takes effect the next time BlindTerm "
+            + "starts.");
 
         _automaticUpdates.Text = "Automatically check for updates";
         _automaticUpdates.AutoSize = true;
@@ -138,6 +162,7 @@ internal sealed class SettingsForm : Form
             edited.Shell = _shell.Text.Trim();
             edited.Columns = (int)_columns.Value;
             edited.Rows = (int)_rows.Value;
+            edited.Theme = Themes[Math.Max(0, _theme.SelectedIndex)].Theme;
             edited.AutomaticallyCheckForUpdates = _automaticUpdates.Checked;
             edited.UpdateCheckIntervalMinutes = (int)_updateInterval.Value;
             edited.MudSounds = _mudSounds.Checked;

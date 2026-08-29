@@ -199,6 +199,8 @@ public sealed class PtySession : ITerminalSession
         catch (EntryPointNotFoundException) { return 0; }
     }
 
+    private const int ERROR_FILE_NOT_FOUND = 2;
+
     internal static readonly bool Debug =
         Environment.GetEnvironmentVariable("BLINDTERM_DEBUG") is { Length: > 0 };
 
@@ -210,6 +212,9 @@ public sealed class PtySession : ITerminalSession
     private void StartChild(
         string commandLine, IDictionary<string, string?>? environment, string? workingDirectory)
     {
+        // What was typed is not always what CreateProcess can start; see CommandLine.
+        commandLine = CommandLine.ForCreateProcess(commandLine);
+
         var startup = new STARTUPINFOEX();
         startup.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEX>();
 
@@ -260,8 +265,15 @@ public sealed class PtySession : ITerminalSession
             if (!CreateProcessW(
                     null, commandLine, IntPtr.Zero, IntPtr.Zero, false,
                     flags, block, workingDirectory, ref startup, out PROCESS_INFORMATION info))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    $"CreateProcess failed for: {commandLine}");
+            {
+                int error = Marshal.GetLastWin32Error();
+                // Said plainly, because this one is ordinary: a mistyped name, or a tool that
+                // is not installed. "The system cannot find the file specified" on its own
+                // never says which file, and this is read out rather than looked at.
+                throw new Win32Exception(error, error == ERROR_FILE_NOT_FOUND
+                    ? $"There is no program called \"{CommandLine.Program(commandLine)}\" on the PATH."
+                    : $"CreateProcess failed for: {commandLine}");
+            }
 
             _process = info.hProcess;
             _thread = info.hThread;

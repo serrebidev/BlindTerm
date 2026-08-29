@@ -41,6 +41,53 @@ public class AppSettingsTests
     }
 
     [Fact]
+    public void ColoursDefaultToFollowingWindows()
+    {
+        Assert.Equal(AppTheme.System, new AppSettings().Theme);
+    }
+
+    [Fact]
+    public void SavesAndLoadsTheChosenColours()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"blindterm-{Guid.NewGuid():N}", "settings.json");
+        try
+        {
+            var store = new SettingsStore();
+            store.Save(new AppSettings { Theme = AppTheme.Dark }, path);
+
+            Assert.Equal(AppTheme.Dark, store.Load(path).Theme);
+        }
+        finally
+        {
+            string? directory = Path.GetDirectoryName(path);
+            if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void AnUnknownColourSchemeFallsBackToFollowingWindows()
+    {
+        string path = Path.GetTempFileName();
+        try
+        {
+            // What a file edited by hand, or written by a later version offering more of
+            // these, looks like to this one.
+            File.WriteAllText(path, "{\"Theme\":99}");
+
+            Assert.Equal(AppTheme.System, new SettingsStore().Load(path).Theme);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void CopyCarriesTheChosenColours()
+    {
+        // The settings dialog saves a Copy of what it was given, so a preference the copy
+        // drops is a preference that is silently reset every time the dialog is used.
+        Assert.Equal(AppTheme.Dark, new AppSettings { Theme = AppTheme.Dark }.Copy().Theme);
+    }
+
+    [Fact]
     public void NullShellFallsBackToDefaults()
     {
         string path = Path.GetTempFileName();

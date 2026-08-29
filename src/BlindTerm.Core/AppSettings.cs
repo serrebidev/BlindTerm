@@ -83,6 +83,21 @@ public sealed class AppSettings
     /// </summary>
     public bool SpeakInBackground { get; set; }
 
+    /// <summary>
+    /// Which colours the windows are drawn in.
+    ///
+    /// Follows Windows by default, which needs no explaining to anyone who has already set
+    /// the rest of their desktop dark. The other two are here because the person looking at
+    /// this screen is not always the person who set that preference -- BlindTerm gets read
+    /// over a shoulder, on a shared machine, and on a projector -- so dark is sometimes a
+    /// decision about the room rather than about Windows.
+    ///
+    /// Read once at startup: Windows Forms fixes its colours before the first window exists,
+    /// so a change here shows up the next time BlindTerm starts, not in the window it was
+    /// changed from. The settings dialog says so where the choice is made.
+    /// </summary>
+    public AppTheme Theme { get; set; } = AppTheme.System;
+
     /// <summary>Where sound packs live. Blank means the default folder under %APPDATA%.</summary>
     public string SoundDirectory { get; set; } = string.Empty;
 
@@ -173,6 +188,9 @@ public sealed class AppSettings
         if (SoundDirectory is null || SoundDirectory.Length > 32_768)
             throw new ArgumentOutOfRangeException(nameof(SoundDirectory));
         SoundVolume = Math.Clamp(SoundVolume, 0, 100);
+        // A settings file written by hand, or by a later version that offers more of these,
+        // must not leave the window with no colours at all.
+        if (!Enum.IsDefined(Theme)) Theme = AppTheme.System;
         UpdateCheckIntervalMinutes = Math.Clamp(UpdateCheckIntervalMinutes,
             MinimumUpdateCheckIntervalMinutes, MaximumUpdateCheckIntervalMinutes);
         // A settings file edited by hand, or written by a later version, must not be able to
@@ -209,6 +227,7 @@ public sealed class AppSettings
         MudDirectoryKey = MudDirectoryKey,
         MudDirectoryEndpoint = MudDirectoryEndpoint,
         SpeakInBackground = SpeakInBackground,
+        Theme = Theme,
         MudSounds = MudSounds,
         SoundDirectory = SoundDirectory,
         SoundVolume = SoundVolume,
@@ -218,6 +237,19 @@ public sealed class AppSettings
         Triggers = [.. Triggers.Select(trigger => trigger.Copy())],
         TriggersEnabled = TriggersEnabled,
     };
+}
+
+/// <summary>Which colours BlindTerm draws its windows in. See <see cref="AppSettings.Theme"/>.</summary>
+public enum AppTheme
+{
+    /// <summary>Whatever Windows' own "choose your mode" setting says, and changes with it.</summary>
+    System,
+
+    /// <summary>Dark text on light, whatever Windows is set to.</summary>
+    Light,
+
+    /// <summary>Light text on dark, whatever Windows is set to.</summary>
+    Dark,
 }
 
 /// <summary>Loads and saves BlindTerm's settings in %APPDATA%\BlindTerm.</summary>

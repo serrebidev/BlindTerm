@@ -203,6 +203,14 @@ public sealed class MainForm : Form
         _transcript.ShortcutsEnabled = true;
         _transcript.Font = font;
         _transcript.Dock = DockStyle.Fill;
+        // Said out loud rather than left to the default. These two are native edit controls,
+        // and a native edit control paints itself out of the system's own brushes, which are
+        // still the light ones whatever colour mode the rest of the window is in. Naming the
+        // system colours here is what puts the transcript and the command line into the same
+        // dark as everything around them -- and it is not a dark-only fix, because in light
+        // mode these are exactly the colours they were already being painted.
+        _transcript.BackColor = SystemColors.Window;
+        _transcript.ForeColor = SystemColors.WindowText;
         _transcript.AccessibleName = "Output";
         _transcript.AccessibleRole = AccessibleRole.Text;
         _transcript.TabIndex = 0;
@@ -229,6 +237,8 @@ public sealed class MainForm : Form
 
         _command.Font = font;
         _command.Dock = DockStyle.Fill;
+        _command.BackColor = SystemColors.Window;
+        _command.ForeColor = SystemColors.WindowText;
         _command.AccessibleName = "Command line";
         _command.TabIndex = 2;
         _command.KeyDown += OnCommandKeyDown;
