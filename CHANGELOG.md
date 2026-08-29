@@ -4,6 +4,25 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.4 - 2026-08-29
+
+- Send what you type at an agent CLI. Codex counted a whole line arriving in one write as a
+  paste, and a Return inside a paste is a newline rather than "send this": typing "test" and
+  pressing Enter put the word in Codex's composer, added a blank line under it, and sent
+  nothing, forever. BlindTerm now leaves the Return long enough after the line to be
+  unmistakably a keypress whenever a program rather than a shell prompt is reading it. A MUD
+  is unaffected -- nothing on the far end of a connection guesses at pasting, and commands
+  there are still sent at once.
+- Start the same program a shell would when two tools share a name. The search for a command
+  went extension by extension -- every directory on PATH for a .exe, then every directory for
+  a .cmd -- so an unrelated opencode.exe further down PATH beat the opencode shim that every
+  shell runs. It printed a usage error and exited before anything could be typed at it. The
+  search now goes directory by directory, the way a shell does.
+- Run PowerShell scripts. A .ps1 typed by name or by path now runs through PowerShell 7, or
+  Windows PowerShell where 7 is not installed, the way .cmd and .bat files already ran through
+  cmd.exe. Named by itself it is found even though the stock PATHEXT never mentions .PS1,
+  because that is what happens at a PowerShell prompt.
+
 ## v0.7.3 - 2026-08-29
 
 - Add a dark mode. BlindTerm's windows can follow Windows' own light or dark setting, or be

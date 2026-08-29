@@ -365,13 +365,26 @@ public sealed class TerminalHost : IDisposable
         Post(() => Updated?.Invoke(update));
     }
 
-    /// <summary>Sends a typed line, with the Return as a separate write. See PtySession.</summary>
+    /// <summary>
+    /// Sends a typed line, with the Return as a separate write. See PtySession.
+    ///
+    /// How long the two writes are left apart depends on what is reading them: an agent CLI
+    /// with a composer of its own has to be given time to see the line as typing rather than
+    /// as a paste, and a MUD has to be given none. See <see cref="SubmitGap"/>.
+    /// </summary>
     public void SendLine(string text)
     {
         ITerminalSession? session;
-        lock (_gate) session = _session;
+        int gap;
+        lock (_gate)
+        {
+            session = _session;
+            gap = session is null
+                ? SubmitGap.Prompt
+                : SubmitGap.For(session.Kind, session.ProgramOwnsInput);
+        }
         if (session is null) return;
-        _ = session.WriteLineSplit(text, session.LineTerminator, 20);
+        _ = session.WriteLineSplit(text, session.LineTerminator, gap);
     }
 
     public void Send(ReadOnlySpan<byte> bytes)

@@ -4,9 +4,14 @@ namespace BlindTerm.Tests;
 
 public class CommandLineTests
 {
-    private const string Path = @"C:\Windows\system32;C:\Users\admin\AppData\Roaming\npm";
+    private const string Path =
+        @"C:\Windows\system32;C:\Program Files\PowerShell\7;C:\Users\admin\AppData\Roaming\npm";
     private const string PathExt = ".COM;.EXE;.BAT;.CMD;.VBS;.PS1";
     private const string Npm = @"C:\Users\admin\AppData\Roaming\npm";
+    private const string Pwsh = @"C:\Program Files\PowerShell\7\pwsh.exe";
+
+    /// <summary>A second directory holding a different tool of the same name.</summary>
+    private const string Other = @"C:\Users\admin\AppData\Local\agy\bin";
 
     /// <summary>A file system holding exactly the named files, compared as Windows does.</summary>
     private static Func<string, bool> Holding(params string[] files)
@@ -41,10 +46,71 @@ public class CommandLineTests
     }
 
     [Fact]
-    public void AnExeOnPathWinsOverAShimOfTheSameName()
+    public void AnExeOnPathWinsOverAShimOfTheSameNameInTheSameDirectory()
     {
         // PATHEXT puts .EXE before .CMD, and so does this.
         Assert.Equal("codex", Adapt("codex", $@"{Npm}\codex.exe", $@"{Npm}\codex.cmd"));
+    }
+
+    [Fact]
+    public void AShimInAnEarlierDirectoryBeatsAnExeInALaterOne()
+    {
+        // The case that started the wrong program: two unrelated tools called "opencode",
+        // the shim first on PATH. Every shell runs the shim; searching by extension first
+        // ran the .exe, which printed a usage error and exited.
+        Assert.Equal(
+            $"cmd.exe /s /c \"\"{Npm}\\opencode.cmd\" --mini\"",
+            CommandLine.ForCreateProcess(
+                "opencode --mini", $@"{Npm};{Other}", PathExt,
+                Holding($@"{Npm}\opencode.cmd", $@"{Other}\opencode.exe")));
+    }
+
+    [Fact]
+    public void APowerShellScriptOnPathIsRunThroughPowerShell()
+    {
+        Assert.Equal(
+            $"\"{Pwsh}\" -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"{Npm}\\deploy.ps1\" -Fast",
+            Adapt("deploy -Fast", $@"{Npm}\deploy.ps1", Pwsh));
+    }
+
+    [Fact]
+    public void APowerShellScriptIsFoundEvenThoughPathExtNeverMentionsIt()
+    {
+        // The stock PATHEXT lists no .PS1 at all, and PowerShell finds scripts by name
+        // regardless. A script somebody runs by name at their prompt has to run here too.
+        const string stock = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
+        Assert.Equal(
+            $"\"{Pwsh}\" -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"{Npm}\\deploy.ps1\"",
+            CommandLine.ForCreateProcess(
+                "deploy", Path, stock, Holding($@"{Npm}\deploy.ps1", Pwsh)));
+    }
+
+    [Fact]
+    public void APowerShellScriptGivenByFullPathIsRunThroughPowerShell()
+    {
+        const string script = @"C:\Program Files\tools\build.ps1";
+        Assert.Equal(
+            $"\"{Pwsh}\" -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Verbose",
+            Adapt($"\"{script}\" -Verbose", Pwsh));
+    }
+
+    [Fact]
+    public void WindowsPowerShellRunsAScriptWhenPowerShellSevenIsNotInstalled()
+    {
+        // Named without a directory: it lives in the system directory, which CreateProcess
+        // searches whether or not PATH mentions it.
+        Assert.Equal(
+            "\"powershell.exe\" -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"C:\\s\\go.ps1\"",
+            CommandLine.ForCreateProcess(@"C:\s\go.ps1", string.Empty, PathExt, Holding()));
+    }
+
+    [Fact]
+    public void ACmdShimBesideAPowerShellShimIsStillPreferred()
+    {
+        // PATHEXT puts .CMD before .PS1, and cmd.exe starts faster than PowerShell does.
+        Assert.Equal(
+            $"cmd.exe /s /c \"\"{Npm}\\codex.cmd\"\"",
+            Adapt("codex", $@"{Npm}\codex.cmd", $@"{Npm}\codex.ps1"));
     }
 
     [Fact]
@@ -91,10 +157,11 @@ public class CommandLineTests
     }
 
     [Fact]
-    public void APs1ShimIsNotChosen()
+    public void AVbsShimIsNotChosen()
     {
-        // cmd.exe cannot run one, so picking it would only trade one failure for another.
-        Assert.Equal("codex", Adapt("codex", $@"{Npm}\codex.ps1"));
+        // PATHEXT lists it, but nothing here knows how to run one, so picking it would only
+        // trade one failure for another.
+        Assert.Equal("codex", Adapt("codex", $@"{Npm}\codex.vbs"));
     }
 
     [Fact]
