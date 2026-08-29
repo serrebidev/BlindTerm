@@ -37,9 +37,9 @@ jobs:
     # BlindTerm.Cli targets net9.0-windows, so this cannot run on Linux.
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "9.0.x"
 
