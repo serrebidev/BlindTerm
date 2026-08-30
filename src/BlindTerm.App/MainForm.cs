@@ -97,6 +97,13 @@ public sealed class MainForm : Form
     private string? _nanoPrompt;
     private int _proxyNanoRow = -1;
 
+    /// <summary>
+    /// A locally launched coding agent owns single-number choice keys. Ordinary printable text
+    /// still belongs to the accessible command edit, but a bare numbered answer must reach the
+    /// agent immediately rather than sit unseen in that edit waiting for Return.
+    /// </summary>
+    private bool _agentLineProgram;
+
     /// <summary>The screen a full-screen program is showing, or null in line mode.</summary>
     private string[]? _screen;
 
@@ -1649,6 +1656,20 @@ public sealed class MainForm : Form
         // A line typed at a MUD is that MUD's to interpret. Rewriting "codex" into a command
         // line with flags on it would be nonsense there.
         bool secret = CommandAccessibility.IsSecret(_command);
+        // Only a shell prompt can start an agent. Later lines are prompts sent to the agent
+        // itself and must not clear the identity remembered from its launch command. An SSH
+        // session reports that the far end owns input for its whole lifetime, so its explicit
+        // agent launch is the reliable boundary instead of the local process tree.
+        if (_host.Kind == TerminalSessionKind.Ssh)
+        {
+            if (!_agentLineProgram && AccessibleAgentCommand.IsAgentLaunch(text))
+                _agentLineProgram = true;
+        }
+        else if (!_host.ProgramOwnsInput)
+        {
+            _agentLineProgram = _host.Kind != TerminalSessionKind.Remote
+                                && AccessibleAgentCommand.IsAgentLaunch(text);
+        }
         string accessible = _host.Kind == TerminalSessionKind.Remote
             ? text
             : AccessibleAgentCommand.Adapt(text);
@@ -1845,6 +1866,17 @@ public sealed class MainForm : Form
         // A handoff is itself the foreground app.
         bool foregroundLineProgram = !ScreenMode && _foregroundProgram.Active;
         bool commandFocused = _command.Focused;
+        if (!foregroundLineProgram) _agentLineProgram = false;
+
+        if (!_completionInput.Active &&
+            AppShortcuts.AgentAnswerDigit(
+                keyData, foregroundLineProgram && _agentLineProgram,
+                AgentChoicePrompt.IsVisible(_live.Text, _host.Transcript.Lines), commandFocused,
+                _command.TextLength == 0) is char answer)
+        {
+            _host.Send([(byte)answer]);
+            return true;
+        }
 
         if (AppShortcuts.ShouldRecallTelnetHistory(
                 keyData, _host.Kind == TerminalSessionKind.Remote, commandFocused))
@@ -1893,7 +1925,8 @@ public sealed class MainForm : Form
             if (IsPasteChord(keyData))
             {
                 if (Clipboard.ContainsText())
-                    _host.Send(Encoding.UTF8.GetBytes(Clipboard.GetText()));
+                    _host.Send(KeyTranslator.Paste(Clipboard.GetText(),
+                                                   _host.Engine.BracketedPaste));
                 return base.ProcessCmdKey(ref message, keyData);
             }
 
@@ -1929,6 +1962,18 @@ public sealed class MainForm : Form
         // While the screen is frozen for reading, the keyboard belongs to the text box again,
         // which is the only way to read a full-screen program line by line.
         if (!LivePassthrough) return base.ProcessCmdKey(ref message, keyData);
+
+        // A paste in a full-screen program is the one thing typing alone cannot do. It reaches
+        // the program as pasted text rather than as the keys Ctrl+V names, and it is wrapped in
+        // bracketed-paste markers when the program has asked for them (vim does), so a pasted
+        // block is taken as one chunk instead of as keys to re-indent one at a time.
+        if (IsPasteChord(keyData))
+        {
+            if (Clipboard.ContainsText())
+                _host.Send(KeyTranslator.Paste(Clipboard.GetText(),
+                                               _host.Engine.BracketedPaste));
+            return true;
+        }
 
         if (KeyboardEchoProxy.IsTerminalNavigation(keyData))
         {

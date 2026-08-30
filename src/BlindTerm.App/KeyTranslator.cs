@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Text;
 using BlindTerm.Core.Vt;
 
 namespace BlindTerm.App;
@@ -78,5 +79,23 @@ internal static class KeyTranslator
         return character is char c
             ? KeyEncoder.Encode(c.ToString(), modifiers, applicationCursorKeys)
             : null;
+    }
+
+    /// <summary>
+    /// The bytes for pasted text.
+    ///
+    /// A program that has enabled bracketed paste asked to be told where a paste begins and
+    /// ends, so it can tell pasted text from typing. vim uses it to switch auto-indent off for
+    /// a pasted block, and without the markers a whole block pasted at once is re-indented line
+    /// by line into nonsense. When no program asked for it, the raw text is what it expects.
+    /// </summary>
+    public static byte[] Paste(string text, bool bracketedPaste)
+    {
+        var body = Encoding.UTF8.GetBytes(text);
+        if (!bracketedPaste) return body;
+
+        return [0x1b, (byte)'[', (byte)'2', (byte)'0', (byte)'0', (byte)'~',
+                .. body,
+                0x1b, (byte)'[', (byte)'2', (byte)'0', (byte)'1', (byte)'~'];
     }
 }

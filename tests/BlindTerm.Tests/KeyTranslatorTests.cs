@@ -99,4 +99,16 @@ public class KeyTranslatorTests
         Assert.Null(KeyTranslator.Translate(Keys.VolumeUp, false));
         Assert.Null(KeyTranslator.Translate(Keys.BrowserBack, false));
     }
+
+    [Fact]
+    public void PasteIsRawWhenNoProgramAskedForBracketing()
+        => Assert.Equal("hello", Show(KeyTranslator.Paste("hello", bracketedPaste: false)));
+
+    [Fact]
+    public void PasteIsWrappedWhenTheProgramEnabledBracketedPaste()
+    {
+        // vim switches auto-indent off for a block wrapped this way. Without the markers a
+        // pasted block is re-indented line by line into nonsense.
+        Assert.Equal("^[[200~hello^[[201~", Show(KeyTranslator.Paste("hello", bracketedPaste: true)));
+    }
 }

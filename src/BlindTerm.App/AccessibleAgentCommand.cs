@@ -64,6 +64,20 @@ internal static partial class AccessibleAgentCommand
         return $"{leading}{executable} {string.Join(' ', additions)}{rest}";
     }
 
+    /// <summary>
+    /// Whether a line starts one of the interactive coding agents whose choice prompts use
+    /// single number keys. Kept separate from <see cref="Adapt"/> because the window needs to
+    /// remember who owns later input after the launch line itself has disappeared.
+    /// </summary>
+    public static bool IsAgentLaunch(string command)
+    {
+        Match match = SimpleLaunch().Match(command);
+        if (!match.Success) return false;
+
+        string rest = match.Groups["rest"].Value;
+        return rest.IndexOfAny(['|', ';', '&']) < 0;
+    }
+
     private static bool HasOption(string arguments, string option)
         => Regex.IsMatch(arguments, $@"(?:^|\s){Regex.Escape(option)}(?:\s|=|$)",
                          RegexOptions.IgnoreCase);

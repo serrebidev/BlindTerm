@@ -120,6 +120,45 @@ public class AppShortcutTests
     }
 
     [Theory]
+    [InlineData(Keys.D0, '0')]
+    [InlineData(Keys.D1, '1')]
+    [InlineData(Keys.D9, '9')]
+    [InlineData(Keys.NumPad0, '0')]
+    [InlineData(Keys.NumPad4, '4')]
+    [InlineData(Keys.NumPad9, '9')]
+    public void APlainDigitImmediatelyAnswersAnAgentPicker(Keys key, char expected)
+        => Assert.Equal(expected, AppShortcuts.AgentAnswerDigit(
+            key, agentProgramActive: true, numberedChoiceVisible: true,
+            terminalInputFocused: true, commandLineEmpty: true));
+
+    [Theory]
+    [InlineData(Keys.Alt | Keys.D1)]
+    [InlineData(Keys.Control | Keys.D2)]
+    [InlineData(Keys.Shift | Keys.D3)]
+    public void ModifiedDigitsKeepTheirExistingMeaning(Keys key)
+        => Assert.Null(AppShortcuts.AgentAnswerDigit(
+            key, agentProgramActive: true, numberedChoiceVisible: true,
+            terminalInputFocused: true, commandLineEmpty: true));
+
+    [Fact]
+    public void ALeadingDigitCanStillBeEditedAsPartOfALongerAgentPrompt()
+        => Assert.Null(AppShortcuts.AgentAnswerDigit(
+            Keys.D2, agentProgramActive: true, numberedChoiceVisible: true,
+            terminalInputFocused: true, commandLineEmpty: false));
+
+    [Theory]
+    [InlineData(false, true, true, true)]
+    [InlineData(true, false, true, true)]
+    [InlineData(true, true, false, true)]
+    [InlineData(true, true, true, false)]
+    public void DigitsStayInTheNativeEditOutsideAnEmptyAgentInput(
+        bool agentProgramActive, bool numberedChoiceVisible,
+        bool terminalInputFocused, bool commandLineEmpty)
+        => Assert.Null(AppShortcuts.AgentAnswerDigit(
+            Keys.D1, agentProgramActive, numberedChoiceVisible,
+            terminalInputFocused, commandLineEmpty));
+
+    [Theory]
     [InlineData(Keys.Left)]
     [InlineData(Keys.Right)]
     [InlineData(Keys.Home)]

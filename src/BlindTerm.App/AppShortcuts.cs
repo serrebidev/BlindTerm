@@ -186,6 +186,29 @@ internal static class AppShortcuts
     }
 
     /// <summary>
+    /// A single number used to answer an interactive coding-agent question, or null when the
+    /// key belongs to BlindTerm's native command edit instead.
+    ///
+    /// Agent pickers commonly label their answers 1 through 4 and act on that key immediately.
+    /// BlindTerm normally buffers printable text in its accessible edit control, which made a
+    /// number appear locally without ever reaching the picker. Only a bare, unmodified digit
+    /// on an empty agent line is exceptional. Once text exists, the number is ordinary editable
+    /// prompt text again. Alt digits remain BlindTerm focus commands.
+    /// </summary>
+    public static char? AgentAnswerDigit(Keys keyData, bool agentProgramActive,
+        bool numberedChoiceVisible, bool terminalInputFocused, bool commandLineEmpty)
+    {
+        if (!agentProgramActive || !numberedChoiceVisible
+            || !terminalInputFocused || !commandLineEmpty) return null;
+        if ((keyData & (Keys.Control | Keys.Alt | Keys.Shift)) != Keys.None) return null;
+
+        Keys key = keyData & Keys.KeyCode;
+        if (key is >= Keys.D0 and <= Keys.D9) return (char)('0' + key - Keys.D0);
+        if (key is >= Keys.NumPad0 and <= Keys.NumPad9) return (char)('0' + key - Keys.NumPad0);
+        return null;
+    }
+
+    /// <summary>
     /// Whether an arrow in a telnet command line recalls BlindTerm's local sent-line history.
     /// Only unmodified Up and Down do this. Left and Right remain editing/navigation keys, and
     /// arrows in the output stay in the output so somebody reading never gets moved away.

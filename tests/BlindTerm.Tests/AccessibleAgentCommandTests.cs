@@ -5,6 +5,22 @@ namespace BlindTerm.Tests;
 public class AccessibleAgentCommandTests
 {
     [Theory]
+    [InlineData("codex")]
+    [InlineData("codex resume --last")]
+    [InlineData("claude --continue")]
+    [InlineData("opencode")]
+    [InlineData("freebuff")]
+    public void SimpleAgentLaunchesCanBeRememberedForLaterChoiceKeys(string command)
+        => Assert.True(AccessibleAgentCommand.IsAgentLaunch(command));
+
+    [Theory]
+    [InlineData("echo codex")]
+    [InlineData("codex | Out-File result.txt")]
+    [InlineData("& claude")]
+    public void CompoundOrUnrelatedLinesAreNotRememberedAsAgentLaunches(string command)
+        => Assert.False(AccessibleAgentCommand.IsAgentLaunch(command));
+
+    [Theory]
     [InlineData("claude", "claude --ax-screen-reader")]
     [InlineData("claude --resume abc", "claude --ax-screen-reader --resume abc")]
     [InlineData("codex", "codex --no-alt-screen -c tui.raw_output_mode=true -c tui.animations=false")]

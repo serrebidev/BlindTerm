@@ -77,6 +77,11 @@ When a command line consists of a simple `codex`, `claude`, or `opencode` launch
 - OpenCode receives `--mini --no-replay`, selecting its smaller interactive interface and preventing old sessions from repainting on startup and resize.
 - Freebuff currently provides no screen-reader or minimal-interface switch. BlindTerm invents no unsupported argument for it, so Freebuff uses the terminal's full-screen speech and frozen review support.
 
+While one of these agents is running locally or over BlindTerm's SSH connection, a plain `0`
+through `9` from either the number row or numpad is sent immediately to a numbered question
+when the command line is empty. A number inside text remains ordinary editable prompt text.
+`Alt+1`, `Alt+2`, and `Alt+3` remain BlindTerm's output, input, and review commands.
+
 Explicit flags are respected, and subcommands such as `codex exec` or `opencode run` keep working. Compound shell expressions and executable paths are left exactly as typed rather than guessed at.
 
 ## Making BlindTerm your default terminal
@@ -104,6 +109,8 @@ That restores whatever Windows would have chosen. In fact BlindTerm cannot lock 
 **Output is spoken only while the window is the one you are in.** A screen reader has one voice for the whole desktop, so a terminal that carries on talking after you have switched to something else is not telling you anything — it is talking over whatever you went to read. This matters most when BlindTerm is your default terminal and something long-running is sitting in a window nobody is looking at. Two things are still heard from a background window, because both are things you asked to be told about wherever you are: the bell, and any trigger you wrote. If you do want the rest of it — waiting on a build in another workspace, say — **Read** &rarr; **Speak output in the background** turns it back on and is remembered.
 
 BlindTerm keeps its own commands under Alt. With the command line focused while a foreground command or application is running, Ctrl chords—including `Ctrl+C`, `Ctrl+X`, and `Ctrl+Z`—go directly to that program whether it uses inline output or a full-screen interface. `Ctrl+V` is the exception and always pastes into the command line, because BlindTerm owns the line being typed and that is the only way to get a pasted path into the program at all. `Alt+C` sends the interrupt when `Ctrl+C` is wanted for something else. After the program exits and the shell prompt returns, those keys resume their ordinary copy, cut, undo, and paste behavior in BlindTerm's native controls.
+
+In a full-screen program a paste (`Ctrl+V` or `Shift+Insert`) goes to the program as pasted text, wrapped in bracketed-paste markers when the program has asked for them — vim does, to switch auto-indent off for a pasted block — so a block lands as one chunk instead of as keys to be re-indented one at a time.
 
 ### Driving a program from the command line
 

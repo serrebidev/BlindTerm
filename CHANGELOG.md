@@ -4,6 +4,20 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.5 - 2026-08-29
+
+- Answer an agent's numbered question with a plain digit. Codex and Claude Code ask questions
+  whose answers are numbered -- a model list, a permission level -- and BlindTerm buffered the
+  digit in its own edit box, so the answer never reached the picker and the question sat there
+  unanswered. A bare unmodified 0 through 9 on an empty command line now goes straight to the
+  program when a numbered choice is on screen. A digit inside text remains ordinary prompt
+  text, and Alt+1, Alt+2 and Alt+3 stay BlindTerm's output, input and review commands.
+- Paste into a full-screen program the way a terminal does. A paste in vim or nano went in as
+  the keystrokes that spell Ctrl+V rather than as the pasted text, and a program that had asked
+  for bracketed paste -- vim does, to switch auto-indent off for a pasted block -- was never
+  told where the paste began and ended. Pasted text now reaches the program whole, wrapped in
+  the bracketed-paste markers when the program has asked for them, and raw when it has not.
+
 ## v0.7.4 - 2026-08-29
 
 - Send what you type at an agent CLI. Codex counted a whole line arriving in one write as a

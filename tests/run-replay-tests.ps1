@@ -9,11 +9,14 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Root = (Split-Path -Parent $PSScriptRoot),
+    [string]$Root = '',
     [int[]]$ChunkSizes = @(16384, 7, 1)
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($Root)) {
+    $Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+}
 $captures = Join-Path $Root 'tests\captures'
 $cli = Join-Path $Root 'src\BlindTerm.Cli'
 
@@ -46,8 +49,15 @@ foreach ($raw in Get-ChildItem $captures -Filter *.raw | Sort-Object Name) {
 
     foreach ($chunk in $ChunkSizes) {
         $ran++
+        # Windows PowerShell 5 turns any native stderr into a PowerShell error record when
+        # ErrorActionPreference is Stop, even when stderr is redirected. Replay writes its
+        # byte-count diagnostic there on every successful run, so relax only around this
+        # native invocation and continue to judge the structured stdout below.
+        $savedErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
         $out = & dotnet run --project $cli --no-build -- replay $raw.FullName `
             --cols $cols --rows $rows --chunk $chunk 2>$null
+        $ErrorActionPreference = $savedErrorActionPreference
 
         # Everything between the transcript marker and the next marker.
         $lines = @($out) -split "`n"
@@ -82,4 +92,5 @@ foreach ($raw in Get-ChildItem $captures -Filter *.raw | Sort-Object Name) {
 
 Write-Host ""
 Write-Host "$ran replays, $failed failed"
-exit ($failed -gt 0 ? 1 : 0)
+if ($failed -gt 0) { exit 1 }
+exit 0
