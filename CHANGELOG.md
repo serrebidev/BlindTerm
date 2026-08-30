@@ -4,6 +4,14 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.6 - 2026-08-30
+
+- Wrap long output lines instead of hiding what runs off the right edge. Codex, Claude Code
+  and OpenCode write a whole paragraph to one terminal row, and BlindTerm joined the wrapped
+  rows back into one logical line but left it unwrapped in the output control, so everything
+  past the window's edge was invisible and a long response read as truncated. Long lines now
+  wrap to the window width, the way they do in any other terminal.
+
 ## v0.7.5 - 2026-08-29
 
 - Answer an agent's numbered question with a plain digit. Codex and Claude Code ask questions

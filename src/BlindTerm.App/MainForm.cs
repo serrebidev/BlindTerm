@@ -204,7 +204,11 @@ public sealed class MainForm : Form
         _transcript.Multiline = true;
         _transcript.ReadOnly = true;
         _transcript.ScrollBars = ScrollBars.Vertical;
-        _transcript.WordWrap = false;
+        // A logical line longer than the window must wrap rather than run off the right edge.
+        // Codex, Claude Code and OpenCode write whole paragraphs to one row, and a terminal
+        // that keeps them on one unwrapped line hides everything past the window's edge, which
+        // reads as truncated even though the text is all there.
+        _transcript.WordWrap = true;
         // Keep the selection visible when focus moves away, so a reader still reports it.
         _transcript.HideSelection = false;
         _transcript.ShortcutsEnabled = true;
