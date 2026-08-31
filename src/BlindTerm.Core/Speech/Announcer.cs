@@ -73,8 +73,18 @@ public sealed class Announcer : IDisposable
     /// </summary>
     public bool SpeakInBackground { get; set; }
 
+    /// <summary>
+    /// Whether anyone is actually in this window, or background speech has been switched on.
+    ///
+    /// Nothing is spoken into an empty seat: a screen reader has one voice for the whole
+    /// desktop, so a background window that talks is interrupting whatever the user went
+    /// to read -- which is worse than useless when BlindTerm is the default terminal and a
+    /// program sits in a window nobody is looking at.
+    /// </summary>
+    private bool SomeoneHome => Attended || SpeakInBackground;
+
     /// <summary>Whether anything the program says on its own should be spoken at all.</summary>
-    private bool Listening => Enabled && (Attended || SpeakInBackground);
+    private bool Listening => Enabled && SomeoneHome;
 
     /// <summary>
     /// Where announcements go instead of the screen reader. Set by tests to collect them;
@@ -85,14 +95,12 @@ public sealed class Announcer : IDisposable
     public Announcer(IScreenReader reader) => _reader = reader;
 
     /// <summary>Queues lines of streamed output.</summary>
-    /// <param name="attendedOnly">
-    /// Whether this is the program talking, which a window nobody is in should keep to
-    /// itself, or something the user asked for by writing a trigger, which they asked for
-    /// wherever they happen to be looking.
-    /// </param>
-    public void Enqueue(IEnumerable<string> lines, bool attendedOnly = true)
+    public void Enqueue(IEnumerable<string> lines)
     {
-        if (attendedOnly ? !Listening : !Enabled) return;
+        // Everything waits on the same two gates: output switched on, and a window somebody
+        // is in (or background speech turned on). A trigger is not the exception it used to
+        // be -- the user only wants to hear the app while they are in it.
+        if (!Listening) return;
 
         var useful = lines
             .Select(l => l.Trim())
@@ -129,6 +137,10 @@ public sealed class Announcer : IDisposable
     public void AnnounceNow(string text, SpeechPriority priority = SpeechPriority.Now)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        // Not subject to Enabled, which is about streamed output only -- someone who has
+        // turned output off still asked for this. But a window nobody is in is told
+        // nothing, not even an explicit read or a bell the program rang on its own.
+        if (!SomeoneHome) return;
         Speak(text.Trim(), priority);
     }
 
@@ -160,6 +172,9 @@ public sealed class Announcer : IDisposable
     public void Interject(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        // Not subject to Enabled, but only spoken into an attended window: a trigger the
+        // user wrote is still a line they only asked to hear while they are in the app.
+        if (!SomeoneHome) return;
 
         lock (_gate)
         {
@@ -173,12 +188,13 @@ public sealed class Announcer : IDisposable
     }
 
     /// <summary>
-    /// Drops output that was waiting to be spoken, keeping anything a trigger called urgent.
+    /// Drops output that was waiting to be spoken, keeping anything already marked urgent.
     ///
     /// For the moment the window stops being the one the user is in. Without this, leaving a
     /// busy terminal is followed a fifth of a second later by it saying one last thing into
     /// whatever you switched to -- which is the exact interruption this is all meant to stop.
-    /// A trigger's line is kept because the user asked for that one by name.
+    /// An urgent line interjected before the window was left is kept, because it was spoken
+    /// into an attended window at the moment the user asked for it.
     /// </summary>
     public void DiscardStreamed()
     {

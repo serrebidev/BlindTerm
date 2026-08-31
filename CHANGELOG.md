@@ -4,6 +4,13 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.8 - 2026-08-31
+
+- Speak nothing from a background window, triggers and the bell included. Speech is now
+  only for when someone is in the app: the trigger and bell exceptions that used to talk
+  over whatever the user went to read are gone, and **Read** &rarr; **Speak output in the
+  background** is the only way to hear a background window.
+
 ## v0.7.7 - 2026-08-31
 
 - Preserve complete Codex conversations after long inline responses. Codex can move a

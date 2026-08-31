@@ -78,8 +78,8 @@ public sealed class AppSettings
     /// Off. A screen reader has one voice for the whole desktop, so a terminal that carries
     /// on talking after it has been left behind is talking over whatever the user went to
     /// read -- and with BlindTerm as the default terminal there can be several of them
-    /// running at once. Triggers and the bell are heard either way, because those are things
-    /// the user asked to be told about wherever they are.
+    /// running at once. Nothing is spoken into a window nobody is in, not even a trigger or
+    /// the bell: speech is only for when the user is in the app.
     /// </summary>
     public bool SpeakInBackground { get; set; }
 

@@ -57,35 +57,36 @@ public class AnnouncerTests
         }
     }
 
+    /// <summary>
+    /// A trigger is only heard while someone is in the window, same as any other speech: the
+    /// user asked to hear the app while they are in it, not to be talked over in another
+    /// window.
+    /// </summary>
     [Fact]
-    public async Task ATriggerIsHeardWhereverTheUserHappensToBeLooking()
+    public async Task ATriggerIsNotHeardInAWindowNobodyIsIn()
     {
         (Announcer announcer, Collector collected) = Make();
         using (announcer)
         {
             announcer.Attended = false;
 
-            // A trigger is a line somebody wrote down in order to be told about it. Telling
-            // them only while they are already looking at the window defeats the point.
-            announcer.Enqueue(["Someone said your name"], attendedOnly: false);
-            await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(["Someone said your name"], collected.Spoken);
+            announcer.Enqueue(["Someone said your name"]);
+            await Task.Delay(200);
+            Assert.Empty(collected.Spoken);
         }
     }
 
     [Fact]
-    public async Task AnUrgentTriggerSurvivesTheWindowBeingLeft()
+    public async Task AnUrgentInterjectIsNotHeardInAWindowNobodyIsIn()
     {
         (Announcer announcer, Collector collected) = Make(idleMs: 400, maxMs: 800);
         using (announcer)
         {
-            announcer.Enqueue(["ordinary output"]);
-            announcer.Interject("Someone is attacking you");
             announcer.Attended = false;
-            announcer.DiscardStreamed();
+            announcer.Interject("Someone is attacking you");
 
-            await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Contains(collected.Spoken, said => said.Contains("attacking"));
+            await Task.Delay(600);
+            Assert.Empty(collected.Spoken);
         }
     }
 
@@ -99,8 +100,9 @@ public class AnnouncerTests
             announcer.SpeakInBackground = true;
 
             announcer.Enqueue(["still talking"]);
+            announcer.Interject("an urgent trigger");
             await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(["still talking"], collected.Spoken);
+            Assert.Contains(collected.Spoken, said => said.Contains("still talking"));
         }
     }
 
@@ -113,7 +115,7 @@ public class AnnouncerTests
             announcer.Enabled = false;
 
             announcer.Enqueue(["output"]);
-            announcer.Enqueue(["trigger"], attendedOnly: false);
+            announcer.Enqueue(["trigger"]);
             announcer.AnnounceIfAttended("a repaint");
             await Task.Delay(200);
             Assert.Empty(collected.Spoken);

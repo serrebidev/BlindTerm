@@ -381,8 +381,8 @@ public sealed class MainForm : Form
         _speakInBackgroundItem.AccessibleDescription =
             "Whether output is spoken while you are working in another window. Off by default: "
             + "a screen reader has one voice, and a terminal that keeps talking after you have "
-            + "left it talks over whatever you went to read. Triggers and the bell are heard "
-            + "either way.";
+            + "left it talks over whatever you went to read. Speech is only for when you are "
+            + "in the app.";
         _speakInBackgroundItem.Click += (_, _) => ToggleSpeakInBackground();
         read.DropDownItems.Add(_speakInBackgroundItem);
         _speakOffCursorItem.Click += (_, _) => ToggleOffCursor();
@@ -520,11 +520,11 @@ public sealed class MainForm : Form
 
         foreach (TriggerSpeech speech in fired.Speech)
         {
-            // Not gated on the window being focused: a trigger is a line the user wrote
-            // down in order to be told about it, and being told about it only while already
-            // looking at the window would defeat the point of writing it.
+            // Gated on the window being focused like everything else: the user only wants
+            // to hear the app while they are in it. Interject speaks the urgent line now,
+            // Enqueue runs it through the same attended gate when it later flushes.
             if (speech.Now) _host.Announcer.Interject(speech.Text);
-            else _host.Announcer.Enqueue([speech.Text], attendedOnly: false);
+            else _host.Announcer.Enqueue([speech.Text]);
         }
 
         foreach (string line in fired.Sends) _host.SendLine(line);
