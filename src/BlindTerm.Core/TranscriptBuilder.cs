@@ -48,6 +48,14 @@ public sealed class TranscriptBuilder
     private int _lastTop;
     private int _lastTrimmed;
 
+    /// <summary>
+    /// A viewport advance can arrive in a different pipe read from the repaint it causes.
+    /// Once the normal buffer has scrolled, later cursor-addressed frames can move its rows
+    /// again without advancing the terminal itself, so alignment remains available until a
+    /// wipe or buffer resynchronization.
+    /// </summary>
+    private bool _viewportHasAdvanced;
+
     /// <summary>Rows for a line that did not come from the buffer.</summary>
     private static readonly (int Start, int End) NoRows = (0, 0);
 
@@ -100,6 +108,7 @@ public sealed class TranscriptBuilder
         _extentRow = restart;
         _mappedFrom = restart;
         _frameStart = restart;
+        _viewportHasAdvanced = false;
         RowsResynced?.Invoke();
     }
 
@@ -137,6 +146,8 @@ public sealed class TranscriptBuilder
         int screenTop = _engine.ScreenTop;
         int top = screenTop - trimmed;
         int cursor = _engine.CursorRow;
+        if (top > _lastTop) _viewportHasAdvanced = true;
+        bool realignViewport = _viewportHasAdvanced;
 
         // The scrollback was thrown away, or the buffer renumbered under us, so the rows the
         // lines were built from are gone. A program moving the cursor up to repaint its own
@@ -177,6 +188,23 @@ public sealed class TranscriptBuilder
 
         update.FirstNewLine = Transcript.Count;
 
+        // An inline TUI can scroll by repainting its viewport rather than by letting the
+        // terminal scroll it. Codex does this as a streamed answer grows: after the screen
+        // advances, a row that used to contain line 16 can contain line 17 even though line
+        // 16 is still part of the permanent output. Anchor that moved run to the identical
+        // later transcript line, then keep walking forward. Treating every changed row as an
+        // edit erases one old line per repaint and eventually leaves only the final frame.
+        int? alignedLine = null;
+        var previousRows = new Dictionary<int, int>();
+        if (realignViewport)
+        {
+            for (int mapped = readFrom; mapped < readEnd; mapped++)
+            {
+                if (_rowToLine.TryGetValue(mapped, out int mappedLine))
+                    previousRows[mapped] = mappedLine;
+            }
+        }
+
         int row = readFrom;
         while (row < readEnd)
         {
@@ -189,10 +217,39 @@ public sealed class TranscriptBuilder
             }
 
             int line;
-            if (_rowToLine.TryGetValue(row, out int existing) && existing < _lineRows.Count)
+            bool hadExisting = (realignViewport ? previousRows : _rowToLine)
+                .TryGetValue(row, out int existing) && existing < _lineRows.Count;
+            if (realignViewport && alignedLine is int aligned)
+            {
+                if (aligned < Transcript.Count)
+                {
+                    line = aligned;
+                    if (Transcript.Revise(line, text) is { } edit) update.Edits.Add(edit);
+                }
+                else
+                {
+                    line = Transcript.Append(text);
+                    _lineRows.Add((row, end));
+                    update.NewLines.Add(text);
+                }
+                alignedLine = line + 1;
+            }
+            else if (hadExisting)
             {
                 line = existing;
-                if (Transcript.Revise(existing, text) is { } edit) update.Edits.Add(edit);
+                int moved = realignViewport && text.Length > 0
+                    ? LaterMatchingLine(existing, text)
+                    : -1;
+                if (moved >= 0)
+                {
+                    ShiftViewportMappings(row, moved - existing);
+                    line = moved;
+                    alignedLine = moved + 1;
+                }
+                else if (Transcript.Revise(existing, text) is { } edit)
+                {
+                    update.Edits.Add(edit);
+                }
             }
             else
             {
@@ -214,6 +271,40 @@ public sealed class TranscriptBuilder
         update.LiveText = LiveText(readEnd);
         RecordCompletePrompt(readEnd, update);
         return update;
+    }
+
+    /// <summary>
+    /// Carries a discovered viewport shift into rows whose replacement bytes have not arrived
+    /// yet. ConPTY may split "move the viewport" and each following row into separate reads;
+    /// without moving their anchors now, every later read erases the line before it.
+    /// </summary>
+    private void ShiftViewportMappings(int fromRow, int lineDelta)
+    {
+        foreach (int row in _rowToLine.Keys
+                     .Where(row => row >= fromRow && row < _engine.ScreenEnd).ToList())
+        {
+            int shifted = _rowToLine[row] + lineDelta;
+            if (shifted >= 0 && shifted < Transcript.Count) _rowToLine[row] = shifted;
+            else _rowToLine.Remove(row);
+        }
+    }
+
+    /// <summary>
+    /// Finds where a row moved forward in the transcript during an inline viewport repaint.
+    /// Empty rows are deliberately not anchors: every frame has several, so choosing one is
+    /// arbitrary and can align the frame to unrelated history.
+    /// </summary>
+    private int LaterMatchingLine(int after, string text)
+    {
+        // A row cannot remain in the visible viewport after moving by more than one screen.
+        // Bounding the search keeps a spinner over a very long transcript from scanning the
+        // entire session every time its glyph changes.
+        int end = Math.Min(Transcript.Count, after + _engine.Rows + 1);
+        for (int line = after + 1; line < end; line++)
+        {
+            if (string.Equals(Transcript.Lines[line], text, StringComparison.Ordinal)) return line;
+        }
+        return -1;
     }
 
     /// <summary>

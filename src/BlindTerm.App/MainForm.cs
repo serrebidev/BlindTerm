@@ -62,6 +62,10 @@ public sealed class MainForm : Form
     // echoed back, then the completion replacing its last word. Reading the first piece would
     // announce half a command; this waits for the redrawing to stop.
     private readonly System.Windows.Forms.Timer _completionEchoTimer = new() { Interval = 120 };
+    // Streaming TUIs can repaint the same viewport dozens of times in one scheduler slice.
+    // Collapse those changes into one native edit so word wrapping and accessibility events
+    // do not keep the UI thread -- and therefore NVDA -- continuously busy.
+    private readonly System.Windows.Forms.Timer _transcriptMirrorTimer = new() { Interval = 40 };
     private readonly System.Windows.Forms.Timer _updateTimer = new();
 
     private readonly TerminalHost _host;
@@ -74,6 +78,10 @@ public sealed class MainForm : Form
     private readonly CommandCompletionInput _completionInput = new();
     private readonly CommandCompletionEcho _completionEcho = new();
     private readonly LatestResponse _latestResponse = new();
+
+    /// <summary>First transcript line whose pending UI mirror may differ.</summary>
+    private int? _mirrorFromLine;
+    private bool _mirrorFollow;
 
     private MspPlayer? _sounds;
     private SoundDownloader? _soundDownloads;
@@ -183,6 +191,7 @@ public sealed class MainForm : Form
             _completionEchoTimer.Stop();
             SpeakCompletedLine();
         };
+        _transcriptMirrorTimer.Tick += (_, _) => FlushTranscriptMirror();
         _updateTimer.Tick += async (_, _) => await CheckForUpdates(automatic: true);
         ConfigureAutomaticUpdates();
 
@@ -449,6 +458,7 @@ public sealed class MainForm : Form
 
         if (update.AlternateScreen is not null)
         {
+            FlushTranscriptMirror();
             EnterOrUpdateScreenMode(update);
             return;
         }
@@ -461,8 +471,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        MirrorEdits(update.Edits);
-        MirrorAppended(update.NewLines);
+        QueueTranscriptMirror(update);
 
         // A batch the app wrote itself carries no reading of the terminal, so the prompt the
         // shell is sitting at is whatever it already was. Applying this batch's empty live
@@ -798,6 +807,9 @@ public sealed class MainForm : Form
 
     private void SetTranscriptText(string text)
     {
+        _transcriptMirrorTimer.Stop();
+        _mirrorFromLine = null;
+        _mirrorFollow = false;
         _transcript.Text = text;
     }
 
@@ -807,71 +819,57 @@ public sealed class MainForm : Form
         _latestResponse.Begin(_host.Transcript);
     }
 
-    /// <summary>
-    /// Adds lines the assembler has already put in the transcript.
-    ///
-    /// The caret is the reading position: if the user has moved back to read something, new
-    /// output must not drag them away from it, so the selection is restored explicitly rather
-    /// than trusted to survive an append.
-    /// </summary>
-    private void MirrorAppended(IReadOnlyList<string> lines)
+    /// <summary>Marks the smallest suffix changed by a terminal update.</summary>
+    private void QueueTranscriptMirror(TerminalUpdate update)
     {
-        if (lines.Count == 0 || ScreenMode) return;
+        if (ScreenMode || update.NewLines.Count == 0 && update.Edits.Count == 0) return;
 
-        bool follow = FollowingOutput;
-        int selection = _transcript.SelectionStart;
-        int length = _transcript.SelectionLength;
+        int first = update.NewLines.Count > 0 ? update.FirstNewLine : int.MaxValue;
+        foreach (Transcript.Edit edit in update.Edits) first = Math.Min(first, edit.Line);
 
-        var chunk = new StringBuilder();
-        foreach (string line in lines) chunk.Append(line).Append(Environment.NewLine);
-
-        _transcript.AppendText(chunk.ToString());
-
-        // The caret goes back where it was either way. When following, the view scrolls to
-        // the new output but the caret stays put: this app has already announced the lines,
-        // and moving the caret would have the reader announce them again.
-        _transcript.SelectionStart = selection;
-        _transcript.SelectionLength = length;
-        if (follow) TextBoxScroll.ToBottom(_transcript);
+        _mirrorFromLine = _mirrorFromLine is int pending ? Math.Min(pending, first) : first;
+        _mirrorFollow |= FollowingOutput;
+        if (!_transcriptMirrorTimer.Enabled) _transcriptMirrorTimer.Start();
     }
 
     /// <summary>
-    /// Rewrites lines whose rows a program has redrawn, in the order the assembler made them:
-    /// each edit's range is the range to replace once the ones before it are in.
+    /// Applies every queued append and repaint as one suffix replacement.
+    ///
+    /// Replacing each streamed character separately makes a wrapping Win32 edit control lay
+    /// out the whole document and raise an accessibility event each time. The authoritative
+    /// transcript already contains the final state, so one replacement after the short
+    /// coalescing interval produces the same text with bounded UI and screen-reader work.
     /// </summary>
-    private void MirrorEdits(IReadOnlyList<Transcript.Edit> edits)
+    private void FlushTranscriptMirror()
     {
-        if (edits.Count == 0 || ScreenMode) return;
+        _transcriptMirrorTimer.Stop();
+        if (_mirrorFromLine is not int first || ScreenMode) return;
 
-        bool follow = FollowingOutput;
+        first = Math.Clamp(first, 0, _host.Transcript.Count);
+        bool follow = _mirrorFollow;
+        _mirrorFromLine = null;
+        _mirrorFollow = false;
+
         var selection = new TextSelection(_transcript.SelectionStart, _transcript.SelectionLength);
+        int start = first >= _host.Transcript.Count
+            ? _transcript.TextLength
+            : _host.Transcript.OffsetOfLine(first) + first;
+        start = Math.Clamp(start, 0, _transcript.TextLength);
+        int oldLength = _transcript.TextLength - start;
 
-        foreach (var edit in edits)
-        {
-            // Offsets are in UTF-16 units and the box counts newlines as two, so translate.
-            int start = ToBoxOffset(edit.Start);
-            int end = ToBoxOffset(edit.Start + edit.OldLength);
-            if (start < 0 || end > _transcript.TextLength || end < start) continue;
+        var replacement = new StringBuilder();
+        for (int line = first; line < _host.Transcript.Count; line++)
+            replacement.Append(_host.Transcript.Lines[line]).Append(Environment.NewLine);
+        string text = replacement.ToString();
 
-            _transcript.Select(start, end - start);
-            _transcript.SelectedText = edit.Text;
-            selection = selection.AfterReplacement(start, end - start, edit.Text.Length);
-        }
+        _transcript.Select(start, oldLength);
+        _transcript.SelectedText = text;
+        selection = selection.AfterReplacement(start, oldLength, text.Length);
 
         int selectionStart = Math.Min(selection.Start, _transcript.TextLength);
         int selectionLength = Math.Min(selection.Length, _transcript.TextLength - selectionStart);
         _transcript.Select(selectionStart, selectionLength);
         if (follow) TextBoxScroll.ToBottom(_transcript);
-    }
-
-    /// <summary>
-    /// The assembler counts one character per line break; a multiline text box counts two.
-    /// Converting is a matter of adding the number of lines that start before the offset.
-    /// </summary>
-    private int ToBoxOffset(int transcriptOffset)
-    {
-        int line = _host.Transcript.LineAtOffset(transcriptOffset);
-        return transcriptOffset + line;
     }
 
     // ---- Commands ----
@@ -886,6 +884,7 @@ public sealed class MainForm : Form
             return;
         }
 
+        FlushTranscriptMirror();
         _transcript.Focus();
         MoveCaret(LastLineStart);
     }
@@ -898,6 +897,7 @@ public sealed class MainForm : Form
             return;
         }
 
+        FlushTranscriptMirror();
         _transcript.Focus();
         MoveCaret(_latestResponse.StartOffset(_host.Transcript));
     }
@@ -920,6 +920,7 @@ public sealed class MainForm : Form
 
     private void GoToEnd()
     {
+        FlushTranscriptMirror();
         _transcript.Focus();
         MoveCaret(LastLineStart);
         SpeakCaretLine();
@@ -2104,6 +2105,7 @@ public sealed class MainForm : Form
         _soundDownloads?.Dispose();
         _reviewFocusSpeechTimer.Dispose();
         _completionEchoTimer.Dispose();
+        _transcriptMirrorTimer.Dispose();
         _updateTimer.Dispose();
         _updates.Dispose();
         _host.Dispose();

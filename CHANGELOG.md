@@ -4,6 +4,18 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.7 - 2026-08-31
+
+- Preserve complete Codex conversations after long inline responses. Codex can move a
+  completed response through its visible viewport by repainting rows from the top; BlindTerm
+  treated those moved rows as replacements for older transcript lines, so earlier output
+  disappeared and a completed turn could leave only its final message. Repainted viewports
+  are now aligned with the lines already in scrollback, independent of how ConPTY splits the
+  escape sequences into reads.
+- Coalesce rapid terminal repaints into one native output-control update every 40 milliseconds.
+  Long Codex turns no longer make the wrapping edit control continuously recalculate and send
+  accessibility events, keeping the BlindTerm window and NVDA responsive while output streams.
+
 ## v0.7.6 - 2026-08-30
 
 - Wrap long output lines instead of hiding what runs off the right edge. Codex, Claude Code

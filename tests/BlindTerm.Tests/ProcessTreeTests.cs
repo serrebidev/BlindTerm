@@ -50,7 +50,7 @@ public class ProcessTreeTests
     [Fact]
     public void AProcessThatIsGoneIsNotRunningAnything()
     {
-        Process shell = Process.Start(new ProcessStartInfo("cmd.exe", "/c ping -n 30 127.0.0.1")
+        using Process shell = Process.Start(new ProcessStartInfo("cmd.exe", "/c ping -n 30 127.0.0.1")
         {
             CreateNoWindow = true,
             UseShellExecute = false,
@@ -62,8 +62,9 @@ public class ProcessTreeTests
 
         shell.Kill(entireProcessTree: true);
         shell.WaitForExit(10_000);
-        shell.Dispose();
 
+        // Keep the process handle open through the assertion so Windows cannot recycle its
+        // numeric id for an unrelated process with a child between these two snapshots.
         // The shell and everything under it are gone, so the terminal hands the keys back.
         Assert.True(Eventually(() => !ProcessTree.HasChild(processId)));
     }
