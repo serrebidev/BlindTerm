@@ -5,6 +5,36 @@ namespace BlindTerm.Tests;
 
 public class TranscriptBuilderTests
 {
+    [Fact]
+    public void StylingThatChangesNoTextDoesNotQueueAnotherUpdate()
+    {
+        var core = new TerminalCore(40, 5);
+        int updates = 0;
+        core.Updated += _ => updates++;
+
+        core.Feed("ready>"u8);
+        int afterText = updates;
+        core.Feed("\x1b[0m"u8);
+
+        Assert.True(afterText > 0);
+        Assert.Equal(afterText, updates);
+    }
+
+    [Fact]
+    public void AnIdenticalAlternateScreenRepaintDoesNotQueueAnotherFrame()
+    {
+        var core = new TerminalCore(40, 5);
+        int updates = 0;
+        core.Updated += _ => updates++;
+
+        core.Feed("\x1b[?1049hhello"u8);
+        int afterFrame = updates;
+        core.Feed("\x1b[0m"u8);
+
+        Assert.True(afterFrame > 0);
+        Assert.Equal(afterFrame, updates);
+    }
+
     [Theory]
     [InlineData(16_384)]
     [InlineData(7)]

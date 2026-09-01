@@ -33,11 +33,13 @@ public class ForegroundProgramStateTests
     public void AJustSubmittedCommandCountsBeforeItsProcessExists()
     {
         var clock = new Clock();
-        var state = new ForegroundProgramState(() => false, () => clock.Now);
+        int probes = 0;
+        var state = new ForegroundProgramState(() => { probes++; return false; }, () => clock.Now);
 
         state.Submitted("codex");
 
         Assert.True(state.Active);
+        Assert.Equal(0, probes);
     }
 
     [Fact]

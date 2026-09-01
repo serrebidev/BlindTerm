@@ -36,6 +36,8 @@ public sealed class LineNews
 
     public IReadOnlyList<string> News(TerminalUpdate update)
     {
+        if (update.NewLines.Count == 0 && update.Edits.Count == 0) return [];
+
         // A batch can both append a line and rewrite it. Collapse by line first, so each one
         // is considered once, in transcript order, holding the text it ended the batch with.
         // Appends are laid down before edits because an edit is the later change: the

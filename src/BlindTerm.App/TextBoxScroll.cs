@@ -18,6 +18,36 @@ internal static class TextBoxScroll
     private const int EM_LINESCROLL = 0x00B6;
     private const int EM_GETFIRSTVISIBLELINE = 0x00CE;
     private const int EM_GETLINECOUNT = 0x00BA;
+    private const int EM_LINEINDEX = 0x00BB;
+    private const int EM_LINELENGTH = 0x00C1;
+
+    /// <summary>
+    /// Character offset of the final nonempty line, without copying the edit control's text.
+    ///
+    /// <see cref="TextBox.Text"/> marshals the whole native document into a managed string.
+    /// Asking for it on every terminal update makes the cost of one new character grow with
+    /// the entire session. The edit messages below ask the native control about line starts
+    /// and lengths in place, so this remains constant-time for the usual trailing newline and
+    /// only walks farther when the transcript genuinely ends in blank lines.
+    /// </summary>
+    public static int LastContentLineStart(TextBox box)
+    {
+        ArgumentNullException.ThrowIfNull(box);
+        if (!box.IsHandleCreated) return 0;
+
+        int line = SendMessage(box.Handle, EM_GETLINECOUNT, IntPtr.Zero, IntPtr.Zero).ToInt32() - 1;
+        while (line > 0)
+        {
+            int start = SendMessage(box.Handle, EM_LINEINDEX, (IntPtr)line, IntPtr.Zero).ToInt32();
+            if (start < 0) break;
+            int length = SendMessage(box.Handle, EM_LINELENGTH, (IntPtr)start, IntPtr.Zero).ToInt32();
+            if (length > 0) return start;
+            line--;
+        }
+
+        int first = SendMessage(box.Handle, EM_LINEINDEX, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        return Math.Max(0, first);
+    }
 
     /// <summary>Scrolls so the last line is in view, leaving the selection untouched.</summary>
     public static void ToBottom(TextBox box)

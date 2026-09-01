@@ -33,6 +33,7 @@ internal sealed class ScreenSurface : Control
 
     public void SetRows(string[] rows, int cursorRow)
     {
+        if (_rows.AsSpan().SequenceEqual(rows)) return;
         _rows = rows;
         Invalidate();
     }
@@ -68,14 +69,16 @@ internal sealed class ScreenSurface : Control
     {
         e.Graphics.Clear(BackColor);
 
-        float lineHeight = Font.GetHeight(e.Graphics);
-        using var brush = new SolidBrush(ForeColor);
+        int lineHeight = TextRenderer.MeasureText(e.Graphics, "M", Font,
+            Size.Empty, TextFormatFlags.NoPadding).Height;
 
         for (int i = 0; i < _rows.Length; i++)
         {
-            float y = i * lineHeight;
+            int y = i * lineHeight;
             if (y > Height) break;
-            if (_rows[i].Length > 0) e.Graphics.DrawString(_rows[i], Font, brush, 2, y);
+            if (_rows[i].Length > 0)
+                TextRenderer.DrawText(e.Graphics, _rows[i], Font, new Point(2, y), ForeColor,
+                    BackColor, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         }
     }
 

@@ -23,6 +23,66 @@ public sealed class TerminalHost : IDisposable
     private readonly TerminalCore _core;
 
     /// <summary>
+    /// Work waiting for the window thread.
+    ///
+    /// ConPTY can complete several small reads before WinForms processes even one posted
+    /// message. Posting a Windows message for every read makes input, focus and screen-reader
+    /// traffic wait behind terminal plumbing. One outstanding post drains the work that was
+    /// already waiting. Consecutive line-mode updates are combined into one equivalent batch;
+    /// other work retains its exact order, and later arrivals wait for another UI-loop turn.
+    /// </summary>
+    private readonly object _postGate = new();
+    private Queue<Action> _posted = new();
+    private PendingUpdate? _tailUpdate;
+    private bool _postScheduled;
+    private bool _disposed;
+
+    /// <summary>
+    /// A run of ordinary transcript updates waiting at the tail of the UI queue.
+    ///
+    /// The transcript assembler has already put these changes in order. Combining their
+    /// append and edit lists therefore preserves every line for speech and triggers while
+    /// replacing hundreds of window callbacks with one. External messages remain separate,
+    /// as do full-screen updates where every cursor response is accessibility feedback.
+    /// </summary>
+    private sealed class PendingUpdate(TerminalUpdate update)
+    {
+        public TerminalUpdate Update { get; } = update;
+
+        public bool TryMerge(TerminalUpdate next)
+        {
+            if (Update.External || next.External
+                || Update.AlternateScreen is not null || next.AlternateScreen is not null
+                || Update.Quiet != next.Quiet)
+                return false;
+
+            if (next.NewLines.Count > 0)
+            {
+                if (Update.NewLines.Count == 0)
+                {
+                    Update.FirstNewLine = next.FirstNewLine;
+                }
+                else if (next.FirstNewLine != Update.FirstNewLine + Update.NewLines.Count)
+                {
+                    return false;
+                }
+
+                Update.NewLines.AddRange(next.NewLines);
+            }
+
+            // Edit ranges are deliberately retained in arrival order: their offsets describe
+            // the transcript at the instant each edit was produced. LineNews and triggers
+            // collapse them by line when they need only the final words.
+            Update.Edits.AddRange(next.Edits);
+            Update.LiveText = next.LiveText;
+            Update.LiveLine = next.LiveLine;
+            Update.CursorRow = next.CursorRow;
+            Update.CursorColumn = next.CursorColumn;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Serializes session changes with bytes arriving from their reader threads.
     ///
     /// <see cref="TerminalCore"/> is deliberately a synchronous state machine: two feeds at
@@ -105,7 +165,7 @@ public sealed class TerminalHost : IDisposable
         Reader = new ScreenReaderRouter();
         Announcer = new Announcer(Reader);
 
-        _core.Updated += update => Post(() => Updated?.Invoke(update));
+        _core.Updated += PostUpdate;
         _core.Engine.Bell += () => Post(() => Bell?.Invoke());
         _core.Engine.TitleChanged += title => Post(() => TitleChanged?.Invoke(title));
 
@@ -191,7 +251,98 @@ public sealed class TerminalHost : IDisposable
         };
     }
 
-    private void Post(Action action) => _ui.Post(_ => action(), null);
+    private void Post(Action action)
+    {
+        bool schedule = false;
+        lock (_postGate)
+        {
+            if (_disposed) return;
+            // A non-update action is an ordering boundary. A later terminal update must sit
+            // after it rather than being folded into an update that is already before it.
+            _tailUpdate = null;
+            _posted.Enqueue(action);
+            if (!_postScheduled)
+            {
+                _postScheduled = true;
+                schedule = true;
+            }
+        }
+
+        // Kept outside the lock because a test context, and any legitimate custom context,
+        // may execute Post synchronously.
+        if (schedule) _ui.Post(_ => DrainPosted(), null);
+    }
+
+    private void PostUpdate(TerminalUpdate update)
+    {
+        bool schedule = false;
+        lock (_postGate)
+        {
+            if (_disposed) return;
+            if (_tailUpdate is not null && _tailUpdate.TryMerge(update)) return;
+
+            var pending = new PendingUpdate(update);
+            _tailUpdate = pending;
+            _posted.Enqueue(() => Updated?.Invoke(pending.Update));
+            if (!_postScheduled)
+            {
+                _postScheduled = true;
+                schedule = true;
+            }
+        }
+
+        if (schedule) _ui.Post(_ => DrainPosted(), null);
+    }
+
+    private void DrainPosted()
+    {
+        Queue<Action> ready;
+        lock (_postGate)
+        {
+            if (_disposed)
+            {
+                _posted.Clear();
+                _tailUpdate = null;
+                _postScheduled = false;
+                return;
+            }
+            ready = _posted;
+            _posted = new Queue<Action>();
+            _tailUpdate = null;
+        }
+
+        try
+        {
+            while (ready.TryDequeue(out Action? action)) action();
+        }
+        finally
+        {
+            bool scheduleAgain;
+            lock (_postGate)
+            {
+                if (_disposed)
+                {
+                    _posted.Clear();
+                    _tailUpdate = null;
+                    _postScheduled = false;
+                    scheduleAgain = false;
+                }
+                else if (_posted.Count == 0)
+                {
+                    _postScheduled = false;
+                    scheduleAgain = false;
+                }
+                else
+                {
+                    // Leave the flag set: this next post still represents the one scheduled
+                    // drain, and producers can keep adding to it without posting more.
+                    scheduleAgain = true;
+                }
+            }
+
+            if (scheduleAgain) _ui.Post(_ => DrainPosted(), null);
+        }
+    }
 
     public void Start(string commandLine, string? workingDirectory = null)
         => Attach(new PtySession()).Start(commandLine, Engine.Columns, Engine.Rows,
@@ -372,16 +523,26 @@ public sealed class TerminalHost : IDisposable
     /// with a composer of its own has to be given time to see the line as typing rather than
     /// as a paste, and a MUD has to be given none. See <see cref="SubmitGap"/>.
     /// </summary>
-    public void SendLine(string text)
+    /// <param name="composerOwnsInput">
+    /// Whether the program reading this line is one of the agent CLIs that guess paste from
+    /// arrival speed. A shell that has merely started a child -- a nested cmd, ssh, a Python
+    /// prompt -- is not one, and waiting on its behalf only delays the Return.
+    /// </param>
+    public void SendLine(string text, bool composerOwnsInput = false)
     {
         ITerminalSession? session;
         int gap;
         lock (_gate)
         {
             session = _session;
+            // A handed-over console is the one case where the program cannot be identified:
+            // Windows started it, BlindTerm never saw a launch line. It keeps the long gap,
+            // because guessing wrong there means a Return that is silently swallowed.
+            bool composer = session is not null
+                && (composerOwnsInput || session.Kind == TerminalSessionKind.Handoff);
             gap = session is null
                 ? SubmitGap.Prompt
-                : SubmitGap.For(session.Kind, session.ProgramOwnsInput);
+                : SubmitGap.For(session.Kind, session.ProgramOwnsInput && composer, text.Length);
         }
         if (session is null) return;
         _ = session.WriteLineSplit(text, session.LineTerminator, gap);
@@ -409,6 +570,13 @@ public sealed class TerminalHost : IDisposable
 
     public void Dispose()
     {
+        lock (_postGate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _posted.Clear();
+            _tailUpdate = null;
+        }
         Announcer.Dispose();
         ITerminalSession? session;
         ITerminalSession? underneath;

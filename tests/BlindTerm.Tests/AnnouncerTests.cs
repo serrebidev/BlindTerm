@@ -7,12 +7,12 @@ namespace BlindTerm.Tests;
 /// When output gets spoken, which is the difference between a terminal that answers and one
 /// that feels slow.
 ///
-/// Both readers drop whatever they were saying when a new utterance arrives, so a program
-/// printing forty lines quickly has to become one utterance rather than forty interruptions
-/// and one audible line. The obvious way to do that -- always wait a fixed while -- puts that
-/// same wait between pressing Return and hearing the answer, every time. So the wait tracks
-/// the output instead: it ends as soon as output stops, and is capped so a program that keeps
-/// printing is still described as it goes.
+/// Streamed output queues in both readers rather than interrupting them, so batching is not
+/// what stops a program's output cutting itself off -- it is what keeps forty lines from
+/// becoming forty separate utterances. The obvious way to do that -- always wait a fixed
+/// while -- puts that same wait between pressing Return and hearing the answer, every time.
+/// So the wait tracks the output instead: it ends as soon as output stops, and is capped so
+/// a program that keeps printing is still described as it goes.
 /// </summary>
 public class AnnouncerTests
 {
@@ -154,7 +154,101 @@ public class AnnouncerTests
         }
     }
 
-    private static (Announcer Announcer, Collector Collected) Make(int idleMs = 50, int maxMs = 250)
+    /// <summary>
+    /// The delay a person actually waits after their command has finished printing. It is
+    /// paid on every command, so it is pinned here rather than left to drift: the reported
+    /// complaint was output that lagged, and half of this wait was once invisible overshoot
+    /// from Windows' 15.6 ms timer.
+    /// </summary>
+    [Fact]
+    public void TheWaitAfterOutputStopsIsShortByDefault()
+    {
+        using var announcer = new Announcer(new NullScreenReader());
+        Assert.True(
+            announcer.IdleWindow <= TimeSpan.FromMilliseconds(25),
+            $"The idle window is {announcer.IdleWindow.TotalMilliseconds} ms; every command waits it out.");
+    }
+
+    /// <summary>
+    /// The complaint this pins: an ordinary command was described instead of read. Thirty
+    /// lines is less than a screenful -- a directory listing, a git log, a short test run --
+    /// and hearing "41 lines of output" instead of the output is the tool declining to do the
+    /// one thing it is for.
+    /// </summary>
+    [Fact]
+    public async Task AnOrdinaryCommandsOutputIsReadRatherThanDescribed()
+    {
+        var (announcer, collected) = Make(idleMs: 20, maxMs: 200);
+        using var _ = announcer;
+
+        announcer.Enqueue(Enumerable.Range(1, 40).Select(i => $"line {i}"));
+        await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+
+        string only = Assert.Single(collected.Spoken);
+        Assert.DoesNotContain("lines of output", only, StringComparison.Ordinal);
+        Assert.Contains("line 1", only, StringComparison.Ordinal);
+        Assert.Contains("line 40", only, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A genuine flood is still summarised. The tail is the useful part of a build log, and
+    /// nobody asked to be read five thousand lines.
+    /// </summary>
+    [Fact]
+    public async Task AFloodIsStillSummarised()
+    {
+        var (announcer, collected) = Make(idleMs: 20, maxMs: 200);
+        using var _ = announcer;
+
+        int flood = announcer.MaxLinesPerAnnouncement * 3;
+        announcer.Enqueue(Enumerable.Range(1, flood).Select(i => $"line {i}"));
+        await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+
+        string only = Assert.Single(collected.Spoken);
+        Assert.StartsWith($"{flood} lines of output.", only, StringComparison.Ordinal);
+        Assert.Contains($"line {flood}", only, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Windows' default 15.6 ms timer does not fire early, so a 25 ms wait is measured at 31
+    /// and the 50 ms this used to ask for was measured at 62 -- a quarter of the whole delay
+    /// between a program printing and a reader speaking, invisible in the source. The
+    /// resolution is raised only while a flush is pending, and must come back down: holding
+    /// it keeps the scheduler awake for a terminal that is saying nothing.
+    /// </summary>
+    [Fact]
+    public async Task TheClockIsHeldFineOnlyWhileOutputIsWaitingToBeSpoken()
+    {
+        var (announcer, collected) = Make(idleMs: 400, maxMs: 2000);
+        using var _ = announcer;
+
+        int before = SpeechTimerResolution.Holders;
+
+        announcer.Enqueue(["something to say"]);
+        Assert.True(
+            SpeechTimerResolution.Holders > before,
+            "A pending flush should hold the clock to a millisecond.");
+
+        await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(before, SpeechTimerResolution.Holders);
+    }
+
+    /// <summary>Dropping a batch releases the clock as surely as speaking it does.</summary>
+    [Fact]
+    public void DiscardingAWaitingBatchGivesTheClockBack()
+    {
+        var (announcer, _) = Make(idleMs: 2000, maxMs: 4000);
+        using var __ = announcer;
+
+        int before = SpeechTimerResolution.Holders;
+        announcer.Enqueue(["a line nobody will hear"]);
+        Assert.True(SpeechTimerResolution.Holders > before);
+
+        announcer.DiscardPending();
+        Assert.Equal(before, SpeechTimerResolution.Holders);
+    }
+
+    private static (Announcer Announcer, Collector Collected) Make(int idleMs = 25, int maxMs = 250)
     {
         var collected = new Collector();
         var announcer = new Announcer(new NullScreenReader())
@@ -347,6 +441,143 @@ public class AnnouncerTests
         announcer.Interject("your health is low");
 
         Assert.Equal(["your health is low"], spoken);
+    }
+
+    /// <summary>A reader that counts what was asked of it, so the tests can see a cancel.</summary>
+    private sealed class CountingScreenReader : IScreenReader
+    {
+        public int Silences;
+        public string Name => "counting";
+        public bool IsRunning => true;
+        public bool Speak(string text, SpeechPriority priority = SpeechPriority.Normal) => true;
+        public bool Braille(string text) => true;
+        public bool Silence() { Interlocked.Increment(ref Silences); return true; }
+    }
+
+    /// <summary>
+    /// The reported bug: with a program printing steadily, speech ran further and further
+    /// behind it -- still reading the start of a build after it had finished. Neither reader
+    /// discards queued speech to make room, so every batch spoken during a flood is one more
+    /// on a queue that only grows.
+    /// </summary>
+    [Fact]
+    public async Task AFloodingTerminalIsHeardAsItIsNowRatherThanAsABacklog()
+    {
+        var reader = new CountingScreenReader();
+        var collected = new Collector();
+        using var announcer = new Announcer(reader)
+        {
+            Sink = collected.Take,
+            IdleWindow = TimeSpan.FromMilliseconds(15),
+            MaxWindow = TimeSpan.FromMilliseconds(50),
+            FloodAfter = TimeSpan.FromMilliseconds(100),
+            FloodWindow = TimeSpan.FromMilliseconds(200),
+        };
+
+        // A program printing steadily for well past the point speech could keep up.
+        for (int i = 0; i < 80; i++)
+        {
+            announcer.Enqueue([$"building object {i}"]);
+            await Task.Delay(10);
+        }
+        await Task.Delay(300);
+
+        Assert.True(reader.Silences > 0, "A flood should drop the backlog rather than queue behind it.");
+
+        // The last thing printed is in the last thing said: the listener is current, not behind.
+        string last = collected.Spoken[^1];
+        Assert.Contains("building object 79", last, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A flood is spoken at a cadence worth listening to. At the ordinary cap it would be
+    /// several utterances a second, each cancelled by the next before a word of it was out.
+    /// </summary>
+    [Fact]
+    public async Task AFloodIsNotSpokenFasterThanItCanBeHeard()
+    {
+        var collected = new Collector();
+        using var announcer = new Announcer(new CountingScreenReader())
+        {
+            Sink = collected.Take,
+            IdleWindow = TimeSpan.FromMilliseconds(15),
+            MaxWindow = TimeSpan.FromMilliseconds(50),
+            FloodAfter = TimeSpan.FromMilliseconds(100),
+            FloodWindow = TimeSpan.FromMilliseconds(250),
+        };
+
+        for (int i = 0; i < 100; i++)
+        {
+            announcer.Enqueue([$"line {i}"]);
+            await Task.Delay(10);
+        }
+        await Task.Delay(400);
+
+        // A second of flooding at the 50 ms cap would be twenty utterances; at the flood
+        // cadence it is a handful.
+        Assert.InRange(collected.Spoken.Count, 1, 10);
+    }
+
+    /// <summary>
+    /// An ordinary command is not a flood and keeps every word. Nothing is cancelled, so a
+    /// line spoken just before it -- a trigger, a prompt -- is not cut off either.
+    /// </summary>
+    [Fact]
+    public async Task AnOrdinaryCommandNeverCancelsAnything()
+    {
+        var reader = new CountingScreenReader();
+        var collected = new Collector();
+        using var announcer = new Announcer(reader)
+        {
+            Sink = collected.Take,
+            IdleWindow = TimeSpan.FromMilliseconds(20),
+            MaxWindow = TimeSpan.FromMilliseconds(250),
+            FloodAfter = TimeSpan.FromMilliseconds(1000),
+        };
+
+        announcer.Enqueue(["'d' is not recognized as an internal or external command,"]);
+        announcer.Enqueue(["operable program or batch file."]);
+        await collected.First.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(100);
+
+        Assert.Equal(0, reader.Silences);
+        Assert.Contains("not recognized", string.Join(Environment.NewLine, collected.Spoken), StringComparison.Ordinal);
+        Assert.Contains("operable program", string.Join(Environment.NewLine, collected.Spoken), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// When the flood stops, the tail is spoken at once rather than after another flood-length
+    /// wait. The end of a build is the part worth hearing.
+    /// </summary>
+    [Fact]
+    public async Task TheEndOfAFloodIsSpokenPromptly()
+    {
+        var collected = new Collector();
+        using var announcer = new Announcer(new CountingScreenReader())
+        {
+            Sink = collected.Take,
+            IdleWindow = TimeSpan.FromMilliseconds(20),
+            MaxWindow = TimeSpan.FromMilliseconds(50),
+            FloodAfter = TimeSpan.FromMilliseconds(100),
+            FloodWindow = TimeSpan.FromSeconds(5),
+        };
+
+        for (int i = 0; i < 40; i++)
+        {
+            announcer.Enqueue([$"line {i}"]);
+            await Task.Delay(10);
+        }
+
+        // Output stops. The idle window, not the five-second flood cap, decides.
+        var clock = Stopwatch.StartNew();
+        int before = collected.Spoken.Count;
+        while (collected.Spoken.Count == before && clock.ElapsedMilliseconds < 2000)
+            await Task.Delay(5);
+        clock.Stop();
+
+        Assert.True(clock.ElapsedMilliseconds < 500,
+            $"The tail waited {clock.ElapsedMilliseconds} ms after output stopped.");
+        Assert.Contains("line 39", string.Join(Environment.NewLine, collected.Spoken), StringComparison.Ordinal);
     }
 
     private sealed class NullScreenReader : IScreenReader

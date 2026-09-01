@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using BlindTerm.App;
 using BlindTerm.Core;
 using BlindTerm.Core.Net;
@@ -12,6 +13,64 @@ public class TerminalHostTests
     private sealed class ImmediateContext : SynchronizationContext
     {
         public override void Post(SendOrPostCallback callback, object? state) => callback(state);
+    }
+
+    private sealed class QueuedContext : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback, object? State)> _work = new();
+        public int Posts { get; private set; }
+
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            Posts++;
+            _work.Enqueue((callback, state));
+        }
+
+        public void RunNext()
+        {
+            var work = _work.Dequeue();
+            work.Callback(work.State);
+        }
+    }
+
+    [Fact]
+    public void RapidUpdatesShareOneUiPostWithoutLosingTheirOrder()
+    {
+        var context = new QueuedContext();
+        using var host = new TerminalHost(80, 25, context);
+        var seen = new List<string>();
+        host.Updated += update => seen.AddRange(update.NewLines);
+
+        host.AppendExternal(["first"]);
+        host.AppendExternal(["second"]);
+
+        Assert.Equal(1, context.Posts);
+        Assert.Empty(seen);
+
+        context.RunNext();
+
+        Assert.Equal(["first", "second"], seen);
+        Assert.Equal(1, context.Posts);
+    }
+
+    [Fact]
+    public void RapidLineOutputBecomesOneUiBatchWithoutLosingLines()
+    {
+        var context = new QueuedContext();
+        using var host = new TerminalHost(80, 25, context);
+        var batches = new List<TerminalUpdate>();
+        host.Updated += batches.Add;
+
+        host.Core.Feed(Encoding.UTF8.GetBytes("first\r\n"));
+        host.Core.Feed(Encoding.UTF8.GetBytes("second\r\n"));
+
+        Assert.Equal(1, context.Posts);
+        Assert.Empty(batches);
+
+        context.RunNext();
+
+        TerminalUpdate batch = Assert.Single(batches);
+        Assert.Equal(["first", "second"], batch.NewLines);
     }
 
     [Fact]

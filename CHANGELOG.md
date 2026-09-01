@@ -4,6 +4,47 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.9 - 2026-08-31
+
+- Speak output about three times sooner after a command finishes. The wait between a program
+  printing and a screen reader saying it was measured at 132 ms and is now 42 ms. Two things
+  were behind it. The pause after output stops was written as 50 ms but took 62: Windows runs
+  its timers at 15.6 ms by default and a wait never ends early, so every number here was
+  quietly rounded up. BlindTerm now holds the clock to a millisecond while output is waiting
+  to be spoken, and lets it go again afterwards rather than keeping the machine awake for a
+  terminal that is saying nothing. The pause itself is also shorter, because the reason it was
+  long no longer held: streamed output **queues** in both NVDA and JAWS rather than cutting
+  off what they were saying, so waiting to gather a burst was never what kept a line from
+  being talked over.
+- Stop making every Return wait a quarter of a second while a program is running. The pause
+  that lets Codex tell a typed line from a pasted one was being charged to every child
+  process, so running anything at all -- a nested `cmd`, an `ssh` session, a Python prompt --
+  put 250 ms in front of every command for as long as it was open. It now applies only when
+  one of the agent CLIs is actually reading the line, or when Windows handed over a console
+  whose program BlindTerm cannot identify. A line shorter than three characters never waits
+  at all: no composer calls two characters a paste, so a bare Return or a one-key answer had
+  nothing to wait for.
+- Read an ordinary command's output instead of describing it. Any batch over thirty lines was
+  replaced with "41 lines of output. Last 30:", which a directory listing, a git log or a
+  short test run trips easily. The threshold is now high enough that ordinary commands are
+  read whole, and a genuine flood is still summarised with its tail.
+- Keep up with a program that floods the terminal. Speech ran further and further behind a
+  steady printer -- still reading the start of a build after it had finished -- because
+  neither reader discards queued speech to make room: a higher priority interrupts and then
+  the backlog resumes. Once output has been arriving for a second, BlindTerm now drops what
+  is queued and says what is being printed now, at a cadence slow enough to be worth hearing.
+  The end of a flood is still spoken promptly, and everything remains in the transcript to
+  review.
+- Count a shell's children with a Windows job object instead of enumerating every process on
+  the machine. Deciding who a keystroke belongs to no longer walks the whole process list on
+  the window thread.
+- Stop copying the entire transcript out of the output control to find where its last line
+  starts. That cost grew with the length of the session, on every terminal update; it is now
+  a constant-time question asked of the native control in place.
+- Coalesce rapid repaints into one output-control update, skip redrawing a full-screen view
+  whose rows have not changed, and return early from line news and trigger matching when a
+  batch changed nothing.
+
 ## v0.7.8 - 2026-08-31
 
 - Speak nothing from a background window, triggers and the bell included. Speech is now

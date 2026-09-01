@@ -62,10 +62,10 @@ public sealed class MainForm : Form
     // echoed back, then the completion replacing its last word. Reading the first piece would
     // announce half a command; this waits for the redrawing to stop.
     private readonly System.Windows.Forms.Timer _completionEchoTimer = new() { Interval = 120 };
-    // Streaming TUIs can repaint the same viewport dozens of times in one scheduler slice.
-    // Collapse those changes into one native edit so word wrapping and accessibility events
-    // do not keep the UI thread -- and therefore NVDA -- continuously busy.
-    private readonly System.Windows.Forms.Timer _transcriptMirrorTimer = new() { Interval = 40 };
+    // Streaming output can change both the transcript and its live final line dozens of times
+    // in one scheduler slice. Collapse those changes into one native edit and one label update
+    // so layout and accessibility events do not keep the UI thread -- and NVDA -- busy.
+    private readonly System.Windows.Forms.Timer _transcriptMirrorTimer = new() { Interval = 16 };
     private readonly System.Windows.Forms.Timer _updateTimer = new();
 
     private readonly TerminalHost _host;
@@ -82,6 +82,7 @@ public sealed class MainForm : Form
     /// <summary>First transcript line whose pending UI mirror may differ.</summary>
     private int? _mirrorFromLine;
     private bool _mirrorFollow;
+    private string? _pendingLiveText;
 
     private MspPlayer? _sounds;
     private SoundDownloader? _soundDownloads;
@@ -478,8 +479,8 @@ public sealed class MainForm : Form
         // text would blank the current line and drop password mode halfway through a login.
         if (!update.External)
         {
-            if (_live.Text != update.LiveText) _live.Text = update.LiveText;
-            CommandAccessibility.Apply(_command, update.LiveText);
+            _pendingLiveText = update.LiveText;
+            if (!_transcriptMirrorTimer.Enabled) _transcriptMirrorTimer.Start();
             if (_completionEcho.Pending)
             {
                 _completionEchoTimer.Stop();
@@ -765,8 +766,7 @@ public sealed class MainForm : Form
             // and a person this window is no longer showing.
             _mud.Reset();
             _command.Enabled = true;
-            _live.Text = string.Empty;
-            CommandAccessibility.Apply(_command, string.Empty);
+            SetLiveTextNow(string.Empty);
             KeepFocus();
             return;
         }
@@ -787,30 +787,30 @@ public sealed class MainForm : Form
             _ => $"[Shell exited with code {code}]",
         };
         _host.AppendExternal([message]);
-        _live.Text = message;
+        SetLiveTextNow(message);
         _command.Enabled = false;
         Say(message);
     }
 
     // ---- Mirroring the transcript into the text box ----
 
-    private int LastLineStart
-    {
-        get
-        {
-            string text = _transcript.Text;
-            int end = text.TrimEnd('\r', '\n').Length;
-            int start = text.LastIndexOf('\n', Math.Max(0, end - 1));
-            return start + 1;
-        }
-    }
+    private int LastLineStart => TextBoxScroll.LastContentLineStart(_transcript);
 
     private void SetTranscriptText(string text)
     {
         _transcriptMirrorTimer.Stop();
         _mirrorFromLine = null;
         _mirrorFollow = false;
+        _pendingLiveText = null;
         _transcript.Text = text;
+    }
+
+    private void SetLiveTextNow(string text)
+    {
+        _pendingLiveText = null;
+        if (_live.Text == text) return;
+        _live.Text = text;
+        CommandAccessibility.Apply(_command, text);
     }
 
     private void BeginLatestResponse()
@@ -828,7 +828,9 @@ public sealed class MainForm : Form
         foreach (Transcript.Edit edit in update.Edits) first = Math.Min(first, edit.Line);
 
         _mirrorFromLine = _mirrorFromLine is int pending ? Math.Min(pending, first) : first;
-        _mirrorFollow |= FollowingOutput;
+        // Once known true, it stays true for this pending replacement. Re-querying the native
+        // edit control for every PTY read was measurable work during a large output burst.
+        if (!_mirrorFollow) _mirrorFollow = FollowingOutput;
         if (!_transcriptMirrorTimer.Enabled) _transcriptMirrorTimer.Start();
     }
 
@@ -843,7 +845,14 @@ public sealed class MainForm : Form
     private void FlushTranscriptMirror()
     {
         _transcriptMirrorTimer.Stop();
-        if (_mirrorFromLine is not int first || ScreenMode) return;
+        if (ScreenMode)
+        {
+            _pendingLiveText = null;
+            return;
+        }
+
+        if (_pendingLiveText is string liveText) SetLiveTextNow(liveText);
+        if (_mirrorFromLine is not int first) return;
 
         first = Math.Clamp(first, 0, _host.Transcript.Count);
         bool follow = _mirrorFollow;
@@ -1646,7 +1655,7 @@ public sealed class MainForm : Form
             if (completedLineHasText) _foregroundProgram.SubmittedUnknownLine();
             // The pending text and every character typed after completion already reached the
             // program. Only Return remains; resending the edit control would duplicate text.
-            _host.SendLine(string.Empty);
+            _host.SendLine(string.Empty, _agentLineProgram);
             _command.Clear();
             return;
         }
@@ -1680,7 +1689,10 @@ public sealed class MainForm : Form
             : AccessibleAgentCommand.Adapt(text);
         _foregroundProgram.Submitted(text);
         _news.SuppressCommandEcho(accessible);
-        _host.SendLine(accessible);
+        // Only an agent CLI's composer is worth keeping the Return waiting for. A shell that
+        // has merely started a child -- a nested cmd, ssh, a Python prompt -- reads whatever
+        // arrives, and made every Return wait a quarter of a second for nothing.
+        _host.SendLine(accessible, _agentLineProgram);
         if (!secret) RememberHistory(text);
         _command.Clear();
     }

@@ -19,6 +19,8 @@ internal static class NativeMethods
     internal const int STARTF_USESTDHANDLES = 0x00000100;
     internal const int EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     internal const int CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+    internal const int CREATE_SUSPENDED = 0x00000004;
+    internal const uint RESUME_THREAD_FAILED = 0xFFFFFFFF;
 
     /// <summary>PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE.</summary>
     internal static readonly IntPtr PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = (IntPtr)0x00020016;
@@ -77,6 +79,28 @@ internal static class NativeMethods
         public int bInheritHandle;
     }
 
+    /// <summary>
+    /// The constant-time process counts maintained by a Windows job object. LARGE_INTEGER
+    /// and DWORD map to <see cref="long"/> and <see cref="uint"/> respectively.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+    {
+        public long TotalUserTime;
+        public long TotalKernelTime;
+        public long ThisPeriodTotalUserTime;
+        public long ThisPeriodTotalKernelTime;
+        public uint TotalPageFaultCount;
+        public uint TotalProcesses;
+        public uint ActiveProcesses;
+        public uint TotalTerminatedProcesses;
+    }
+
+    internal enum JOBOBJECTINFOCLASS
+    {
+        JobObjectBasicAccountingInformation = 1,
+    }
+
     // ---- ConPTY ----
 
     [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
@@ -100,6 +124,24 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool CloseHandle(IntPtr hObject);
+
+    // ---- Job objects ----
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    internal static extern IntPtr CreateJobObjectW(IntPtr lpJobAttributes, string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool QueryInformationJobObject(
+        IntPtr hJob,
+        JOBOBJECTINFOCLASS jobObjectInformationClass,
+        out JOBOBJECT_BASIC_ACCOUNTING_INFORMATION lpJobObjectInformation,
+        int cbJobObjectInformationLength,
+        IntPtr lpReturnLength);
 
     // ---- Process creation ----
 
@@ -137,6 +179,9 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern uint ResumeThread(IntPtr hThread);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

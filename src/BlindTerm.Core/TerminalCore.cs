@@ -20,6 +20,13 @@ public sealed class TerminalCore
     /// <summary>A batch of changes is ready.</summary>
     public event Action<TerminalUpdate>? Updated;
 
+    private bool _publishedAlternateScreen;
+    private string[]? _publishedScreen;
+    private int _publishedCursorRow = -1;
+    private int _publishedCursorColumn = -1;
+    private string _publishedLiveText = string.Empty;
+    private int? _publishedLiveLine;
+
     public TerminalCore(int columns = 120, int rows = 30, int scrollback = 100_000)
     {
         Engine = new TerminalEngine(columns, rows, scrollback);
@@ -188,7 +195,37 @@ public sealed class TerminalCore
     public void Publish(bool beforeWipe = false)
     {
         TerminalUpdate update = Builder.Publish(beforeWipe);
-        Updated?.Invoke(update);
+        bool alternate = update.AlternateScreen is not null;
+        bool modeChanged = alternate != _publishedAlternateScreen;
+        bool transcriptChanged = update.NewLines.Count > 0 || update.Edits.Count > 0;
+        bool liveChanged = !alternate
+            && (!string.Equals(update.LiveText, _publishedLiveText, StringComparison.Ordinal)
+                || update.LiveLine != _publishedLiveLine);
+        bool screenChanged = alternate
+            && (_publishedScreen is null
+                || _publishedCursorRow != update.CursorRow
+                || _publishedCursorColumn != update.CursorColumn
+                || !_publishedScreen.AsSpan().SequenceEqual(update.AlternateScreen));
+
+        _publishedAlternateScreen = alternate;
+        if (alternate)
+        {
+            _publishedScreen = update.AlternateScreen;
+            _publishedCursorRow = update.CursorRow;
+            _publishedCursorColumn = update.CursorColumn;
+        }
+        else
+        {
+            _publishedScreen = null;
+            _publishedLiveText = update.LiveText;
+            _publishedLiveLine = update.LiveLine;
+        }
+
+        // Styling, redundant cursor addressing and identical repaints carry no information
+        // for the transcript, the visible surface, triggers or speech. Keeping them off the
+        // UI queue is what lets keyboard and accessibility messages stay at the front of it.
+        if (modeChanged || transcriptChanged || liveChanged || screenChanged)
+            Updated?.Invoke(update);
     }
 
     /// <summary>

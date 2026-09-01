@@ -9,24 +9,24 @@ namespace BlindTerm.App;
 /// how the program is driven -- its model picker moves with Up and Down, its effort level with
 /// Left and Right -- and a terminal that swallows them leaves the program unusable.
 ///
-/// The answer comes from the process list rather than from the shell's own shell-integration
-/// markers. A stock PowerShell 7 prompt emits no OSC 133 markers at all, so a session that
-/// waited for a completed-command marker would treat the very first command as still running
-/// forever after. A child process is a fact every shell reports identically.
+/// The answer comes from the session's Windows job rather than from the shell's own
+/// shell-integration markers. A stock PowerShell 7 prompt emits no OSC 133 markers at all, so
+/// a session that waited for a completed-command marker would treat the very first command as
+/// still running forever after. A child process is a fact every shell reports identically.
 /// </summary>
 internal sealed class ForegroundProgramState
 {
     /// <summary>
     /// How long after a submitted command line the program is assumed to be running before
-    /// the process list is believed. Creating a process takes a moment, and without this the
+    /// the process count is believed. Creating a process takes a moment, and without this the
     /// first keys after "codex" would be delivered to the shell that is busy starting it.
     /// </summary>
     public static readonly TimeSpan StartupGrace = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// How long a process-list answer is reused. The probe runs on the UI thread from a key
-    /// press, so it is kept off the path of a held-down arrow key while staying current
-    /// enough that the shell prompt is not still "busy" once a program has exited.
+    /// How long a process-count answer is reused. The probe runs on the UI thread from a key
+    /// press, so it is kept off the path of a held-down arrow key while staying current enough
+    /// that the shell prompt is not still "busy" once a program has exited.
     /// </summary>
     private static readonly TimeSpan ProbeInterval = TimeSpan.FromMilliseconds(150);
 
@@ -52,8 +52,10 @@ internal sealed class ForegroundProgramState
         get
         {
             if (_exited) return false;
-            if (Probe()) return true;
-            return _submittedAt is TimeSpan at && _now() - at < StartupGrace;
+            // During the grace period the answer is unconditionally true, so consulting the
+            // operating system first only adds work to the latency-sensitive key path.
+            if (_submittedAt is TimeSpan at && _now() - at < StartupGrace) return true;
+            return Probe();
         }
     }
 

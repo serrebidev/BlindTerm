@@ -5,11 +5,19 @@ namespace BlindTerm.Core.Speech;
 
 /// <summary>
 /// Sends output to the screen reader, batched so that a burst of lines becomes one utterance
-/// instead of dozens of interruptions.
+/// instead of hundreds of tiny ones.
 ///
-/// Batching matters more here than it did on the Mac: both NVDA and JAWS drop whatever they
-/// were saying when a new utterance arrives, so a compiler writing forty lines in a tenth of
-/// a second would otherwise be forty interruptions and one audible line -- the last one.
+/// Batching is not what stops output cutting itself off. Streamed lines go out at
+/// <see cref="SpeechPriority.Normal"/>, which queues behind whatever is speaking in both
+/// readers -- NVDA through speakSsml's priority, JAWS through SayString's interrupt flag --
+/// so forty lines arriving in a tenth of a second are forty queued utterances, not one
+/// audible line. Only <see cref="SpeechPriority.Next"/> and above interrupt.
+///
+/// What batching is actually for is keeping the reader's queue and the listener's patience
+/// in proportion to the output: one utterance per burst rather than one per pty read, and a
+/// summary rather than the whole of a build log. Because it is not protecting against
+/// interruption, the wait before speaking can be short, and it should be -- it is paid in
+/// full on every command a person runs.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class Announcer : IDisposable
@@ -26,6 +34,17 @@ public sealed class Announcer : IDisposable
     private long _batchStarted;
     private bool _disposed;
 
+    /// <summary>Whether this announcer is holding Windows to a one-millisecond timer.</summary>
+    private bool _holdingTimerResolution;
+
+    /// <summary>
+    /// When the current unbroken run of output began, and whether it has been going on long
+    /// enough to have outrun speech. See <see cref="FloodAfter"/>.
+    /// </summary>
+    private long _streamingSince;
+    private long _lastEnqueued;
+    private bool _flooding;
+
     /// <summary>
     /// How long after output stops before it is spoken.
     ///
@@ -33,8 +52,14 @@ public sealed class Announcer : IDisposable
     /// answers in one go, output stops, and speech starts. A fixed window instead of this put
     /// a quarter of a second between every keystroke and its answer, which is small enough to
     /// look reasonable written down and large enough to feel broken to use.
+    ///
+    /// It only has to outlast the gaps inside one burst, because a batch that splits in two
+    /// is heard as the same words in the same order -- streamed speech queues rather than
+    /// interrupting. A pseudo console hands over a single command's output in several reads
+    /// a handful of milliseconds apart, and this covers that without waiting on the listener's
+    /// behalf for output that has already finished arriving.
     /// </summary>
-    public TimeSpan IdleWindow { get; set; } = TimeSpan.FromMilliseconds(50);
+    public TimeSpan IdleWindow { get; set; } = TimeSpan.FromMilliseconds(25);
 
     /// <summary>
     /// The longest output can keep arriving before it is spoken anyway.
@@ -45,10 +70,35 @@ public sealed class Announcer : IDisposable
     public TimeSpan MaxWindow { get; set; } = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
+    /// How long output has to keep arriving before the terminal counts as flooding.
+    ///
+    /// Past this, the program is printing faster than anyone can be read to, and every batch
+    /// spoken is one more on a queue that will still be draining long after the program has
+    /// finished. Neither reader discards queued speech to make room -- a higher priority
+    /// interrupts, then the backlog resumes -- so the queue only ever grows.
+    /// </summary>
+    public TimeSpan FloodAfter { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// How often a flooding terminal is spoken.
+    ///
+    /// Long enough for each report to be worth hearing. At the ordinary cap a flood would be
+    /// four utterances a second, each of them dropped on the floor by the next -- which is
+    /// not a description of anything, just noise.
+    /// </summary>
+    public TimeSpan FloodWindow { get; set; } = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>
     /// Past this many lines in one batch, the text is summarised rather than read out whole.
     /// Nobody wants a thousand-line build read to them, and the tail is the useful part.
+    ///
+    /// High enough that ordinary commands are read rather than described. Thirty lines is
+    /// less than a screenful -- a directory listing, a git log, a short test run -- and
+    /// hearing "41 lines of output" instead of the output is the tool declining to do the one
+    /// thing it is for. A batch is at most <see cref="MaxWindow"/> of output, so this bites
+    /// only when a program is genuinely flooding the terminal.
     /// </summary>
-    public int MaxLinesPerAnnouncement { get; set; } = 30;
+    public int MaxLinesPerAnnouncement { get; set; } = 100;
 
     /// <summary>When off, streamed output is silent. Bells and explicit reads still speak.</summary>
     public bool Enabled { get; set; } = true;
@@ -112,20 +162,34 @@ public sealed class Announcer : IDisposable
         {
             if (_disposed) return;
 
+            long now = Stopwatch.GetTimestamp();
+
+            // A gap longer than the wait for output to stop means the last run finished and
+            // was spoken. What arrives now is a new run, however long the previous one was.
+            if (_lastEnqueued == 0 || Stopwatch.GetElapsedTime(_lastEnqueued) > IdleWindow)
+            {
+                _streamingSince = now;
+                _flooding = false;
+            }
+            _lastEnqueued = now;
+            if (!_flooding && Stopwatch.GetElapsedTime(_streamingSince) >= FloodAfter)
+                _flooding = true;
+
             bool starting = _pending.Count == 0;
             _pending.AddRange(useful);
-            if (starting) _batchStarted = Stopwatch.GetTimestamp();
+            if (starting) _batchStarted = now;
 
             // Wait for output to stop -- but never past the cap measured from the first line,
             // so that a burst still becomes one utterance rather than an unbroken postponement.
+            // A flood is capped further out, because its batches are spoken over the top of
+            // each other and there is no point producing them faster than they can be heard.
             TimeSpan elapsed = Stopwatch.GetElapsedTime(_batchStarted);
             TimeSpan delay = IdleWindow;
-            TimeSpan remaining = MaxWindow - elapsed;
+            TimeSpan remaining = (_flooding ? FloodWindow : MaxWindow) - elapsed;
             if (remaining < delay) delay = remaining;
             if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
 
-            if (_flushTimer is null) _flushTimer = new Timer(_ => Flush(), null, delay, Timeout.InfiniteTimeSpan);
-            else _flushTimer.Change(delay, Timeout.InfiniteTimeSpan);
+            ArmFlushTimer(delay);
         }
     }
 
@@ -180,8 +244,7 @@ public sealed class Announcer : IDisposable
         {
             if (_disposed) return;
             _urgent.Add(text.Trim());
-            _flushTimer?.Dispose();
-            _flushTimer = null;
+            DisarmFlushTimer();
         }
 
         Flush(SpeechPriority.Now);
@@ -203,8 +266,7 @@ public sealed class Announcer : IDisposable
             if (_pending.Count == 0) return;
             _pending.Clear();
             if (_urgent.Count > 0) return;
-            _flushTimer?.Dispose();
-            _flushTimer = null;
+            DisarmFlushTimer();
         }
     }
 
@@ -219,19 +281,57 @@ public sealed class Announcer : IDisposable
         {
             _pending.Clear();
             _urgent.Clear();
-            _flushTimer?.Dispose();
-            _flushTimer = null;
+            DisarmFlushTimer();
         }
+    }
+
+    /// <summary>
+    /// Sets the flush timer, holding the system clock to a millisecond while it runs.
+    ///
+    /// Without the hold, Windows' 15.6 ms default resolution turns every wait here into the
+    /// next multiple of 15.6 -- the delay the source says is 25 ms is measured at 31, and the
+    /// 50 ms it used to say was measured at 62. Called under <see cref="_gate"/>.
+    /// </summary>
+    private void ArmFlushTimer(TimeSpan delay)
+    {
+        if (!_holdingTimerResolution)
+        {
+            SpeechTimerResolution.Acquire();
+            _holdingTimerResolution = true;
+        }
+
+        if (_flushTimer is null) _flushTimer = new Timer(_ => Flush(), null, delay, Timeout.InfiniteTimeSpan);
+        else _flushTimer.Change(delay, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>
+    /// Drops the flush timer and the clock resolution it was holding. Called under
+    /// <see cref="_gate"/>, and safe when there is no timer to drop.
+    /// </summary>
+    private void DisarmFlushTimer()
+    {
+        _flushTimer?.Dispose();
+        _flushTimer = null;
+
+        if (!_holdingTimerResolution) return;
+        _holdingTimerResolution = false;
+        SpeechTimerResolution.Release();
     }
 
     private void Flush(SpeechPriority priority = SpeechPriority.Normal)
     {
         string text;
+        bool dropBacklog;
         lock (_gate)
         {
-            _flushTimer?.Dispose();
-            _flushTimer = null;
+            DisarmFlushTimer();
             if (_disposed || _pending.Count + _urgent.Count == 0) return;
+
+            // While the terminal is flooding, what is already queued is out of date: it
+            // describes output the program has since printed past. Speaking this batch behind
+            // it would put the listener further behind still, so the queue goes and this
+            // batch -- the current one -- is what gets said.
+            dropBacklog = _flooding && priority == SpeechPriority.Normal;
 
             string body;
             if (_pending.Count > MaxLinesPerAnnouncement)
@@ -254,6 +354,9 @@ public sealed class Announcer : IDisposable
             _urgent.Clear();
         }
 
+        // Outside the lock: cancelling speech is a call into the reader, and the reader must
+        // never be called with this held.
+        if (dropBacklog) _reader.Silence();
         Speak(text, priority);
     }
 
@@ -268,8 +371,7 @@ public sealed class Announcer : IDisposable
         lock (_gate)
         {
             _disposed = true;
-            _flushTimer?.Dispose();
-            _flushTimer = null;
+            DisarmFlushTimer();
             _pending.Clear();
             _urgent.Clear();
         }

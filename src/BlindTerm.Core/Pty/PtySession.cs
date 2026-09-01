@@ -30,6 +30,7 @@ public sealed class PtySession : ITerminalSession
     private FileStream? _reader;
     private IntPtr _process = IntPtr.Zero;
     private IntPtr _thread = IntPtr.Zero;
+    private IntPtr _job = IntPtr.Zero;
     private IntPtr _attributes = IntPtr.Zero;
 
     /// <summary>
@@ -75,20 +76,53 @@ public sealed class PtySession : ITerminalSession
     /// <summary>Whether this session arrived from Windows rather than being started here.</summary>
     public bool IsHandoff => _handoff is not null;
 
+    /// <summary>Whether Windows accepted the constant-time process-count job.</summary>
+    internal bool UsesProcessJob => _job != IntPtr.Zero;
+
+    /// <summary>The job's current active-process count, exposed internally for diagnostics.</summary>
+    internal uint? ActiveJobProcesses
+    {
+        get
+        {
+            IntPtr job = _job;
+            return job != IntPtr.Zero && QueryInformationJobObject(
+                job,
+                JOBOBJECTINFOCLASS.JobObjectBasicAccountingInformation,
+                out JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting,
+                Marshal.SizeOf<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>(),
+                IntPtr.Zero)
+                ? accounting.ActiveProcesses
+                : null;
+        }
+    }
+
     public TerminalSessionKind Kind
         => _handoff is not null ? TerminalSessionKind.Handoff : _kind;
 
     /// <summary>
     /// Whether something other than an idle shell prompt is reading what is typed.
     ///
-    /// A shell that has started a program is not the one reading the keyboard any more, and a
-    /// process either exists or it does not. The alternative -- waiting for the shell's OSC 133
-    /// completed-command marker -- only works when the shell emits them, and a stock PowerShell
-    /// 7 prompt emits none. A handed-over console has no shell in front of it at all: the
-    /// program Windows started is the whole session.
+    /// A shell that has started a program is not the one reading the keyboard any more. A job
+    /// object gives us its active-process count directly, without enumerating every process in
+    /// Windows on the UI thread. The process-tree scan is retained only as a compatibility
+    /// fallback if Windows cannot put the shell in our nested job. Waiting for the shell's OSC
+    /// 133 markers is not a substitute: a stock PowerShell 7 prompt emits none. A handed-over
+    /// console has no shell in front of it at all: the program Windows started is the session.
     /// </summary>
     public bool ProgramOwnsInput
-        => _handoff is not null || _alwaysOwnsInput || ProcessTree.HasChild(ProcessId);
+        => _handoff is not null || _alwaysOwnsInput || LocallyStartedProgramOwnsInput();
+
+    private bool LocallyStartedProgramOwnsInput()
+    {
+        if (ActiveJobProcesses is uint activeProcesses)
+        {
+            // The shell itself is the first active process. Anything beyond it is a program
+            // the shell started, including descendants inherited into this job.
+            return activeProcesses > 1;
+        }
+
+        return ProcessTree.HasChild(ProcessId);
+    }
 
     /// <summary>A pseudo console's line discipline turns the Return into a new line itself.</summary>
     public string LineTerminator => "\r";
@@ -256,11 +290,21 @@ public sealed class PtySession : ITerminalSession
         Trace("attribute list ready");
 
         IntPtr block = IntPtr.Zero;
+        // Start the shell suspended so it cannot launch a descendant before it has inherited
+        // our job. BlindTerm can itself be in another job; Windows 8 and later support this
+        // nested assignment. If creation or assignment is refused, the existing process-tree
+        // fallback remains correct, only less efficient.
+        IntPtr candidateJob = _alwaysOwnsInput
+            ? IntPtr.Zero
+            : CreateJobObjectW(IntPtr.Zero, null);
+        bool keepJob = false;
+        bool childResumed = candidateJob == IntPtr.Zero;
         try
         {
             block = BuildEnvironmentBlock(environment);
             int flags = EXTENDED_STARTUPINFO_PRESENT
-                        | (block == IntPtr.Zero ? 0 : CREATE_UNICODE_ENVIRONMENT);
+                        | (block == IntPtr.Zero ? 0 : CREATE_UNICODE_ENVIRONMENT)
+                        | (candidateJob == IntPtr.Zero ? 0 : CREATE_SUSPENDED);
 
             if (!CreateProcessW(
                     null, commandLine, IntPtr.Zero, IntPtr.Zero, false,
@@ -278,10 +322,39 @@ public sealed class PtySession : ITerminalSession
             _process = info.hProcess;
             _thread = info.hThread;
             ProcessId = info.dwProcessId;
+
+            if (candidateJob != IntPtr.Zero)
+            {
+                bool assigned = AssignProcessToJobObject(candidateJob, _process);
+                int assignmentError = assigned ? 0 : Marshal.GetLastWin32Error();
+
+                uint previousSuspendCount = ResumeThread(_thread);
+                childResumed = previousSuspendCount != RESUME_THREAD_FAILED;
+                if (!childResumed)
+                {
+                    int resumeError = Marshal.GetLastWin32Error();
+                    TerminateProcess(_process, 1);
+                    throw new Win32Exception(resumeError, "ResumeThread failed for the terminal shell.");
+                }
+
+                if (assigned)
+                {
+                    _job = candidateJob;
+                    keepJob = true;
+                    Trace("assigned shell to process-count job");
+                }
+                else
+                {
+                    Trace($"job assignment unavailable (error {assignmentError}); using process-tree fallback");
+                }
+            }
+
             Trace($"created pid={ProcessId} flags=0x{flags:x} envBlock={(block == IntPtr.Zero ? "inherited" : "custom")}");
         }
         finally
         {
+            if (!childResumed && _process != IntPtr.Zero) TerminateProcess(_process, 1);
+            if (candidateJob != IntPtr.Zero && !keepJob) CloseHandle(candidateJob);
             if (block != IntPtr.Zero) Marshal.FreeHGlobal(block);
         }
     }
@@ -448,6 +521,7 @@ public sealed class PtySession : ITerminalSession
         }
         if (_thread != IntPtr.Zero) { CloseHandle(_thread); _thread = IntPtr.Zero; }
         if (_process != IntPtr.Zero) { CloseHandle(_process); _process = IntPtr.Zero; }
+        if (_job != IntPtr.Zero) { CloseHandle(_job); _job = IntPtr.Zero; }
 
         _stopping.Dispose();
         _writes.Dispose();

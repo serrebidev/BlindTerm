@@ -5,3 +5,10 @@ capture*.raw
 
 # Build output. The ZIP and the installer are release assets, not repository files.
 dist/
+
+# Local web-research results.
+.firecrawl/
+
+# Local scratch: profiling captures, agent workspaces, and stray shell redirects.
+.freebuff/
+.test-tmp/

@@ -141,6 +141,9 @@ public sealed class TriggerEngine
     public TriggerOutcome Run(TerminalUpdate update, TriggerWhere session)
     {
         ArgumentNullException.ThrowIfNull(update);
+        if (!Enabled || _triggers.Count == 0
+            || update.NewLines.Count == 0 && update.Edits.Count == 0)
+            return new TriggerOutcome();
 
         var byLine = new SortedDictionary<int, string>();
         for (int i = 0; i < update.NewLines.Count; i++)

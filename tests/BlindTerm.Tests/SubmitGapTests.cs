@@ -35,4 +35,43 @@ public class SubmitGapTests
         // 60 ms deciding a burst has ended on Windows, then 120 ms of suppression after it.
         Assert.True(SubmitGap.Program > 60 + 120);
     }
+
+    [Fact]
+    public void ALineTooShortToBeReadAsAPasteIsSentAtPromptSpeed()
+    {
+        // No composer calls one or two characters a paste, so nothing suppresses their
+        // Return. A bare Return and a one-key answer were the submissions that waited a
+        // quarter of a second for a heuristic that could never have fired.
+        Assert.Equal(SubmitGap.Prompt, SubmitGap.For(TerminalSessionKind.Shell, true, 0));
+        Assert.Equal(SubmitGap.Prompt, SubmitGap.For(TerminalSessionKind.Shell, true, 1));
+        Assert.Equal(SubmitGap.Prompt, SubmitGap.For(TerminalSessionKind.Shell, true, 2));
+    }
+
+    [Fact]
+    public void ALineLongEnoughToBeReadAsAPasteStillWaitsForItsComposer()
+    {
+        // The regression this must never reintroduce: the line lands in Codex's composer and
+        // the Return adds a newline to it instead of sending it.
+        Assert.Equal(SubmitGap.Program, SubmitGap.For(TerminalSessionKind.Shell, true, 3));
+        Assert.Equal(
+            SubmitGap.Program,
+            SubmitGap.For(TerminalSessionKind.Shell, true, "explain this file".Length));
+    }
+
+    [Fact]
+    public void AProgramWithNoComposerIsNeverWaitedFor()
+    {
+        // A nested cmd, ssh or a Python prompt reads whatever arrives. There is no paste
+        // heuristic to fool, so the wait bought nothing and delayed every Return.
+        Assert.Equal(SubmitGap.Prompt, SubmitGap.For(TerminalSessionKind.Shell, false, 40));
+        Assert.Equal(SubmitGap.Prompt, SubmitGap.For(TerminalSessionKind.Ssh, false, 40));
+    }
+
+    [Fact]
+    public void ThePasteThresholdIsTheStrictestAnyComposerUses()
+    {
+        // Codex's is three characters arriving together; anything below that is safe for all
+        // of them. Raising this past three would start skipping a wait that is needed.
+        Assert.Equal(3, SubmitGap.ShortestPaste);
+    }
 }
