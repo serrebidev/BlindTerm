@@ -6,6 +6,8 @@ A screen-reader-friendly Windows terminal for NVDA and JAWS, built for ordinary 
 
 BlindTerm keeps ordinary output as a readable transcript in a native Windows edit control. NVDA and JAWS can navigate it by line, word, and character, follow it in braille, and use their normal reading commands. When nano, vim, htop, less, or an editor over SSH takes the alternate screen, BlindTerm changes mode: keys go to the program and speech follows the cursor instead of reading every repaint.
 
+**Questions, bugs, or release news?** Join the [SerrebiProjects Telegram group](https://t.me/SerrebiProjects), the fastest place to get help.
+
 ## Features
 
 - Runs Windows shells through ConPTY, with UTF-8 and xterm-compatible terminal behavior.
