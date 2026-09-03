@@ -4,6 +4,19 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.10 - 2026-09-02
+
+- Close a window itself once the program it was opened for has finished cleanly. A console
+  Windows pops up for a one-shot program -- a script, an installer, a build -- stayed open
+  after the run ended, saying "Program exited with code 0" and waiting to be dismissed by
+  hand. The window now says that line and closes itself a moment later, the way the console
+  it stands in for would have. A run that failed still keeps its window, because that is
+  where the error can be heard or read back from, and an unknown exit code or a dropped
+  connection keeps it too. A window somebody is reading is never closed under them: a
+  full-screen view that has not been cleared, or a caret parked back through the
+  transcript, cancels the close. The same applies when a shell window is closed by typing
+  exit, or an SSH window by the connection ending.
+
 ## v0.7.9 - 2026-08-31
 
 - Speak output about three times sooner after a command finishes. The wait between a program

@@ -790,6 +790,44 @@ public sealed class MainForm : Form
         SetLiveTextNow(message);
         _command.Enabled = false;
         Say(message);
+
+        // A console that Windows popped up for one program is over when that program is
+        // over, and so is a window opened for a shell or a connection that has since ended.
+        // A run that finished cleanly leaves nothing such a window can do but sit saying
+        // so, so it closes itself -- like the console it stands in for -- once the exit
+        // line has had a moment to be heard. See ScheduleCloseAfterRunEnded.
+        ScheduleCloseAfterRunEnded(code);
+    }
+
+    /// <summary>
+    /// How long a finished window stays up after its exit line is said before it closes
+    /// itself. Long enough for the announcement to be heard before focus moves on, short
+    /// enough that a dead window is never left sitting.
+    /// </summary>
+    private const int ExitCloseDelayMilliseconds = 1500;
+
+    /// <summary>
+    /// Closes the window itself after a run that ended cleanly.
+    ///
+    /// The close is decided again when the delay fires, not only when it is scheduled: a
+    /// full-screen program's final repaint can still be working its way through, and
+    /// somebody may have parked in the transcript to read in the meantime. Either one
+    /// cancels the close, and the window stays exactly as it would have today.
+    /// </summary>
+    private void ScheduleCloseAfterRunEnded(int? code)
+    {
+        if (!CloseAfterExit.Wanted(_host.Kind, code, FollowingOutput, ScreenMode)) return;
+
+        var timer = new System.Windows.Forms.Timer { Interval = ExitCloseDelayMilliseconds };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            timer.Dispose();
+            if (IsDisposed || Disposing) return;
+            if (!CloseAfterExit.Wanted(_host.Kind, code, FollowingOutput, ScreenMode)) return;
+            Close();
+        };
+        timer.Start();
     }
 
     // ---- Mirroring the transcript into the text box ----
