@@ -351,6 +351,14 @@ internal sealed class MudBrowserForm : Form
             // so beats three empty combo boxes with no explanation.
             _status.Text = "The genre list could not be fetched. " + ex.Message;
         }
+        catch (Exception ex)
+        {
+            // This is awaited from an async void handler, so an exception that escapes ends
+            // the process. A directory address typed without a scheme is the ordinary way
+            // that used to happen: it is not an address, and the request for it is refused
+            // with something that is not a directory failure at all.
+            _status.Text = "The genre list could not be fetched. " + ex.Message;
+        }
     }
 
     /// <summary>
@@ -473,6 +481,15 @@ internal sealed class MudBrowserForm : Form
                 await LoadFilters();
                 Fetch(page: 1, focusResults);
             }
+        }
+        catch (Exception ex)
+        {
+            // An async void method: anything that escapes here is an unhandled exception on
+            // the window thread, which ends the program. The directory's own failures are
+            // handled above; this is for everything else a hand-typed directory address can
+            // make a request do, which must not take the terminal down with it.
+            if (IsDisposed || Disposing) return;
+            _status.Text = "Could not read the directory: " + ex.Message;
         }
         finally
         {

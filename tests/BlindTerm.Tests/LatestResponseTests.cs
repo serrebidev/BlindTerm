@@ -19,7 +19,9 @@ public class LatestResponseTests
         transcript.Append("Exits: north");
 
         Assert.Equal(2, response.FirstLine);
-        Assert.Equal(transcript.OffsetOfLine(2), response.StartOffset(transcript));
+        // The caret goes to the start of the response in the edit control holding the mirror,
+        // which counts a CRLF on every line, rather than to the transcript's own offset for it.
+        Assert.Equal(transcript.CaretOffset(2), response.StartOffset(transcript));
         Assert.Equal(new[] { "Apartment", "Exits: north" }, response.Lines(transcript));
     }
 
@@ -32,7 +34,7 @@ public class LatestResponseTests
 
         response.Begin(transcript);
 
-        Assert.Equal(transcript.Length, response.StartOffset(transcript));
+        Assert.Equal(transcript.CaretLength, response.StartOffset(transcript));
     }
 
     [Fact]

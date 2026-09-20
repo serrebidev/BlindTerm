@@ -476,6 +476,19 @@ public class TelnetProtocolTests
     }
 
     [Fact]
+    public void AgreeingToMsspAsksForTheReportRatherThanWaitingForIt()
+    {
+        // MSSP is a request, not a subscription. Agreeing to it and waiting is waiting for a
+        // report that is never sent, which is how Read, then Server information came to say
+        // that a host with a whole description ready had said nothing about itself.
+        var protocol = New();
+
+        var (_, reply) = Feed(protocol, Iac, Will, 70);
+
+        Assert.Equal<byte[]>([Iac, Do, 70, Iac, Sb, 70, 1, Iac, Se], reply);
+    }
+
+    [Fact]
     public void AWholeMudLoginArrivesAsNothingButItsText()
     {
         var protocol = New();

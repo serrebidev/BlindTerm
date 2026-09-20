@@ -115,6 +115,26 @@ public class MudSourcesTests
     }
 
     [Fact]
+    public async Task ALinkThatIsNotALinkDoesNotLoseTheDirectory()
+    {
+        // This is the site's own page answering in a shape it never documented, and it answers
+        // with whatever it likes: a link whose values are not words is a link to ignore, not a
+        // reason to throw out of the reader and lose every game on the page with it.
+        const string page = """
+        {"items":[{"name":"ChatMUD","short_name":"chatmud","tagline":"A modern social MOO.",
+          "connections":[{"type":"telnet","host":"chatmud.com","port":7777}]}],
+         "links":[{"rel":5,"href":"https://grapevine.example/games?page=2"},
+                  {"rel":"next","href":5}]}
+        """;
+        using var directory = new GrapevineDirectory("https://grapevine.example",
+            new HttpClient(new Once(page)));
+
+        MudGame game = Assert.Single(await directory.GamesAsync());
+
+        Assert.Equal("ChatMUD", game.Name);
+    }
+
+    [Fact]
     public void TheBigListGivesUpItsAddressesAndItsConnectStatus()
     {
         IReadOnlyList<MudGame> games = MudConnectorDirectory.Parse(ConnectorPage);

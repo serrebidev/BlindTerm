@@ -162,7 +162,15 @@ public sealed class PtySession : ITerminalSession
         if (!CreatePipe(out SafeFileHandle inputRead, out SafeFileHandle inputWrite, IntPtr.Zero, 0))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe (input) failed.");
         if (!CreatePipe(out SafeFileHandle outputRead, out SafeFileHandle outputWrite, IntPtr.Zero, 0))
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe (output) failed.");
+        {
+            // Nothing owns the first pair yet -- a session that never started is never disposed
+            // by anybody, because the window only attached this one -- so this is the one place
+            // they would be lost.
+            int error = Marshal.GetLastWin32Error();
+            inputRead.Dispose();
+            inputWrite.Dispose();
+            throw new Win32Exception(error, "CreatePipe (output) failed.");
+        }
 
         _inputWrite = inputWrite;
         _outputRead = outputRead;
@@ -485,8 +493,9 @@ public sealed class PtySession : ITerminalSession
         // Asked by trying rather than by asking first. IsAddingCompleted and Add are two
         // separate steps, and closing the window between them -- which is when a queued
         // Return is still on its way -- throws out of a caller that has nowhere to put it.
+        // Disposing the queue is the other half of the same close, and throws its own kind.
         try { _writes.Add(bytes.ToArray()); }
-        catch (InvalidOperationException) { }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException) { }
     }
 
     public void Write(string text) => Write(Encoding.UTF8.GetBytes(text));

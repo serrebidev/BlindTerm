@@ -29,7 +29,14 @@ public sealed class MciSoundOutput : ISoundOutput
     private readonly Dictionary<string, string> _staged =
         new(StringComparer.OrdinalIgnoreCase);
     private string? _cache;
-    private int _next;
+    /// <summary>
+    /// Counts handles for the whole process, not for one of these.
+    ///
+    /// MCI keeps one table of open devices per process, so two of these in one window -- which
+    /// is what happens as soon as a MUD sound and a trigger sound are both switched on -- would
+    /// otherwise hand out the same aliases and stop each other's sounds.
+    /// </summary>
+    private static int _next;
     private bool _disposed;
 
     public int? Play(string path, int volume)
@@ -40,7 +47,7 @@ public sealed class MciSoundOutput : ISoundOutput
         {
             if (_disposed) return null;
 
-            int handle = ++_next;
+            int handle = Interlocked.Increment(ref _next);
             string alias = Alias(handle);
             string? device = DeviceFor(Path.GetExtension(path));
             string type = device is null ? string.Empty : $" type {device}";
@@ -57,9 +64,6 @@ public sealed class MciSoundOutput : ISoundOutput
                 return null;
             }
 
-            // MCI parses a fixed-length command string, so a sound sitting under a long path
-            // fails to open with nothing said about why. The 8.3 form of the same path fits
-            // where the long one does not.
             // MCI parses a fixed-length command string, so a sound under a long path fails to
             // open and says only that the file name is invalid. Rather than guess where the
             // limit falls, ask, and on refusal play a copy from somewhere short instead.
@@ -165,17 +169,6 @@ public sealed class MciSoundOutput : ISoundOutput
         => $"open \"{path}\"{type} alias {alias}";
 
     /// <summary>
-    /// The shortest name Windows has for this file. Falls back to the name given, which is
-    /// what a volume with short names turned off gives back -- most of them, these days.
-    /// </summary>
-    private static string Shortest(string path)
-    {
-        var buffer = new StringBuilder(320);
-        int length = GetShortPathNameW(path, buffer, buffer.Capacity);
-        return length > 0 && length < buffer.Capacity ? buffer.ToString() : path;
-    }
-
-    /// <summary>
     /// Puts a copy of a sound somewhere with a short enough name for MCI, and returns it.
     ///
     /// Only reached when opening the real one has already been refused, and only once per
@@ -192,8 +185,9 @@ public sealed class MciSoundOutput : ISoundOutput
                 Path.Combine(Path.GetTempPath(), "BT" + Environment.ProcessId.ToString("x"))).FullName;
 
             // Named for the path it came from, so two sounds with the same file name in
-            // different folders do not become one.
-            string name = Math.Abs(path.GetHashCode(StringComparison.OrdinalIgnoreCase))
+            // different folders do not become one. Cast rather than made absolute: a
+            // hash of int.MinValue has no positive form, and Abs threw on it.
+            string name = ((uint)path.GetHashCode(StringComparison.OrdinalIgnoreCase))
                 .ToString("x8") + Path.GetExtension(path);
             string copy = Path.Combine(_cache, name);
             if (!File.Exists(copy)) File.Copy(path, copy);
@@ -213,9 +207,4 @@ public sealed class MciSoundOutput : ISoundOutput
     [DllImport("winmm.dll", CharSet = CharSet.Unicode, EntryPoint = "mciSendStringW")]
     private static extern int mciSendStringW(string command, StringBuilder? returnValue,
                                              int returnLength, IntPtr callback);
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetShortPathNameW",
-               SetLastError = true)]
-    private static extern int GetShortPathNameW(string longPath, StringBuilder shortPath,
-                                                int shortPathLength);
 }

@@ -77,8 +77,14 @@ public static class MudMerge
             // The same rule as the address above, and for the same reason: a TLS port belongs
             // to the host it was published for. A listing with no address of its own keeps
             // nothing, so taking its encrypted port would offer a connection to the other
-            // game's server on a port that was never about this one.
-            TlsPort = first.CanConnect ? first.TlsPort ?? second.TlsPort : second.TlsPort,
+            // game's server on a port that was never about this one -- and a listing that has
+            // an address keeps only its own port, because two directories that name the same
+            // game do not always name the same machine.
+            TlsPort = first.CanConnect
+                ? first.TlsPort ?? (string.Equals(first.Host, second.Host, StringComparison.OrdinalIgnoreCase)
+                    ? second.TlsPort
+                    : null)
+                : second.TlsPort,
             Intro = first.Intro.Length > 0 ? first.Intro : second.Intro,
             Genre = first.Genre.Length > 0 ? first.Genre : second.Genre,
             GameType = first.GameType.Length > 0 ? first.GameType : second.GameType,

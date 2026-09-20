@@ -213,22 +213,12 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
         return found;
     }
 
+    /// <summary>
+    /// One page of a list already in hand. The shared one, so that the arithmetic -- which is
+    /// worked out in long because page only has a lower bound -- is written once.
+    /// </summary>
     private static MudDirectoryPage Slice(IReadOnlyList<MudGame> games, int page, int perPage)
-    {
-        page = Math.Max(1, page);
-        int start = (page - 1) * perPage;
-        if (start >= games.Count)
-            return new MudDirectoryPage { Games = [], Page = page, PerPage = perPage, Total = games.Count };
-        int length = Math.Min(perPage, games.Count - start);
-        return new MudDirectoryPage
-        {
-            Games = [.. games.Skip(start).Take(length)],
-            Page = page,
-            PerPage = perPage,
-            Total = games.Count,
-            HasMore = start + length < games.Count,
-        };
-    }
+        => MudSorting.Page(games, page, perPage);
 
     private static string Join(List<string> parameters) => string.Join("&", parameters);
 

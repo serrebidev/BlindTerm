@@ -88,7 +88,11 @@ public sealed class MspScanner
             // and a blank line is something a screen reader announces.
             if (_swallowLineEnding)
             {
-                if (value == (byte)'\r') continue;
+                // A carriage return ends the line on its own for the hosts that write them
+                // that way, and is the first half of the ending for the ones that write both.
+                // Either way the next line has started, and a trigger at the start of it has
+                // to be recognised as one rather than read out as punctuation.
+                if (value == (byte)'\r') { _atLineStart = true; continue; }
                 _swallowLineEnding = false;
                 if (value == (byte)'\n') { _atLineStart = true; continue; }
             }
@@ -182,6 +186,6 @@ public sealed class MspScanner
     private void Emit(byte value, Span<byte> text, ref int written)
     {
         text[written++] = value;
-        _atLineStart = value == (byte)'\n';
+        _atLineStart = value is (byte)'\n' or (byte)'\r';
     }
 }

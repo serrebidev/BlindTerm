@@ -116,9 +116,15 @@ internal static class Program
 
         // A port given as its own argument wins: "--telnet host 4000" is unambiguous, and a
         // host that already carried one would not have left the default in place. A scheme is
-        // not a port, so it is looked past before deciding whether one was written.
+        // not a port, so it is looked past before deciding whether one was written -- and a
+        // colon is not a port either in an unbracketed IPv6 literal, which is all colons and
+        // no port. The brackets are what let one hold a port at all.
         int scheme = written.IndexOf("://", StringComparison.Ordinal);
-        bool carriedPort = written[(scheme < 0 ? 0 : scheme + 3)..].Contains(':');
+        string address = written[(scheme < 0 ? 0 : scheme + 3)..].TrimEnd('/');
+        int colon = address.IndexOf(':');
+        bool carriedPort = address.StartsWith('[')
+            ? address.Contains("]:", StringComparison.Ordinal)
+            : colon >= 0 && colon == address.LastIndexOf(':');
         if (at + 2 < args.Length && int.TryParse(args[at + 2], out int separate)
             && separate is >= 1 and <= 65535 && !carriedPort)
             port = separate;

@@ -15,16 +15,13 @@ internal sealed class LatestResponse
 
     public void Begin(Transcript transcript) => _firstLine = transcript.Count;
 
-    public int StartOffset(Transcript transcript)
-        => _firstLine >= transcript.Count
-            ? transcript.Length
-            : transcript.OffsetOfLine(_firstLine);
+    /// <summary>
+    /// Where the caret goes to start reading the response: the control-space offset of the
+    /// first line of it, or the end of the document while there is not one yet.
+    /// </summary>
+    public int StartOffset(Transcript transcript) => transcript.CaretOffset(_firstLine);
 
-    public IReadOnlyList<string> Lines(Transcript transcript)
-    {
-        int first = Math.Clamp(_firstLine, 0, transcript.Count);
-        return transcript.Lines.Skip(first).ToArray();
-    }
+    public IReadOnlyList<string> Lines(Transcript transcript) => transcript.Snapshot(_firstLine);
 
     public string Text(Transcript transcript)
         => string.Join(Environment.NewLine, Lines(transcript));

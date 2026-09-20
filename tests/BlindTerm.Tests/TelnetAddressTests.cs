@@ -91,4 +91,18 @@ public class TelnetAddressTests
         Assert.NotNull(parsed);
         Assert.Equal(4000, parsed!.Port);
     }
+
+    [Fact]
+    public void AnIpv6LiteralIsNotAnAddressThatAlreadyCarriesAPort()
+    {
+        // It is all colons and no port, so the port written beside it is the one that counts.
+        TelnetTarget? bare = Program.TelnetArgument(["--telnet", "::1", "4000"]);
+        TelnetTarget? bracketed = Program.TelnetArgument(["--telnet", "[::1]", "4000"]);
+        TelnetTarget? written = Program.TelnetArgument(["--telnet", "[::1]:4000", "9999"]);
+
+        Assert.Equal(4000, bare!.Port);
+        Assert.Equal(4000, bracketed!.Port);
+        Assert.Equal(4000, written!.Port);
+        Assert.Equal("::1", bare.Host);
+    }
 }

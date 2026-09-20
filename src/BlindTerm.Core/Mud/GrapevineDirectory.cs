@@ -119,8 +119,13 @@ public sealed class GrapevineDirectory : IMudDirectory, IDisposable
         foreach (JsonElement link in links.EnumerateArray())
         {
             if (link.ValueKind != JsonValueKind.Object) continue;
-            if (link.TryGetProperty("rel", out JsonElement rel) && rel.GetString() == "next" &&
-                link.TryGetProperty("href", out JsonElement href))
+            // Value kinds are asked rather than assumed: this is the site's own page answering
+            // in a shape it never documented, and a link that arrives as a number or a list
+            // is a link to ignore, not a reason to lose the whole directory.
+            if (link.TryGetProperty("rel", out JsonElement rel) &&
+                rel.ValueKind == JsonValueKind.String && rel.GetString() == "next" &&
+                link.TryGetProperty("href", out JsonElement href) &&
+                href.ValueKind == JsonValueKind.String)
                 return href.GetString();
         }
         return null;

@@ -205,7 +205,7 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
             foreach (var row in rows.EnumerateArray())
             {
                 if (row.ValueKind != System.Text.Json.JsonValueKind.Array) continue;
-                string[] cells = [.. row.EnumerateArray().Select(cell => cell.GetString() ?? string.Empty)];
+                string[] cells = [.. row.EnumerateArray().Select(Cell)];
                 if (cells.Length < Columns) continue;
 
                 MudGame? world = Read(cells, site);
@@ -214,6 +214,17 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
         }
         return worlds;
     }
+
+    /// <summary>
+    /// One cell as text. A cell that is not a string is not an error: this is a rendered
+    /// table being read on sufferance, and asking a number for its string throws -- which
+    /// would be a column that moved taking the whole list with it, the one thing this reader
+    /// is written not to do.
+    /// </summary>
+    private static string Cell(System.Text.Json.JsonElement cell)
+        => cell.ValueKind == System.Text.Json.JsonValueKind.String
+            ? cell.GetString() ?? string.Empty
+            : string.Empty;
 
     private static MudGame? Read(string[] cells, string site)
     {

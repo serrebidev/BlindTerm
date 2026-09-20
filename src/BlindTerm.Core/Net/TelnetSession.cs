@@ -222,6 +222,9 @@ public sealed class TelnetSession : ITerminalSession
 
         IsSecure = true;
         Security = Describe(ssl.SslProtocol);
+        // The handshake went through, so nothing is ever going to read this copy: it exists
+        // only for the certificate exception, which is thrown from above instead.
+        offered?.Dispose();
         return ssl;
     }
 
@@ -385,8 +388,9 @@ public sealed class TelnetSession : ITerminalSession
         // Asked by trying rather than by asking first: IsAddingCompleted and Add are two
         // separate steps, and the window closing between them -- which is exactly when a
         // queued line is still on its way -- throws out of a caller with nowhere to put it.
+        // Disposing the queue is the other half of that same close.
         try { _writes.Add(TelnetProtocol.Escape(bytes)); }
-        catch (InvalidOperationException) { }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException) { }
     }
 
     public void Write(string text) => Write(Encoding.UTF8.GetBytes(text));
@@ -396,7 +400,7 @@ public sealed class TelnetSession : ITerminalSession
     {
         if (protocol.Count == 0) return;
         try { _writes.Add([.. protocol]); }
-        catch (InvalidOperationException) { }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException) { }
     }
 
     public async Task WriteLineSplit(string text, string terminator, int gapMs)

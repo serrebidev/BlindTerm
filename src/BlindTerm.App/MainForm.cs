@@ -907,7 +907,7 @@ public sealed class MainForm : Form
         var selection = new TextSelection(_transcript.SelectionStart, _transcript.SelectionLength);
         int start = first >= _host.Transcript.Count
             ? _transcript.TextLength
-            : _host.Transcript.OffsetOfLine(first) + first;
+            : _host.Transcript.CaretOffset(first);
         start = Math.Clamp(start, 0, _transcript.TextLength);
         int oldLength = _transcript.TextLength - start;
 
@@ -1595,7 +1595,7 @@ public sealed class MainForm : Form
             return;
         }
         FocusTranscript();
-        MoveCaret(_host.Transcript.OffsetOfLine(block.StartLine));
+        MoveCaret(_host.Transcript.CaretOffset(block.StartLine));
         Say($"Command {next + 1} of {blocks.Count}");
     }
 

@@ -102,6 +102,9 @@ public sealed class SoundLibrary
         ArgumentNullException.ThrowIfNull(trigger);
         if (trigger.Url is null || !IsSafeName(trigger.FileName)) return null;
         if (trigger.FileName.Contains('*') || trigger.FileName.Contains('?')) return null;
+        // A wildcard in the type means "any of these folders" here, and a query separator in a
+        // URL: the address that came out of it pointed at a different page than the one meant.
+        if (trigger.Type is not null && (trigger.Type.Contains('*') || trigger.Type.Contains('?'))) return null;
         if (trigger.Type is not null && !IsSafeSegment(trigger.Type)) return null;
 
         string root = trigger.Url.EndsWith('/') ? trigger.Url : trigger.Url + "/";

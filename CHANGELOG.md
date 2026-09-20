@@ -4,6 +4,77 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.13 - 2026-09-20
+
+- Stop copying the transcript from taking the window down. Alt+A and Alt+O read the transcript's
+  lines on the window thread while the session's reader thread was still adding to them, and
+  walking a list that is being appended to throws "Collection was modified" -- out of the window
+  thread, where nothing catches it, which is the end of the program. The reads that walk the whole
+  document now take a copy under the same lock the reader writes under, so asking to copy a
+  command's output in the middle of a build is an ordinary thing to do again.
+- Read the transcript a line at a time again after leaving a full-screen program. Coming back from
+  vim, htop or an editor over SSH refilled the output box from the transcript's own text, which
+  ends a line with a single newline -- and a Win32 edit control does not take that for a line break
+  at all. It reported one line, `GetFirstCharIndexFromLine` answered -1, and the session had to be
+  arrowed through as one paragraph until something else arrived. The box is given lines the way
+  Windows counts them now, and so is the clipboard.
+- Put the caret where it says it is putting it. The transcript counts one character per line ending
+  and the edit control holds two, and two of the three places a caret was moved to a line used the
+  first counting. Alt+Up and Alt+Down over command blocks, and `Shift+Tab` into a remote session's
+  latest response, both landed one character per line early -- a screenful out, in a session long
+  enough to have scrolled. One offset now answers all three.
+- Wait for a trigger whose row was wrapped. A shell integration marker that landed on a
+  continuation row was never told its row had become a line, so a command whose prompt or output
+  ran past the window's width reported "Command location is not available", and copying its output
+  took the wrong range. Every row of a wrapped line is reported now, which is what the mapping
+  beside it always claimed.
+- Ask the MUD what it is, rather than agreeing and waiting. MSSP is a request, not a subscription,
+  and BlindTerm only ever agreed to it: **Read** &rarr; **Server information** answered "This host
+  did not say anything about itself" about hosts that had a name, an uptime, a codebase and a room
+  count ready to send. The report is asked for when the option is agreed.
+- Keep two sounds from wearing each other's name. MCI keeps one table of open devices for the whole
+  process, and the aliases were counted from one sound output rather than from the process -- so a
+  window with a trigger sound and a MUD sound both switched on had two of them handing out the same
+  names. The second sound to open was refused and played nothing, and stopping one could stop the
+  other. The count belongs to the process now.
+- Count a listing's encrypted port as belonging to its host. The merge between directories refuses
+  to lend an encrypted port from a game with no address to one that has, but it only asked whether
+  the first had an address at all, not whether it was the same machine. A game listed in two
+  directories with different hosts took the other's TLS port and offered a connection to a host
+  that never published it.
+- Read a published listing that is missing a key. Source, SourceId and Name were declared as
+  required, which makes the JSON reader throw before the loop written to discard an unusable
+  listing ever sees it -- so one listing edited by hand cost the whole list rather than one row. An
+  absent key is an empty word now, and a listing with no address is dropped, which is what that
+  loop was always for.
+- Read a table cell that is not text. MUDStats' list is a rendered table, and every cell in it is a
+  piece of HTML until a column moves and a number arrives where markup was: asking a number for its
+  string threw out of the reader and stopped the whole published list being built. A Grapevine link
+  that arrives as a number rather than a word threw in the same place, where a link that cannot be
+  read should simply be ignored.
+- Work a page number out in a number that cannot overflow. The MUDVerse path sliced a page with the
+  32-bit arithmetic the shared one had already given up: a page number large enough to wrap
+  returned the first page instead of nothing, which is the failure the shared one carries a test
+  for.
+- Stop a hand-typed directory address from ending the program. The MUD browser's fetch is an
+  `async void`, so an address saved without a scheme -- or a window closed while a fetch was in
+  flight -- threw something that was not a directory failure out of an unhandled handler on the
+  window thread. It says so in the status line instead.
+- Keep the port typed beside an IPv6 address. `--telnet ::1 4000` read the colons of the literal
+  for an address that already carried a port and dialled 23. The brackets decide it now, the way
+  the address parser always has.
+- Take a bare carriage return for a line ending. A host that ends its lines with a carriage return
+  on its own had its sound triggers left in the text, read aloud as punctuation in the middle of a
+  fight, because only a line feed counted as the start of a line.
+- Let go of what a failure and a close leave behind. If the second `CreatePipe` failed, the first
+  pair was never closed, and a session that never started is never disposed by anybody; a write
+  arriving as the window closes no longer throws out of the queue that has been disposed under it;
+  a certificate copied out of a handshake that then succeeded is released rather than waiting for
+  the collector; a wildcard in a sound's subfolder no longer builds an address that means a
+  different page; two windows can no longer publish each other's half-written list of MUDs; a
+  cancelled update check stops instead of asking again; and a sound staged under a name whose hash
+  has no positive form is staged under its hash anyway.
+
 ## v0.7.12 - 2026-09-20
 
 - Ask GitHub for the newest release instead of for the most convenient address to it. The

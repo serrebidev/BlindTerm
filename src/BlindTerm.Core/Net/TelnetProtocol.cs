@@ -273,6 +273,7 @@ public sealed class TelnetProtocol
         Send(Do, option, reply);
         if (option == OptGmcp) IntroduceOverGmcp(reply);
         if (option == OptMsdp) IntroduceOverMsdp(reply);
+        if (option == OptServerStatus) AskForServerStatus(reply);
     }
 
     /// <summary>
@@ -309,6 +310,24 @@ public sealed class TelnetProtocol
     /// </summary>
     private static void IntroduceOverMsdp(List<byte> reply)
         => SendMsdp("LIST", ["REPORTABLE_VARIABLES"], reply);
+
+    /// <summary>
+    /// Asks the host to describe itself.
+    ///
+    /// MSSP is a request rather than a standing subscription. Agreeing to it and then waiting
+    /// is waiting for a report that is never sent, which is how Read, then Server information
+    /// came to answer "this host did not say anything about itself" about a host that had the
+    /// whole description ready. An empty variable name asks for all of it.
+    /// </summary>
+    private static void AskForServerStatus(List<byte> reply)
+    {
+        reply.Add(Iac);
+        reply.Add(Sb);
+        reply.Add(OptServerStatus);
+        reply.Add(MsspVariable);
+        reply.Add(Iac);
+        reply.Add(Se);
+    }
 
     private static readonly string[] AccessibleMsdpVariables =
     [

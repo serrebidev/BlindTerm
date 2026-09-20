@@ -259,8 +259,15 @@ public sealed class TranscriptBuilder
             }
 
             _lineRows[line] = (row, end);
-            for (int r = row; r < end; r++) _rowToLine[r] = line;
-            RowBecameLine?.Invoke(row, line);
+            // Every row of a wrapped group, not only the first of it. A shell integration
+            // marker can land on a continuation row, and it waits on its own row becoming a
+            // line -- so telling it only about the row the group starts on leaves it waiting
+            // for ever and reports "command location is not available" for a command that ran.
+            for (int r = row; r < end; r++)
+            {
+                _rowToLine[r] = line;
+                RowBecameLine?.Invoke(r, line);
+            }
 
             row = end;
         }
@@ -340,8 +347,11 @@ public sealed class TranscriptBuilder
         }
 
         _lineRows[line] = (start, end);
-        for (int row = start; row < end; row++) _rowToLine[row] = line;
-        RowBecameLine?.Invoke(start, line);
+        for (int row = start; row < end; row++)
+        {
+            _rowToLine[row] = line;
+            RowBecameLine?.Invoke(row, line);
+        }
         if (end > _extentRow) _extentRow = end;
         update.LiveLine = line;
     }

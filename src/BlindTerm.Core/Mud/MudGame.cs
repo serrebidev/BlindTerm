@@ -33,12 +33,12 @@ public enum MudAvailability
 public sealed record MudGame
 {
     /// <summary>Which directory this came from, so two sources can be told apart in a list.</summary>
-    public required string Source { get; init; }
+    public string Source { get; init; } = string.Empty;
 
     /// <summary>That directory's own identifier, for fetching the rest of it later.</summary>
-    public required string SourceId { get; init; }
+    public string SourceId { get; init; } = string.Empty;
 
-    public required string Name { get; init; }
+    public string Name { get; init; } = string.Empty;
 
     /// <summary>The short blurb a directory prints under the name.</summary>
     public string Intro { get; init; } = string.Empty;

@@ -162,7 +162,7 @@ public sealed class CommandBlockTracker
         int end = block.OutputEndLine < 0
             ? transcript.Count
             : Math.Clamp(block.OutputEndLine, start, transcript.Count);
-        return string.Join(Environment.NewLine, transcript.Lines.Skip(start).Take(end - start));
+        return string.Join(Environment.NewLine, transcript.Snapshot(start).Take(end - start));
     }
 
     private CommandBlockAnchor NewAnchor(int row, CommandBlock? block = null)

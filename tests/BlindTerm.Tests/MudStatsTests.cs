@@ -146,6 +146,19 @@ public class MudStatsTests
     }
 
     [Fact]
+    public void ANumberWhereAMarkupCellWasDoesNotThrowOutOfTheReader()
+    {
+        // Every cell is a piece of HTML, so asking one for its string is safe -- until a column
+        // moves and a number arrives where markup was. That threw out of the reader, which took
+        // the whole list with it rather than the one row the writer had to do without.
+        const string numeric = """["<a href=\"/World/X\">X</a>",5]""";
+
+        IReadOnlyList<MudGame> worlds = MudStatsDirectory.Parse(Table(numeric, Busy));
+
+        Assert.Equal("Penultimate Destination", Assert.Single(worlds).Name);
+    }
+
+    [Fact]
     public void SomethingThatIsNotTheTableIsReportedRatherThanReturnedEmpty()
     {
         // An empty list and a changed endpoint look identical to a caller. They must not.

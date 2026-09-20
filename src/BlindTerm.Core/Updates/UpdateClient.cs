@@ -79,6 +79,9 @@ public sealed class UpdateClient : IDisposable
                                    or TaskCanceledException or InvalidOperationException
                                    or NotSupportedException)
         {
+            // A check the caller cancelled is the caller's answer, not a reason to go on and
+            // make the second request the redirect costs.
+            if (cancellationToken.IsCancellationRequested) throw;
             // Falls through to the redirect, which is what this did before the API existed.
             return fallback;
         }
@@ -119,7 +122,7 @@ public sealed class UpdateClient : IDisposable
             || source.Scheme != Uri.UriSchemeHttps)
             throw new InvalidDataException("The update does not name an https download address.");
 
-        string asset = Path.GetFileName(manifest.Asset);
+        string? asset = Path.GetFileName(manifest.Asset);
         if (string.IsNullOrEmpty(asset) || string.IsNullOrWhiteSpace(manifest.Sha256))
             throw new InvalidDataException("The update has no file name or no hash to check it against.");
 

@@ -273,7 +273,7 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
         {
             string? directory = Path.GetDirectoryName(_cachePath);
             if (!string.IsNullOrEmpty(directory)) System.IO.Directory.CreateDirectory(directory);
-            string temporary = _cachePath + ".tmp";
+            string temporary = $"{_cachePath}.{Environment.ProcessId}.tmp";
             File.WriteAllText(temporary, json);
             File.Move(temporary, _cachePath, overwrite: true);
         }

@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.RegularExpressions;
+using BlindTerm.Core;
 using BlindTerm.Core.Mud;
 using BlindTerm.Core.Net;
 using BlindTerm.Core.Sound;
@@ -43,6 +45,30 @@ public class AuditFixTests
         // The address came from the second game, and so must anything that belongs to it. A
         // port kept from the first offers a connection to a server that was never about this.
         Assert.Null(merged.TlsPort);
+    }
+
+    [Fact]
+    public void AnEncryptedPortIsNotBorrowedFromADifferentHost()
+    {
+        // Two directories naming the same game do not always agree on which machine serves it.
+        var one = Game("Alter Aeon", "alteraeon.com", 23, null);
+        var other = Game("Alter Aeon", "ae.example.net", 4000, 7443);
+
+        MudGame merged = MudMerge.Fill(one, other);
+
+        Assert.Equal("alteraeon.com", merged.Host);
+        Assert.Equal(23, merged.Port);
+        // 7443 was published for ae.example.net, which is not the host this listing dials.
+        Assert.Null(merged.TlsPort);
+    }
+
+    [Fact]
+    public void AnEncryptedPortIsKeptWhenItIsTheSameHost()
+    {
+        var one = Game("Alter Aeon", "alteraeon.com", 23, null);
+        var other = Game("Alter Aeon", "alteraeon.com", 4000, 7443);
+
+        Assert.Equal(7443, MudMerge.Fill(one, other).TlsPort);
     }
 
     // ---- Addresses ----
@@ -132,6 +158,26 @@ public class AuditFixTests
         MudGame kept = Assert.Single(feed.Games);
         Assert.Equal("Good", kept.Name);
         Assert.Equal(string.Empty, kept.Genre);
+    }
+
+    [Fact]
+    public void AListingMissingAWholeKeyIsDroppedRatherThanTakingTheListWithIt()
+    {
+        // Declared as required, an absent key threw out of the deserializer itself -- before
+        // the loop written to discard an unusable listing ever saw it -- so one listing edited
+        // by hand cost the whole list rather than one row.
+        const string json = """
+        {"Version":1,"Games":[
+          {"Host":"mud.example","Port":23,"Name":"No source named"},
+          {"Source":"b","SourceId":"2","Name":"Good","Host":"other.example","Port":23}
+        ]}
+        """;
+
+        MudFeed feed = MudFeed.FromJson(json);
+
+        Assert.Equal(2, feed.Games.Count);
+        Assert.Equal(string.Empty, feed.Games[0].Source);
+        Assert.Equal("Good", feed.Games[1].Name);
     }
 
     // ---- Orders of magnitude ----
@@ -269,6 +315,23 @@ public class AuditFixTests
     }
 
     [Fact]
+    public void ATriggerAfterACarriageReturnOnlyLineIsStillATrigger()
+    {
+        // A host that ends its lines with a bare carriage return has not written the trigger
+        // in the middle of a sentence: it is the start of a line, and a trigger left there is
+        // read out as punctuation in the middle of a fight.
+        var scanner = new MspScanner();
+        byte[] received = "hello\r!!SOUND(sword.wav)\r"u8.ToArray();
+        var text = new byte[received.Length + MspScanner.Headroom];
+        var triggers = new List<MspTrigger>();
+
+        int written = scanner.Scan(received, text, triggers);
+
+        Assert.Equal("sword.wav", Assert.Single(triggers).FileName);
+        Assert.Equal("hello\r", Encoding.UTF8.GetString(text, 0, written));
+    }
+
+    [Fact]
     public void AHoleInADirectoryIsNotAGameWithNoName()
     {
         IEnumerable<MudGame> withHole = new MudGame[] { Game("One", "a.example", 23, null), null! };
@@ -277,6 +340,83 @@ public class AuditFixTests
         Assert.Single(MudMerge.Describe(withHole));
         (IReadOnlyList<MudGame> games, _) = MudMerge.Combine(withHole, measuredHole);
         Assert.Single(games);
+    }
+
+    // ---- The transcript the window mirrors ----
+
+    [Fact]
+    public void TheTranscriptTextEndsLinesTheWayAnEditControlCountsThem()
+    {
+        var transcript = new Transcript();
+        transcript.Append("one");
+        transcript.Append("two");
+        transcript.Append("three");
+
+        // A Win32 edit control takes "one\ntwo" as no line break at all: it reports one line,
+        // and GetFirstCharIndexFromLine(1) is -1. The mirror is filled from this, so giving it
+        // the transcript's own separators left the whole session as a single line to arrow
+        // through after coming back from a full-screen program.
+        string expected = "one" + Environment.NewLine + "two" + Environment.NewLine
+                          + "three" + Environment.NewLine;
+        Assert.Equal(expected, transcript.Text());
+    }
+
+    [Fact]
+    public void ACaretOffsetAllowsForTheSeparatorTheControlCountsTwice()
+    {
+        var transcript = new Transcript();
+        transcript.Append("one");
+        transcript.Append("two");
+
+        // The transcript counts one separator per line; the control holds two characters of it.
+        Assert.Equal(4, transcript.OffsetOfLine(1));
+        Assert.Equal(5, transcript.CaretOffset(1));
+        // The end of the document is past the last line's ending, not at the last line's start.
+        Assert.Equal(transcript.Text().Length, transcript.CaretLength);
+        Assert.Equal(transcript.CaretLength, transcript.CaretOffset(transcript.Count));
+    }
+
+    [Fact]
+    public void WalkingTheTranscriptGivesACopyRatherThanTheListBeingWritten()
+    {
+        // The window thread walks the transcript to copy it while the reader thread is still
+        // appending to it, and walking a list that is being appended to throws "Collection was
+        // modified" -- out of the window thread, which is the end of the program.
+        var transcript = new Transcript();
+        transcript.Append("one");
+
+        string[] taken = transcript.Snapshot(0);
+        transcript.Append("two");
+
+        Assert.Equal(["one"], taken);
+        Assert.Equal(["one", "two"], transcript.Snapshot(0));
+        // Past the end is empty rather than out of range.
+        Assert.Empty(transcript.Snapshot(transcript.Count + 5));
+    }
+
+    [Fact]
+    public void EveryRowOfAWrappedLineIsReportedAndNotOnlyTheFirst()
+    {
+        // A shell integration marker can land on a continuation row, and the command block
+        // tracker waits on its own row being reported. Told only about the row a wrapped group
+        // starts on, a marker there waits for ever and its command reads as "location is not
+        // available".
+        var core = new TerminalCore(columns: 20, rows: 10);
+        var rows = new List<int>();
+        var lines = new List<int>();
+        core.Builder.RowBecameLine += (row, line) => { rows.Add(row); lines.Add(line); };
+
+        // Forty-five characters in twenty columns wrap twice, and the newline after them is
+        // what makes the cursor leave the wrapped run -- while it sits on a continuation row
+        // the run is not read at all.
+        core.Feed(Encoding.UTF8.GetBytes(new string('a', 45) + "\r\nbb"));
+
+        int top = core.Engine.ScreenTop;
+        Assert.True(core.Engine.IsWrapped(top + 1));
+        Assert.True(core.Engine.IsWrapped(top + 2));
+        Assert.Equal(new[] { top, top + 1, top + 2 }, rows);
+        // One line out of three rows, so every one of them has to be told about it.
+        Assert.All(lines, line => Assert.Equal(lines[0], line));
     }
 
     private static MudGame Game(string name, string host, int port, int? tlsPort) => new()
