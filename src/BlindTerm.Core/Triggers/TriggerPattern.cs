@@ -190,10 +190,10 @@ public sealed class TriggerCapture
     /// <summary>
     /// Fills in what a trigger was told to say or send.
     ///
-    /// <c>$0</c> is the whole line, <c>$1</c> to <c>$9</c> are the wildcards in the order
-    /// they were written, and <c>$$</c> is a dollar sign. A number with nothing behind it
-    /// becomes nothing, which is what lets one trigger serve a line that sometimes has a
-    /// second half and sometimes does not.
+    /// <c>$0</c> is the whole line, <c>$1</c> onwards are the wildcards in the order they were
+    /// written, and <c>$$</c> is a dollar sign. A number with nothing behind it becomes
+    /// nothing, which is what lets one trigger serve a line that sometimes has a second half
+    /// and sometimes does not.
     /// </summary>
     public string Expand(string? template)
     {
@@ -217,11 +217,22 @@ public sealed class TriggerCapture
             }
             else if (next is >= '0' and <= '9')
             {
-                int index = next - '0';
+                // As many digits as are there, so $10 is the tenth wildcard rather than the
+                // first one with a zero after it. Bounded while collecting, because this number
+                // is written by hand and a run of thirty digits would otherwise wrap round into
+                // a group that does exist.
+                int index = 0;
+                int digit = i + 1;
+                while (digit < template.Length && template[digit] is >= '0' and <= '9')
+                {
+                    if (index <= _groups.Length) index = index * 10 + (template[digit] - '0');
+                    digit++;
+                }
+
                 builder.Append(index == 0
                     ? Line
                     : index <= _groups.Length ? _groups[index - 1] : string.Empty);
-                i++;
+                i = digit - 1;
             }
             else
             {

@@ -542,11 +542,6 @@ public sealed class PtySession : ITerminalSession
         Rows = size.Rows;
     }
 
-    public void Kill()
-    {
-        if (_process != IntPtr.Zero && IsRunning) TerminateProcess(_process, 1);
-    }
-
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;

@@ -1643,7 +1643,17 @@ public sealed class MainForm : Form
             UpdateManifest? manifest = await _updates.CheckAsync();
             if (manifest is null)
             {
-                if (!automatic) Say($"BlindTerm {VersionInfo.Display} is up to date");
+                if (!automatic)
+                {
+                    // Says what the check actually found. "Up to date" on its own was the same
+                    // sentence whether the list named a newer release, named this one, or could
+                    // not be read at all -- and after publishing a version that is exactly the
+                    // question, so it is answered rather than assumed.
+                    string offered = _updates.LastOffered ?? string.Empty;
+                    Say(offered.Length == 0
+                        ? $"Could not read the update list. This copy is {VersionInfo.Display}."
+                        : $"{offered} is the newest release. This copy is {VersionInfo.Display}.");
+                }
                 return;
             }
             if (automatic && string.Equals(_offeredUpdateVersion, manifest.Version,

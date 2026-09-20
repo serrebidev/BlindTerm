@@ -1,6 +1,8 @@
+using System.Text.RegularExpressions;
 using BlindTerm.Core.Mud;
 using BlindTerm.Core.Net;
 using BlindTerm.Core.Sound;
+using BlindTerm.Core.Triggers;
 using BlindTerm.Core.Updates;
 using Xunit;
 
@@ -174,6 +176,107 @@ public class AuditFixTests
     {
         Assert.True(UpdateClient.IsNewer("v0.7.11", "0.7.10"));
         Assert.False(UpdateClient.IsNewer("v0.7.9", "0.7.10"));
+    }
+
+    // ---- What a trigger puts back into the line ----
+
+    [Fact]
+    public void ANumberPastNineIsTheTenthWildcardRatherThanTheFirstWithAZeroAfterIt()
+    {
+        Match match = Regex.Match("a-b-c-d-e-f-g-h-i-j-k", @"(\w)-(\w)-(\w)-(\w)-(\w)-(\w)-(\w)-(\w)-(\w)-(\w)-(\w)");
+        var capture = new TriggerCapture(match.Value, match);
+
+        Assert.Equal("a", capture.Expand("$1"));
+        Assert.Equal("j", capture.Expand("$10"));
+        // Still nothing when there is nothing there, and still a literal dollar sign.
+        Assert.Equal(string.Empty, capture.Expand("$40"));
+        Assert.Equal("$", capture.Expand("$$"));
+    }
+
+    [Fact]
+    public void ATriggerCannotPostAControlCharacterIntoTheTerminal()
+    {
+        var engine = new TriggerEngine();
+        // The wildcard carries whatever the far end wrote, and $1 puts it straight back into
+        // the line being typed. Ctrl+C at a shell and Ctrl+D at a login are both one byte away.
+        engine.Load([new Trigger { Pattern = "*", Match = TriggerMatch.Wildcard, Send = "$1" }]);
+
+        TriggerOutcome outcome = engine.Run(["run\u0003this\u0007now"], TriggerWhere.Shell);
+
+        Assert.Equal("runthisnow", Assert.Single(outcome.Sends));
+    }
+
+    [Fact]
+    public void ANewlineInASentLineIsStillASpaceRatherThanASecondCommand()
+    {
+        var engine = new TriggerEngine();
+        // A line about to be typed can carry a newline in it: the Send box is a box, and two
+        // lines written in it are two commands. What is sent is one line.
+        engine.Load([new Trigger { Pattern = "*", Match = TriggerMatch.Wildcard, Send = "look\nnorth" }]);
+
+        TriggerOutcome outcome = engine.Run(["anything at all"], TriggerWhere.Shell);
+
+        Assert.Equal("look north", Assert.Single(outcome.Sends));
+    }
+
+    [Fact]
+    public void AProtectiveTriggerStillProtectsWhileItIsWaiting()
+    {
+        var engine = new TriggerEngine();
+        // "Everyone in this channel, except when it mentions me." The protection is the
+        // StopProcessing on the name trigger, and a wait between firings must not quietly
+        // hand the line to the trigger below it.
+        engine.Load(
+        [
+            new Trigger
+            {
+                Pattern = "Karia",
+                Match = TriggerMatch.Contains,
+                Speak = "your name was mentioned",
+                RepeatAfterMilliseconds = 60_000,
+                StopProcessing = true,
+            },
+            new Trigger { Pattern = "[gossip]", Match = TriggerMatch.Contains, Silence = true },
+        ]);
+
+        TriggerOutcome named = engine.Run(["[gossip] Karia did the thing"], TriggerWhere.Mud);
+        Assert.Single(named.Speech);
+        Assert.False(named.IsSilenced("[gossip] Karia did the thing"));
+
+        // Inside the wait, so the name trigger has nothing to say -- but the line is still one
+        // it matched, and the channel trigger below it must not run and silence it.
+        TriggerOutcome repeated = engine.Run(["[gossip] Karia again"], TriggerWhere.Mud);
+        Assert.Empty(repeated.Speech);
+        Assert.False(repeated.IsSilenced("[gossip] Karia again"));
+
+        // A line the name trigger does not match is the channel's, and is silenced.
+        TriggerOutcome other = engine.Run(["[gossip] somebody else entirely"], TriggerWhere.Mud);
+        Assert.True(other.IsSilenced("[gossip] somebody else entirely"));
+    }
+
+    // ---- What a server is allowed to send ----
+
+    [Fact]
+    public void ATriggerLongEnoughToBeRefusedIsRefusedBeforeItIsCopied()
+    {
+        string huge = new string('x', MspScanner.MaximumTriggerLength + 20);
+
+        Assert.False(MspTrigger.TryParseLine("!!SOUND(" + huge + ")", out _));
+        Assert.False(MspTrigger.TryParse(MspKind.Sound, huge, out _));
+        // And the cap is not so tight that an ordinary one stops working.
+        Assert.True(MspTrigger.TryParseLine("!!SOUND(sword.wav)", out MspTrigger? ordinary));
+        Assert.Equal("sword.wav", ordinary.FileName);
+    }
+
+    [Fact]
+    public void AHoleInADirectoryIsNotAGameWithNoName()
+    {
+        IEnumerable<MudGame> withHole = new MudGame[] { Game("One", "a.example", 23, null), null! };
+        IEnumerable<MudGame> measuredHole = new MudGame[] { null! };
+
+        Assert.Single(MudMerge.Describe(withHole));
+        (IReadOnlyList<MudGame> games, _) = MudMerge.Combine(withHole, measuredHole);
+        Assert.Single(games);
     }
 
     private static MudGame Game(string name, string host, int port, int? tlsPort) => new()

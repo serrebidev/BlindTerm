@@ -38,6 +38,10 @@ public static class MudMerge
         {
             foreach (MudGame game in source)
             {
+                // A hole in a source is not a game with no name. These lists are built from
+                // four different parsers and this is the seam they all meet at, so a null is
+                // skipped rather than dereferenced.
+                if (game is null) continue;
                 string key = Key(game.Name);
                 if (key.Length == 0) continue;
                 if (byName.TryGetValue(key, out MudGame? already))
@@ -119,6 +123,7 @@ public static class MudMerge
 
         foreach (MudGame game in described)
         {
+            if (game is null) continue;
             string key = Key(game.Name);
             if (key.Length > 0 && byName.TryGetValue(key, out MudGame? match) && match is not null)
             {
@@ -137,6 +142,7 @@ public static class MudMerge
         [
             .. statistics.Where(world =>
             {
+                if (world is null) return false;
                 string key = Key(world.Name);
                 return key.Length > 0 && !used.Contains(key)
                        && byName.TryGetValue(key, out MudGame? only) && only is not null;
@@ -194,6 +200,7 @@ public static class MudMerge
         var index = new Dictionary<string, MudGame?>(StringComparer.Ordinal);
         foreach (MudGame world in worlds)
         {
+            if (world is null) continue;
             string key = Key(world.Name);
             if (key.Length == 0) continue;
             if (index.TryGetValue(key, out MudGame? existing))

@@ -4,6 +4,35 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.12 - 2026-09-20
+
+- Ask GitHub for the newest release instead of for the most convenient address to it. The
+  updater read `releases/latest/download/BlindTerm-update.json`, which is a redirect GitHub
+  caches at the edge, and for several minutes after v0.7.11 was published that cache was still
+  answering with v0.7.10's manifest. The release was live, the tag was live, the API knew about
+  it -- and the one address BlindTerm trusted said "you are up to date", which is why v0.7.11
+  was not offered. It now asks the API for the newest tag and builds the manifest address from
+  that, falling back to the redirect only when the API cannot be reached or is rate-limiting
+  the machine. Look for updates where the answer cannot be yesterday's.
+- Say what the update list actually said. "BlindTerm is up to date" was the same sentence
+  whether the list named a newer release, named this one, or could not be read at all, so
+  after publishing something there was no way to tell those apart. A check you ask for now
+  names the release the list gave and the version this copy is, so a stale answer says so.
+- Stop a trigger from typing a control character. A wildcard can carry text the far end chose,
+  and a Send action puts it straight back into the line being typed -- so a MUD could have a
+  trigger press Ctrl+C at a shell or Ctrl+D at a login. Anything a prompt would read as a
+  command rather than as text is now dropped, and a newline is still turned into a space.
+- Read wildcard numbers past nine. `$10` was the first wildcard with a zero after it rather
+  than the tenth, which a regular expression with ten capturing groups can legitimately ask
+  for.
+- Refuse a trigger too long to be one before copying it. The scanner has always bounded this
+  and the parser it hands the line to did not, so a caller reaching that directly allocated in
+  proportion to a line that arrived from the far end.
+- Skip a hole in a directory's listings rather than dereferencing it. Four parsers feed the one
+  merge, and a missing element is not a game with no name.
+- Remove `PtySession.Kill`, which nothing called: a killed child was reported as an ordinary
+  exit with code 1, so the API promised a distinction it never made.
+
 ## v0.7.11 - 2026-09-20
 
 - Stop a release manifest from taking the whole program down. Every field in it was declared as

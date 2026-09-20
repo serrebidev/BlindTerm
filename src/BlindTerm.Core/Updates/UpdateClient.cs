@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace BlindTerm.Core.Updates;
 
@@ -26,17 +27,84 @@ public sealed class UpdateClient : IDisposable
         _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BlindTerm", VersionInfo.Current));
     }
 
+    /// <summary>
+    /// The version the last check found, whether or not it was newer than this copy.
+    ///
+    /// Kept so that "up to date" can be a fact rather than an assumption. A check that fetched
+    /// a manifest naming an older release, and a check that could not fetch one at all, used to
+    /// arrive at the same sentence -- and the difference is exactly what somebody who has just
+    /// published a version needs to know while they wait to see it offered.
+    /// </summary>
+    public string? LastOffered { get; private set; }
+
+    /// <summary>
+    /// Where the newest release's manifest lives, asked of the API rather than assumed.
+    ///
+    /// The obvious address is releases/latest/download, which is a redirect that GitHub caches
+    /// at the edge. For a while after a release is published that cache can still answer with
+    /// the *previous* release's manifest, which is read as "you are up to date" -- the release
+    /// is live, the tag is live, the API knows about it, and the one address the updater trusts
+    /// is still serving the day before. That is what happened to v0.7.11: for several minutes
+    /// after publishing, this URL returned v0.7.10's manifest.
+    ///
+    /// The API is not cached that way, so it is asked first and its tag used to build a direct
+    /// asset address. The redirect stays as the fallback for when the API cannot be reached or
+    /// is rate-limiting this machine.
+    /// </summary>
+    private async Task<string> ManifestUrlAsync(CancellationToken cancellationToken)
+    {
+        const string fallback = $"https://github.com/{Repository}/releases/latest/download/{ManifestName}";
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get, $"https://api.github.com/repos/{Repository}/releases/latest");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+
+            using var response = await _http
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return fallback;
+
+            await using Stream stream = await response.Content
+                .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var release = await JsonSerializer
+                .DeserializeAsync<ReleaseInfo>(stream, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            return string.IsNullOrWhiteSpace(release?.Tag)
+                ? fallback
+                : $"https://github.com/{Repository}/releases/download/{release.Tag}/{ManifestName}";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException
+                                   or TaskCanceledException or InvalidOperationException
+                                   or NotSupportedException)
+        {
+            // Falls through to the redirect, which is what this did before the API existed.
+            return fallback;
+        }
+    }
+
     public async Task<UpdateManifest?> CheckAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await _http.GetAsync(
-            $"https://github.com/{Repository}/releases/latest/download/{ManifestName}",
+        LastOffered = null;
+
+        using var response = await _http.GetAsync(await ManifestUrlAsync(cancellationToken).ConfigureAwait(false),
             HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) return null;
 
         await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var manifest = await JsonSerializer.DeserializeAsync<UpdateManifest>(stream, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        return manifest is not null && IsNewer(manifest.Version, VersionInfo.Current) ? manifest : null;
+        if (manifest is null) return null;
+
+        LastOffered = manifest.Version;
+        return IsNewer(manifest.Version, VersionInfo.Current) ? manifest : null;
+    }
+
+    /// <summary>The one field this needs out of the API's much larger answer about a release.</summary>
+    private sealed record ReleaseInfo
+    {
+        [JsonPropertyName("tag_name")] public string? Tag { get; init; }
     }
 
     public async Task<string> DownloadAsync(UpdateManifest manifest, IProgress<long>? progress = null,

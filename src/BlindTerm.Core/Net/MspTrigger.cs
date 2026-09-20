@@ -66,6 +66,10 @@ public sealed record MspTrigger(
 
         string text = line.Trim();
         if (!text.EndsWith(')')) return false;
+        // Bounded here as well as in the scanner that normally feeds this. A trigger arrives
+        // from the far end, and a line long enough to be worth refusing is one this should not
+        // copy into a parameter list first.
+        if (text.Length > MspScanner.MaximumTriggerLength) return false;
 
         MspKind kind;
         if (text.StartsWith("!!SOUND(", StringComparison.OrdinalIgnoreCase)) kind = MspKind.Sound;
@@ -82,6 +86,7 @@ public sealed record MspTrigger(
     {
         trigger = null;
         if (body is null) return false;
+        if (body.Length > MspScanner.MaximumTriggerLength) return false;
 
         string[] parts = body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries
                                                    | StringSplitOptions.TrimEntries);

@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace BlindTerm.Core.Triggers;
 
 /// <summary>Something a trigger asked to have said.</summary>
@@ -267,9 +269,27 @@ public sealed class TriggerEngine
         if (trigger.Send.Length > 0)
         {
             string sent = capture.Expand(trigger.Send);
-            // A line with a newline in it would be several commands, one of which the user
-            // did not write down and cannot see. One line is one line.
-            outcome.Sends.Add(sent.Replace("\r", string.Empty).Replace("\n", " "));
+            // A wildcard can carry text the far end chose, and this text is on its way to being
+            // typed at a prompt, so what is sent is reduced to what typing can produce. A line
+            // with a newline in it would be several commands, one of which the user did not
+            // write down and cannot see -- and the same is true of every other control
+            // character, which is how a line becomes Ctrl+C at a shell or an escape sequence
+            // at a MUD. One line is one line.
+            outcome.Sends.Add(WithoutControlCharacters(sent));
         }
+    }
+
+    /// <summary>A line with nothing left in it that a prompt would take for a command.</summary>
+    private static string WithoutControlCharacters(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        foreach (char character in text)
+        {
+            if (character == '\r') continue;
+            if (character == '\n') { builder.Append(' '); continue; }
+            if (char.IsControl(character)) continue;
+            builder.Append(character);
+        }
+        return builder.ToString();
     }
 }
