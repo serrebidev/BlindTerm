@@ -4,6 +4,76 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.14 - 2026-09-20
+
+- Bring the thirty-day player averages back. The published list has been carrying none of them,
+  and the reason was one number: MUDStats' table is read by asking it for five thousand rows at
+  once, which it used to serve and now answers with a 500. A failure out of that reader is not
+  one field lost on some listings, it is every figure on all of them -- the thirty-day average,
+  the peak, the minimum, the monthly trend, the year a game opened, its codebase, its database
+  size, whether it charges, and who measured any of it -- so the whole of the directory's most
+  valuable half arrived as one line saying "MUDStats unavailable, publishing without activity
+  figures", twice an hour, while the list went on looking fine. It is asked for a thousand rows
+  at a time and paged now, which is three requests for two thousand two hundred and sixty-one
+  worlds, and the ceiling that makes that necessary has a test beside it. The two orderings
+  that only those figures make possible, busiest on average over thirty days and highest peak
+  in thirty days, and **Oldest** by the year a game opened, have something to sort by for the
+  first time.
+- Read the genres that come with them. Carrying MUDStats' figures across carried its game type
+  and not its genre, and MUDVerse is the only other directory that names one -- on the forty
+  listings its shallow pages reach. So seven hundred and nineteen of the seven hundred and
+  fifty-nine published listings had no genre at all, the filter that narrows the list by one
+  matched five per cent of it, and the two hundred genres the activity half publishes
+  described nothing. Genres now come from whichever directory has one.
+- Stop reading The Mud Connector as ISO-8859-1. Its Big List is served with
+  `charset=ISO-8859-1` in the header and UTF-8 in the body, which its own meta tag three lines
+  down says out loud, and the header was believed: "Los años oscuros" was published as "Los
+  aÃ±os oscuros". Anything that takes the eye past an accent, an em dash or an apostrophe came
+  out as two wrong characters, and a name is what the list is sorted by, searched with, and
+  spoken on every arrow press. The bytes are decoded as UTF-8 whatever the header claims.
+- Fold two directories' listings of one server into one row. The join between directories is on
+  the name, which is the only field they agree on and mean the same thing by, and they disagree
+  often enough that one machine arrives twice: "Aarchon" from one directory and "Aarchon MUD"
+  from another, "Dune" and "DuneMUD", "Arctic" and "ArcticMUD". Neither name is wrong and they
+  are never alike enough to key on, so the same game was published twice with the two rows free
+  to contradict each other -- one directory dialled the host while it built its page and says
+  so, the other did not check and says nothing, and one machine was offered as up and as not
+  answering in two adjacent rows. A host and port is one server now. A group whose listings all
+  come from one directory is left alone, because The Mud Connector really does list two
+  different games on one host and port.
+- Stop offering an address that cannot be dialled. One row of the Big List carries a stray
+  number inside its telnet link -- `216.136.9.8 126` on port 1260 -- and nothing noticed,
+  because the host was not empty, so it was published, offered in the browser, and could only
+  fail with a name that does not resolve. A host is one word; one with a space in it is not a
+  host.
+- Stop calling a rank that nobody is counting this month's. The Mud Connector's ranking has not
+  moved since 2021 and it publishes no votes with it, so the details line read "Ranked 312 this
+  month, on 0 votes" about five hundred and sixty-eight of the listings -- and **Top voted**
+  ordered by that rank first, which put every game nobody has voted for above every game
+  somebody has. Votes come first, the rank only breaks a tie between games that have some, and
+  the sentence is only said when there are votes behind it.
+- Take off the spaces a listing's own page wrapped it in. Four parsers write into one shape and
+  each reads a different kind of page, so what arrived was a name ending in a space and read out
+  with a pause on the end, a blurb with the source's own line endings still inside it, and a
+  website address with two trailing spaces or an annotation after it -- which, offered whole as
+  a link, fails at the far end with nothing to tell that from a site that has gone. A name is
+  trimmed, a blurb is one line, and an address is what comes before the first space.
+- Credit every directory that contributed, not only the ones a listing came from. MUDStats'
+  worlds are merged into listings that keep MUDVerse's name, so it could never appear in the
+  list the browser reads out as "From ..." -- which named three directories while the README
+  above the file named four, and while the two that were missing are where every player count
+  in it comes from.
+- Ask for the published list by its tag. The note beside the six-hour refresh window has always
+  said an unchanged list costs one 304 and no download; nothing implemented it, so every copy
+  of the program pulled four hundred kilobytes down again every six hours for a file that is
+  rebuilt twice an hour and rarely different. The copy on disk is kept with the tag the server
+  gave it and the next ask sends it, so an unchanged list costs the headers and nothing else.
+- Say what the published file's own fields mean. `Source` is the directory a listing came from
+  before anything was merged into it and `Attribution` is the home page of the format's
+  original owner -- neither of them is the credit for the data, which is what `Sources` is for,
+  and one of the two said in its own comment that it was read out in the browser when nothing
+  reads it at all.
+
 ## v0.7.13 - 2026-09-20
 
 - Stop copying the transcript from taking the window down. Alt+A and Alt+O read the transcript's

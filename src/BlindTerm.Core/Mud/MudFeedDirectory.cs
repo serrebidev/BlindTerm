@@ -207,7 +207,7 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
 
         try
         {
-            _feed = await DownloadAsync(cancellationToken).ConfigureAwait(false);
+            _feed = await DownloadAsync(saved, cancellationToken).ConfigureAwait(false);
             return _feed;
         }
         catch (MudDirectoryException) when (saved is not null)
@@ -217,12 +217,22 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
         }
     }
 
-    private async Task<MudFeed> DownloadAsync(CancellationToken cancellationToken)
+    private async Task<MudFeed> DownloadAsync(MudFeed? saved, CancellationToken cancellationToken)
     {
+        using var request = new HttpRequestMessage(HttpMethod.Get, _url);
+        // The copy on disk was kept together with the tag the server gave it, so the ordinary
+        // case -- the list has not been rebuilt since this window last looked -- costs one 304
+        // and no download rather than a second copy of four hundred kilobytes. The note on
+        // Fresh has always said this is what happens. Nothing implemented it, so every refresh
+        // of a list that had not changed pulled the whole thing down again, on a schedule of
+        // twice an hour upstream and every six hours in every copy of the program.
+        if (saved is not null && ReadTag() is string tag)
+            request.Headers.TryAddWithoutValidation("If-None-Match", tag);
+
         HttpResponseMessage response;
         try
         {
-            response = await _http.GetAsync(_url, cancellationToken).ConfigureAwait(false);
+            response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
@@ -236,6 +246,10 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
 
         using (response)
         {
+            // Answered before anything asks whether the status is a success, because it is
+            // not: 304 is outside that range, so left to the check below it would be reported
+            // as a failure to fetch a list that is sitting on the disk already.
+            if (response.StatusCode == HttpStatusCode.NotModified && saved is not null) return saved;
             if (response.StatusCode == HttpStatusCode.NotFound)
                 throw new MudDirectoryException(
                     "BlindTerm's list of MUDs is not published at " + _url + ". Enter a MUDVerse "
@@ -246,7 +260,10 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
 
             string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             MudFeed feed = MudFeed.FromJson(json);
-            WriteCache(json);
+            // The tag is kept only alongside a copy that was written. A tag from this response
+            // paired with the previous copy would answer "nothing has changed" to a request for
+            // content that is not what the server just called unchanged.
+            if (WriteCache(json) && response.Headers.ETag is { } etag) WriteTag(etag.Tag);
             return feed;
         }
     }
@@ -267,7 +284,8 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
         }
     }
 
-    private void WriteCache(string json)
+    /// <summary>Whether the copy was kept, which is also whether its tag may be.</summary>
+    private bool WriteCache(string json)
     {
         try
         {
@@ -276,11 +294,51 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
             string temporary = $"{_cachePath}.{Environment.ProcessId}.tmp";
             File.WriteAllText(temporary, json);
             File.Move(temporary, _cachePath, overwrite: true);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
                                    or NotSupportedException or ArgumentException)
         {
             // Failing to keep a copy is not a failure to browse.
+            return false;
+        }
+    }
+
+    /// <summary>Where the server's tag for the copy on disk is kept, beside the copy.</summary>
+    private string TagPath => _cachePath + ".etag";
+
+    /// <summary>
+    /// The tag the server gave the copy on disk, or nothing.
+    ///
+    /// Nothing is the safe answer: without a tag the next request is an ordinary one, which
+    /// costs a download, and a download is what happened before any of this existed.
+    /// </summary>
+    private string? ReadTag()
+    {
+        try
+        {
+            if (!File.Exists(TagPath)) return null;
+            string tag = File.ReadAllText(TagPath).Trim();
+            return tag.Length > 0 ? tag : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or NotSupportedException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private void WriteTag(string tag)
+    {
+        try
+        {
+            File.WriteAllText(TagPath, tag);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or NotSupportedException or ArgumentException)
+        {
+            // Not keeping the tag costs the next reader a download, and nothing else. It is
+            // never worth failing a browse over, and never worth reporting.
         }
     }
 

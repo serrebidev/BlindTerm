@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace BlindTerm.Core.Mud;
 
@@ -17,7 +18,7 @@ namespace BlindTerm.Core.Mud;
 /// to the same thing -- is left unmatched rather than guessed at. A missing statistic is a
 /// line the browser does not read out; a wrong one is a lie about a different game.
 /// </summary>
-public static class MudMerge
+public static partial class MudMerge
 {
     /// <summary>
     /// Folds several directories' listings of the same games into one set, keyed by name.
@@ -42,15 +43,16 @@ public static class MudMerge
                 // four different parsers and this is the seam they all meet at, so a null is
                 // skipped rather than dereferenced.
                 if (game is null) continue;
-                string key = Key(game.Name);
+                MudGame clean = Normalise(game);
+                string key = Key(clean.Name);
                 if (key.Length == 0) continue;
                 if (byName.TryGetValue(key, out MudGame? already))
                 {
-                    byName[key] = Fill(already, game);
+                    byName[key] = Fill(already, clean);
                 }
                 else
                 {
-                    byName[key] = game;
+                    byName[key] = clean;
                     order.Add(key);
                 }
             }
@@ -107,6 +109,63 @@ public static class MudMerge
             Listed = first.Listed ?? second.Listed,
             LastSeen = first.LastSeen ?? second.LastSeen,
         };
+    }
+
+    /// <summary>
+    /// Folds listings that name the same machine into one.
+    ///
+    /// The join above is on the name, because that is the only field the directories agree on
+    /// and mean the same thing by -- and they disagree often enough that one server arrives
+    /// twice under two names: "Aarchon" from one and "Aarchon MUD" from another, "Dune" and
+    /// "DuneMUD", "Arctic" and "ArcticMUD". Neither name is wrong, they are never similar
+    /// enough to key on, and what a reader gets is the same game listed twice with the two
+    /// listings free to contradict each other -- one directory dialled the host while it was
+    /// building its page and says so, the other did not check and says nothing, and the same
+    /// machine is offered as up and as not answering in two adjacent rows.
+    ///
+    /// So a host and port is taken for what it is: one server. Two directories pointing at it
+    /// are describing the same game and are merged. One directory pointing at it twice is not,
+    /// and is left alone -- The Mud Connector lists two different games on one host and port,
+    /// and those are its own two games, not a duplicate of anything.
+    /// </summary>
+    public static IReadOnlyList<MudGame> Collapse(IEnumerable<MudGame> games)
+    {
+        ArgumentNullException.ThrowIfNull(games);
+
+        var kept = new List<MudGame>();
+        var at = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (MudGame game in games)
+        {
+            if (game is null) continue;
+
+            string address = game.Address;
+            // Nothing to group by: a listing with no address of its own keeps its own row, and
+            // two of those are not the same game merely because neither can be dialled.
+            if (address.Length == 0)
+            {
+                kept.Add(game);
+                continue;
+            }
+
+            if (!at.TryGetValue(address, out int index))
+            {
+                at[address] = kept.Count;
+                kept.Add(game);
+                continue;
+            }
+
+            MudGame first = kept[index];
+            if (string.Equals(first.Source, game.Source, StringComparison.Ordinal))
+            {
+                kept.Add(game);
+                continue;
+            }
+
+            kept[index] = Fill(first, game);
+        }
+
+        return kept;
     }
 
     /// <summary>
@@ -188,6 +247,14 @@ public static class MudMerge
                 ? measured.Availability
                 : described.Availability,
             ConfirmedOnline = described.ConfirmedOnline || measured.ConfirmedOnline,
+            // Genre and GameType both, and the pair is the point. Only the game type was
+            // carried over here, which left the genre one directory short of the whole list:
+            // MUDVerse names a genre on the forty listings its shallow pages reach, MUDStats
+            // names one on two thousand two hundred, and the mention of themes in this file's
+            // own header was true of the taxonomy and of nothing else. Seven hundred and
+            // nineteen of the seven hundred and fifty-nine published listings had no genre at
+            // all, so the filter that narrows the list by one matched five per cent of it.
+            Genre = described.Genre.Length > 0 ? described.Genre : measured.Genre,
             GameType = described.GameType.Length > 0 ? described.GameType : measured.GameType,
             StatisticsSource = measured.StatisticsSource.Length > 0 ? measured.StatisticsSource : measured.Source,
             StatisticsUrl = measured.StatisticsUrl,
@@ -254,4 +321,45 @@ public static class MudMerge
         // Only when the following character ends the word. "theatre" is not "atre".
         return char.IsLetterOrDigit(name[3]) ? name : name[3..];
     }
+
+    /// <summary>
+    /// The words a listing is read out with, with the spaces its own page wrapped them in off.
+    ///
+    /// Four parsers write into this one shape and each reads a different kind of page, so what
+    /// arrives is a name ending in a space, a blurb with the source's line endings still in
+    /// it, a website address with two spaces after it. None of that is visible in the page it
+    /// came from and all of it is heard: the arrow keys speak the name, so "NuclearWarMud "
+    /// is announced with a pause on the end that the reader has to work out is not part of
+    /// anything; a blurb with a newline in it is read as one line whatever it does, but a
+    /// blurb that ends with one is read with a gap after it before the next thing said.
+    /// </summary>
+    private static MudGame Normalise(MudGame game) => game with
+    {
+        Name = (game.Name ?? string.Empty).Trim(),
+        Intro = OneLine(game.Intro),
+        Website = Address(game.Website),
+    };
+
+    /// <summary>One line, because one line is what a list has room to read.</summary>
+    private static string OneLine(string? text)
+        => string.IsNullOrEmpty(text) ? string.Empty : Whitespace().Replace(text, " ").Trim();
+
+    /// <summary>
+    /// A website address, with anything the site wrote after its own field removed.
+    ///
+    /// "http://mud.hexonyx.com (Needs updating)" is a directory annotating itself in the place
+    /// a reader is going to be asked to open, and no address contains a space -- so what comes
+    /// before the first one is the address and the rest never was part of it. Offering the
+    /// whole line as a link fails at the far end, which for somebody who cannot see what they
+    /// pasted is a dead end with no way to tell it from a site that has gone.
+    /// </summary>
+    private static string Address(string? website)
+    {
+        string trimmed = OneLine(website);
+        int space = trimmed.IndexOf(' ');
+        return space < 0 ? trimmed : trimmed[..space];
+    }
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
 }

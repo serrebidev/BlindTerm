@@ -31,12 +31,30 @@ public sealed class MudFeed
     /// <summary>When the job fetched this. Shown, because a player count has a shelf life.</summary>
     public DateTimeOffset Generated { get; set; }
 
-    /// <summary>Who the data belongs to. Said out loud in the browser.</summary>
+    /// <summary>
+    /// The directory a listing came from, before anything was merged into it.
+    ///
+    /// A name for the list rather than a credit: most of these listings are carrying a genre,
+    /// a player count or an encrypted port that a different directory supplied. <see cref="Sources"/>
+    /// is the list that says who those were.
+    /// </summary>
     public string Source { get; set; } = "MUDVerse";
 
+    /// <summary>
+    /// The home page of the directory the taxonomies and the ratios of this format come from.
+    ///
+    /// Not the credit for the data, and not read out anywhere: the browser says
+    /// <see cref="Sources"/> out loud, which is the list of everybody who contributed.
+    /// </summary>
     public string Attribution { get; set; } = "https://www.mudverse.com";
 
-    /// <summary>Which directories this list was built from. Said out loud in the browser.</summary>
+    /// <summary>
+    /// Which directories this list was built out of, said out loud in the browser.
+    ///
+    /// Every one that contributed a listing or the figures on one, so that a player count
+    /// measured by somebody other than the listing's own directory is credited to whoever
+    /// measured it.
+    /// </summary>
     public List<string> Sources { get; set; } = [];
 
     public List<MudTag> Themes { get; set; } = [];

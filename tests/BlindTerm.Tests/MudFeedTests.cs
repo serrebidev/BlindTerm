@@ -223,7 +223,7 @@ public class MudFeedTests : IDisposable
             SourceId = name,
             Name = name,
             Intro = intro,
-            Host = name.ToLowerInvariant() + ".example.com",
+            Host = name.Replace(" ", string.Empty).ToLowerInvariant() + ".example.com",
             Port = 4000,
             TlsPort = tls,
             Genre = genre,

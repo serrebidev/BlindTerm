@@ -34,10 +34,17 @@ public static class MudSorting
                 .ThenByDescending(game => game.AveragePlayers ?? -1)
                 .ThenBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase),
 
-            // Rank 1 is the top of the month's list; anything unranked follows on its votes.
+            // Votes first, and the rank only breaks a tie between games that have some.
+            //
+            // A rank is a position in a list that is being counted, and one of the directories
+            // here is not counting: The Mud Connector's ranking has not moved since 2021 and
+            // it publishes no votes with it. Ordering by the rank first put its five hundred
+            // and sixty-eight listings in the order they held five years ago, above every game
+            // anybody has actually voted for -- so "top voted" answered a question about 2021
+            // while being read as an answer about now.
             MudDirectorySort.TopVoted => games
-                .OrderBy(game => game.Rank ?? int.MaxValue)
-                .ThenByDescending(game => game.MonthlyVotes)
+                .OrderByDescending(game => game.MonthlyVotes)
+                .ThenBy(game => game.Rank ?? int.MaxValue)
                 .ThenBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase),
 
             MudDirectorySort.MostReviewed => games

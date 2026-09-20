@@ -218,6 +218,17 @@ internal static class Directory
         // Anything without a host and port is dropped here rather than left for the reader to
         // drop, so the count this job reports is the count that actually ships. A Grapevine
         // listing with only a web client is the usual case.
+        //
+        // Two directories naming one machine are naming one game, and they rarely agree on what
+        // to call it -- so the listings that got past the join on the name are collapsed on the
+        // address, which is the one thing they do agree about. Last, so that a MUDStats world
+        // whose address was just looked up is folded into the listing it turns out to belong to.
+        int before = games.Count;
+        games = [.. MudMerge.Collapse(games)];
+        if (!quiet && games.Count < before)
+            Console.Error.WriteLine($"directory: {before - games.Count} listings were another directory's "
+                + "listing of the same server");
+
         feed.Games =
         [
             .. games.Where(game => game.CanConnect)
@@ -225,7 +236,25 @@ internal static class Directory
         ];
         int dropped = games.Count - feed.Games.Count;
         if (dropped > 0) Console.Error.WriteLine($"directory: {dropped} listings had no telnet address");
-        feed.Sources = [.. feed.Games.Select(game => game.Source).Distinct().OrderBy(name => name)];
+
+        // Which directories this list was built from, taken from what each listing carries:
+        // who it came from, and who supplied its figures when that was somebody else.
+        //
+        // Not from the listings' own Source alone, which is what this was, and which cannot
+        // name MUDStats at all: its worlds are merged into listings that keep MUDVerse's name,
+        // so the one thing MUDStats contributes is the one thing that has no Source of its own
+        // to be counted from. The published file therefore credited three directories while
+        // the README above it named four -- and the browser says this list out loud, as "From
+        // Grapevine, MUDVerse, The Mud Connector", to somebody who is entitled to know where
+        // the number they are being read was measured.
+        feed.Sources =
+        [
+            .. feed.Games.Select(game => game.Source)
+                         .Concat(feed.Games.Select(game => game.StatisticsSource))
+                         .Where(name => !string.IsNullOrWhiteSpace(name))
+                         .Distinct()
+                         .OrderBy(name => name)
+        ];
         return feed;
     }
 

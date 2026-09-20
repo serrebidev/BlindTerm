@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.RegularExpressions;
 using BlindTerm.Core;
@@ -417,6 +419,348 @@ public class AuditFixTests
         Assert.Equal(new[] { top, top + 1, top + 2 }, rows);
         // One line out of three rows, so every one of them has to be told about it.
         Assert.All(lines, line => Assert.Equal(lines[0], line));
+    }
+
+    // ---- The published directory ----
+
+    [Fact]
+    public async Task TheMudStatsTableIsPagedRatherThanAskedForAllAtOnce()
+    {
+        // Five thousand rows is what this used to ask for, and the endpoint now answers that
+        // with a 500 -- so the entire contribution of the directory that has the player
+        // counts arrived as an exception, every run, and the published list carried a thirty
+        // day average on none of its listings. A thousand rows is served, so that is what is
+        // asked for, and the offset moves.
+        var pages = new Pages(StatsPage(0, 1000), StatsPage(1000, 1));
+        using var directory = new MudStatsDirectory("https://mudstats.example", new HttpClient(pages));
+
+        IReadOnlyList<MudGame> worlds = await directory.WorldsAsync();
+
+        Assert.Equal(1001, worlds.Count);
+        Assert.Equal("World 1000", worlds[^1].Name);
+        Assert.Equal(2, pages.Asked.Count);
+        Assert.Contains("iDisplayLength=1000", pages.Asked[0].Query, StringComparison.Ordinal);
+        Assert.DoesNotContain("iDisplayLength=5000", pages.Asked[0].Query, StringComparison.Ordinal);
+        Assert.Contains("iDisplayStart=0&", pages.Asked[0].Query, StringComparison.Ordinal);
+        Assert.Contains("iDisplayStart=1000&", pages.Asked[1].Query, StringComparison.Ordinal);
+        // The sort has to keep being asked for by name: a request without it is a 500 as well,
+        // which is a thing this endpoint does that DataTables itself never did.
+        Assert.Contains("iSortCol_0=7", pages.Asked[0].Query, StringComparison.Ordinal);
+        Assert.Contains("sSortDir_0=desc", pages.Asked[0].Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheBigListIsReadAsUtf8WhateverItsHeaderClaims()
+    {
+        // The Mud Connector answers with "charset=ISO-8859-1" and then sends UTF-8; its own
+        // page says utf-8 in a meta tag three lines in. Taking the header at its word turned
+        // every accented character in six hundred listings into two wrong ones, and the name
+        // is what the list is sorted by, searched with, and spoken on every arrow press.
+        const string html = """
+        <table><tbody>
+        <tr> <td>29</td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/search.cgi?mode=mud_listing&mud=Reinos' data-tooltip='View'>Reinos De Leyenda - Los años oscuros</a></td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/telnet.cgi?mud=Reinos&url=telnet://reinos.example.com:4000' data-tooltip='Connect'>reinos.example.com 4000</a></td>
+        <td><a href='http://www.mudportal.com/play?host=reinos.example.com&port=4000' target='MudPortal'><i class='play icon'></i></a></td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/redirect.cgi?mud=Reinos&url=http://reinos.example.com/' data-tooltip='Website'>http://reinos.example.com/</a></td>
+        <td>Connected</td> </tr>
+        </tbody></table>
+        """;
+
+        using var directory = new MudConnectorDirectory("https://mudconnect.example",
+            new HttpClient(new Mislabeled(html)));
+
+        MudGame game = Assert.Single(await directory.GamesAsync());
+
+        Assert.Equal("Reinos De Leyenda - Los años oscuros", game.Name);
+        // The mojibake, exactly as it used to arrive: two characters where one belongs.
+        Assert.DoesNotContain("Ã", game.Name, StringComparison.Ordinal);
+        Assert.DoesNotContain("±", game.Name, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AListingArrivesWithoutTheSpacesItsOwnPageWrappedItIn()
+    {
+        MudGame trailing = Game("NuclearWarMud ", "nuclearwarmud.example", 4000, null) with
+        {
+            Intro = "Nuke \r\n",
+            Website = "http://nuclearwarmud.example/index.php  ",
+        };
+
+        MudGame clean = Assert.Single(MudMerge.Describe([trailing]));
+
+        Assert.Equal("NuclearWarMud", clean.Name);
+        Assert.Equal("Nuke", clean.Intro);
+        Assert.Equal("http://nuclearwarmud.example/index.php", clean.Website);
+
+        // A website field one directory annotates in place. No address contains a space, so
+        // the address is what comes before the first one; offered whole it fails at the far
+        // end, with nothing to tell that from a site that has gone.
+        MudGame annotated = Game("HexOnyx", "mud.hexonyx.example", 4000, null) with
+        {
+            Website = "http://mud.hexonyx.example (Needs updating)",
+        };
+        Assert.Equal("http://mud.hexonyx.example",
+            Assert.Single(MudMerge.Describe([annotated])).Website);
+
+        // A blurb written over three lines, which the arrow keys read as one line whatever it
+        // says -- so the line endings it arrived with are only ever a stray pause.
+        MudGame lines = Game("End of the Line", "eotl.example", 4000, null) with
+        {
+            Intro = "Two Rules:\r\n1) have fun\r\n2) don't",
+        };
+        Assert.Equal("Two Rules: 1) have fun 2) don't",
+            Assert.Single(MudMerge.Describe([lines])).Intro);
+    }
+
+    [Fact]
+    public void TheGenreComesWithTheFiguresFromWhoeverHasOne()
+    {
+        MudGame described = Game("The Lands of Draknor", "draknor.example", 4000, null);
+        MudGame measured = Game("The Lands of Draknor", string.Empty, 0, null) with
+        {
+            Source = "MUDStats",
+            Genre = "Wheel of Time",
+            StatisticsSource = "MUDStats",
+        };
+
+        // Only the game type was carried over from the directory that measures. That left
+        // seven hundred and nineteen of seven hundred and fifty-nine published listings with
+        // no genre at all -- so the filter that narrows the list by one matched five per cent
+        // of it, and the two hundred genres MUDStats publishes arrived as a taxonomy nothing
+        // referred to.
+        Assert.Equal("Wheel of Time", MudMerge.Enrich(described, measured).Genre);
+        // The directory that described the game still has the last word on what it is.
+        Assert.Equal("Fantasy", MudMerge.Enrich(described with { Genre = "Fantasy" }, measured).Genre);
+    }
+
+    [Fact]
+    public void TwoDirectoriesNamingOneMachineAreOneListing()
+    {
+        // The join on the name cannot hold these together: neither name is wrong and they are
+        // not alike enough to key on, so the same server was published twice under two names.
+        MudGame fromConnector = Game("Aarchon", "aarchonmud.example", 7000, null) with
+        {
+            Source = "The Mud Connector",
+            Availability = MudAvailability.Online,
+            ConfirmedOnline = true,
+        };
+        MudGame fromGrapevine = Game("Aarchon MUD", "aarchonmud.example", 7000, null) with
+        {
+            Source = "Grapevine",
+            Availability = MudAvailability.Unknown,
+        };
+
+        MudGame merged = Assert.Single(MudMerge.Collapse([fromConnector, fromGrapevine]));
+
+        Assert.Equal("Aarchon", merged.Name);
+        // And the row a reader lands on says what both directories know, instead of one saying
+        // the host answered and the next saying nothing reached it.
+        Assert.True(merged.ConfirmedOnline);
+        Assert.Equal(MudAvailability.Online, merged.Availability);
+    }
+
+    [Fact]
+    public void OneDirectoryNamingOneMachineTwiceIsStillTwoListings()
+    {
+        // The Mud Connector lists two different games on one host and port. Those are its own
+        // two games, not a duplicate of anything, and collapsing them would delete a listing.
+        MudGame one = Game("Legends of Hatred", "godwars.example", 3500, null) with
+        {
+            Source = "The Mud Connector",
+        };
+        MudGame two = Game("Moments of Hatred", "godwars.example", 3500, null) with
+        {
+            Source = "The Mud Connector",
+        };
+
+        Assert.Equal(2, MudMerge.Collapse([one, two]).Count);
+    }
+
+    [Fact]
+    public void AHostWithASpaceInItIsNotSomethingToDial()
+    {
+        // One row of the Big List has a stray number inside its telnet link. Nothing else
+        // noticed: the host was not empty, so it was published and offered as a connection,
+        // and dialling it can only fail with a name that does not resolve.
+        MudGame broken = Game("WeyrPast", "216.136.9.8 126", 1260, null);
+        Assert.False(broken.CanConnect);
+        // Nothing to dial is nowhere to be offered.
+        Assert.Equal(string.Empty, broken.Address);
+
+        // And a listing nobody can dial is dropped reading the file, as any other addressless
+        // listing is.
+        var feed = new MudFeed { Games = [broken, Game("Good", "mud.example.com", 23, null)] };
+        Assert.Equal("Good", Assert.Single(MudFeed.FromJson(feed.ToJson()).Games).Name);
+
+        Assert.True(Game("Fine", "mud.example.com", 23, null).CanConnect);
+        // An address made of numbers is still an address.
+        Assert.True(Game("By number", "216.136.9.8", 1260, null).CanConnect);
+    }
+
+    [Fact]
+    public void ARankNobodyIsVotingInIsNotSaidToBeThisMonths()
+    {
+        MudGame frozen = Game("3-Kingdoms", "3k.example", 3000, null) with { Rank = 38, MonthlyVotes = 0 };
+        MudGame counted = Game("Quiet", "quiet.example", 4000, null) with { Rank = 1, MonthlyVotes = 200 };
+
+        // "Ranked 38 this month, on 0 votes" was read out about five hundred and sixty-eight
+        // listings whose directory stopped counting five years ago: a claim about this month
+        // that nothing in the data supports, said as fact to somebody choosing where to play.
+        Assert.DoesNotContain("Ranked", frozen.Details, StringComparison.Ordinal);
+        Assert.Contains("Ranked 1 this month, on 200 votes", counted.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TopVotedPutsTheVotesBeforeAStaleRank()
+    {
+        MudGame stale = Game("Frozen", "frozen.example", 4000, null) with { Rank = 1, MonthlyVotes = 0 };
+        MudGame voted = Game("Voted", "voted.example", 4000, null) with { Rank = 900, MonthlyVotes = 5 };
+
+        // Ordering by the rank first answered a question about 2021 while being read as an
+        // answer about now, and put every game nobody has voted for above every game somebody
+        // has, because only one of the directories is still counting.
+        Assert.Equal(["Voted", "Frozen"],
+            MudSorting.Apply([stale, voted], MudDirectorySort.TopVoted)
+                .Select(game => game.Name).ToArray());
+    }
+
+    [Fact]
+    public async Task TheListIsAskedForByItsTagSoAnUnchangedOneIsNotDownloadedAgain()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "blindterm-tag-" + Guid.NewGuid().ToString("N"));
+        string cache = Path.Combine(folder, "mud-directory.json");
+        try
+        {
+            System.IO.Directory.CreateDirectory(folder);
+            var cached = new MudFeed
+            {
+                Generated = DateTimeOffset.UtcNow.AddDays(-2),
+                Games = [Game("Busy", "busy.example.com", 4000, null)],
+            };
+            File.WriteAllText(cache, cached.ToJson());
+            File.WriteAllText(cache + ".etag", "\"v1\"");
+
+            var handler = new NotModified();
+            using var directory = new MudFeedDirectory("https://feed.example/mud-directory.json",
+                cache, new HttpClient(handler));
+
+            MudDirectoryPage page = await directory.SearchAsync(new MudDirectoryQuery());
+
+            // The copy on disk is what a 304 means, and it is used rather than reported.
+            Assert.Equal("Busy", Assert.Single(page.Games).Name);
+            Assert.Equal("\"v1\"", Assert.Single(handler.Tags));
+            Assert.Equal(1, handler.Calls);
+        }
+        finally
+        {
+            try { if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, true); }
+            catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public async Task TheTagOfAListThatWasJustFetchedIsKeptForNextTime()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "blindterm-tag-" + Guid.NewGuid().ToString("N"));
+        string cache = Path.Combine(folder, "mud-directory.json");
+        try
+        {
+            var served = new MudFeed
+            {
+                Generated = DateTimeOffset.UtcNow,
+                Games = [Game("Busy", "busy.example.com", 4000, null)],
+            };
+            var handler = new Once(served.ToJson(), "\"v1\"");
+            using var directory = new MudFeedDirectory("https://feed.example/mud-directory.json",
+                cache, new HttpClient(handler));
+
+            await directory.SearchAsync(new MudDirectoryQuery());
+
+            // The tag is only worth keeping beside the copy it belongs to, or the next reader
+            // would be told "nothing has changed" about content it has never seen.
+            Assert.Equal("\"v1\"", File.ReadAllText(cache + ".etag").Trim());
+            Assert.Empty(handler.Tags);
+            Assert.Equal(1, handler.Calls);
+        }
+        finally
+        {
+            try { if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, true); }
+            catch (IOException) { }
+        }
+    }
+
+    /// <summary>
+    /// One page of MUDStats' table, in the shape the endpoint sends it: eleven cells of HTML,
+    /// with none of it filled in that this test is not about. The backslashes are JSON's.
+    /// </summary>
+    private static string StatsPage(int from, int count)
+        => "{\"aaData\":[" + string.Join(",", Enumerable.Range(from, count).Select(index =>
+            $"""["<a href=\"/World/W{index}\">World {index}</a>","","","","","","","","","",""]"""))
+           + "]}";
+
+    /// <summary>Answers each request with the next page, and remembers what was asked for.</summary>
+    private sealed class Pages(params string[] bodies) : HttpMessageHandler
+    {
+        public List<Uri> Asked { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Asked.Add(request.RequestUri!);
+            string body = bodies[Math.Min(Asked.Count, bodies.Length) - 1];
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
+    /// <summary>A page sent as UTF-8 under a header that says it is something else.</summary>
+    private sealed class Mislabeled(string html) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var content = new ByteArrayContent(Encoding.UTF8.GetBytes(html));
+            content.Headers.ContentType = new MediaTypeHeaderValue("text/html") { CharSet = "ISO-8859-1" };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        }
+    }
+
+    /// <summary>Answers "not modified", recording the tag the request carried.</summary>
+    private sealed class NotModified : HttpMessageHandler
+    {
+        public List<string> Tags { get; } = [];
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            foreach (EntityTagHeaderValue tag in request.Headers.IfNoneMatch) Tags.Add(tag.Tag);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotModified));
+        }
+    }
+
+    /// <summary>Answers once with a body and an ETag, recording the tag the request carried.</summary>
+    private sealed class Once(string body, string tag) : HttpMessageHandler
+    {
+        public List<string> Tags { get; } = [];
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            foreach (EntityTagHeaderValue carried in request.Headers.IfNoneMatch) Tags.Add(carried.Tag);
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            response.Headers.ETag = new EntityTagHeaderValue(tag);
+            return Task.FromResult(response);
+        }
     }
 
     private static MudGame Game(string name, string host, int port, int? tlsPort) => new()

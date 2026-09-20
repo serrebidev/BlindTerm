@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace BlindTerm.Core.Mud;
@@ -90,7 +91,15 @@ public sealed partial class MudConnectorDirectory : IMudDirectory, IDisposable
                 throw new MudDirectoryException(
                     $"The Mud Connector answered {(int)response.StatusCode} {response.ReasonPhrase}.",
                     worthRetrying: (int)response.StatusCode >= 500);
-            html = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            // Read as UTF-8 rather than as the header says it is. TMC answers the Big List
+            // with "Content-Type: text/html; charset=ISO-8859-1" and then sends UTF-8 -- the
+            // page says so itself, in its own meta tag, three lines in -- so taking the header
+            // at its word turned every accented name and every em dash in six hundred listings
+            // into two wrong characters each. A screen reader reads those out one at a time:
+            // "Los años oscuros" arrived as "Los a-A-tilde, plus-minus, os oscuros", and the
+            // name is what the list is sorted by and searched with.
+            html = Encoding.UTF8.GetString(await response.Content
+                .ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (HttpRequestException ex)
         {

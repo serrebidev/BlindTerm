@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace BlindTerm.Core.Mud;
@@ -37,6 +38,28 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
     /// is built on.
     /// </summary>
     private const int Columns = 11;
+
+    /// <summary>
+    /// How many rows are asked for at once.
+    ///
+    /// Not the whole table in one request, which is what this used to ask for and what the
+    /// endpoint used to allow. Asked for five thousand rows it now answers 500 -- a number of
+    /// rows it will serve at all sits between two thousand and two thousand five hundred --
+    /// and the failure arrives as an exception out of the reader, so it is not one field lost
+    /// on some listings but every figure on all of them, every run, with nothing in the log
+    /// but "MUDStats unavailable". This stays well under the ceiling and pages instead.
+    /// </summary>
+    private const int PageLength = 1000;
+
+    /// <summary>
+    /// A bound on the paging, in case a page is honoured with the whole table again.
+    ///
+    /// There are about two thousand two hundred worlds, so twenty pages of a thousand is well
+    /// past the end. Without it, an endpoint that stopped honouring iDisplayStart -- which is
+    /// the other half of the same protocol this reads on sufferance -- would be asked the
+    /// first page for ever and hand back the same thousand rows each time.
+    /// </summary>
+    private const int MaximumPages = 20;
 
     private readonly HttpClient _http;
     private readonly bool _ownsClient;
@@ -105,17 +128,36 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
     }
 
     /// <summary>
-    /// Every world MUDStats knows about, statistics and all, from one request.
+    /// Every world MUDStats knows about, statistics and all, a page at a time.
     ///
-    /// Deliberately one request rather than paging: the endpoint will return the lot, and two
-    /// megabytes once is kinder to it than forty-five requests of fifty.
+    /// The endpoint used to hand over all two thousand two hundred in one request, and that
+    /// was worth having: one request is kinder to it than forty-five. It no longer will, so
+    /// this asks for a thousand rows at a time and stops on the short page -- three requests
+    /// for the lot, against the four hundred MUDStats' own table would take.
     /// </summary>
     public async Task<IReadOnlyList<MudGame>> WorldsAsync(CancellationToken cancellationToken = default)
     {
         if (_worlds is not null) return _worlds;
 
-        string url = _site + ListPath + "?" + ListQuery();
-        string json;
+        var worlds = new List<MudGame>();
+        for (int page = 0; page < MaximumPages; page++)
+        {
+            string json = await FetchAsync(page * PageLength, cancellationToken).ConfigureAwait(false);
+            List<MudGame> read = [.. Parse(json, _site)];
+            worlds.AddRange(read);
+            // A short page is the end of the table, and asking for the one after it to be told
+            // the same thing is a request MUDStats does not need to answer.
+            if (read.Count < PageLength) break;
+        }
+
+        _worlds = worlds;
+        return _worlds;
+    }
+
+    /// <summary>One page of the table, from the row offset asked for.</summary>
+    private async Task<string> FetchAsync(int start, CancellationToken cancellationToken)
+    {
+        string url = _site + ListPath + "?" + ListQuery(start);
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -128,7 +170,14 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
             if (!response.IsSuccessStatusCode)
                 throw new MudDirectoryException(
                     $"MUDStats answered {(int)response.StatusCode} {response.ReasonPhrase}.");
-            json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            // Read as UTF-8, which JSON is by definition, rather than as whatever the response
+            // says its charset is. MUDStats' HTML is served by the same stack that labels The
+            // Mud Connector's pages ISO-8859-1 while sending UTF-8, and a genre read through
+            // that arrives as two wrong characters -- which then becomes a filter entry of its
+            // own, offering a category that one game has.
+            return Encoding.UTF8.GetString(await response.Content
+                .ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (HttpRequestException ex)
         {
@@ -138,30 +187,28 @@ public sealed partial class MudStatsDirectory : IMudDirectory, IDisposable
         {
             throw new MudDirectoryException("MUDStats did not answer in time.", inner: ex);
         }
-
-        _worlds = Parse(json, _site);
-        return _worlds;
     }
 
     /// <summary>
     /// The DataTables 1.9 request the table makes. Every column has to be described or the
     /// endpoint returns a 500.
     /// </summary>
-    private static string ListQuery()
+    private static string ListQuery(int start)
     {
         var parameters = new List<string>
         {
             "sEcho=1",
             "iColumns=" + Columns,
             "sColumns=",
-            "iDisplayStart=0",
-            // Everything. The endpoint honours this, and the alternative is forty-five requests.
-            "iDisplayLength=5000",
+            "iDisplayStart=" + start.ToString(CultureInfo.InvariantCulture),
+            "iDisplayLength=" + PageLength.ToString(CultureInfo.InvariantCulture),
             "sSearch=",
             "bRegex=false",
             "iSortingCols=1",
-            // Column 7 is the thirty-day average, which is the ordering worth having if the
-            // list ever comes back truncated.
+            // Column 7 is the thirty-day average, which is the ordering worth having: if the
+            // table ever does come back short, what arrived first is what has players on it.
+            // The sort also has to be asked for by name -- a request that leaves the sort out
+            // is a 500 as well, which is a thing this endpoint does that DataTables does not.
             "iSortCol_0=7",
             "sSortDir_0=desc",
         };

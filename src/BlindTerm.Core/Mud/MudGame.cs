@@ -125,9 +125,18 @@ public sealed record MudGame
     /// Asks whether the host is empty rather than how long it is, because a listing read from
     /// a published file can carry a null where the word was: JSON writes one, and the
     /// initializer above only fills in a key that is absent.
+    ///
+    /// It also asks whether the host is one word. The Mud Connector's Big List has a row whose
+    /// telnet link carries a stray number inside the address -- "216.136.9.8 126" on port 1260
+    /// -- and nothing else would have noticed: the host is not empty, so it was published, and
+    /// offered in the browser, and dialling it can only fail with a name that does not resolve.
+    /// A host name is one word, so a space in it means this is not one.
     /// </remarks>
     [JsonIgnore]
-    public bool CanConnect => !string.IsNullOrEmpty(Host) && Port is >= 1 and <= 65535;
+    public bool CanConnect
+        => !string.IsNullOrEmpty(Host)
+           && Port is >= 1 and <= 65535
+           && !Host.Any(char.IsWhiteSpace);
 
     /// <summary>
     /// Whether anything has reached this host lately.
@@ -219,7 +228,13 @@ public sealed record MudGame
 
             if (Rating is double rating && ReviewCount > 0)
                 lines.Add($"Rated {rating:0.#} out of 5 from {Count(ReviewCount, "review")}.");
-            if (Rank is int rank)
+            // A rank is only a rank while something is counting. The Mud Connector's has not
+            // moved since 2021 -- the reader that takes it says so itself -- and it publishes
+            // no votes with it, so this line was saying "Ranked 312 this month, on 0 votes"
+            // about five hundred and sixty-eight of the listings: a claim about this month
+            // that nothing in the data supports, read out as fact to somebody deciding where
+            // to spend an evening.
+            if (Rank is int rank && MonthlyVotes > 0)
                 lines.Add($"Ranked {rank} this month, on {Count(MonthlyVotes, "vote")}.");
             else if (MonthlyVotes > 0) lines.Add($"{Count(MonthlyVotes, "vote")} this month.");
 
