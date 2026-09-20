@@ -109,8 +109,20 @@ public sealed class TriggerPattern
     /// do with it on the line it was given, and refusing it is what keeps one awkward line
     /// from stopping everything after it from being read.
     /// </summary>
-    public TriggerCapture? Match(string? line)
+    public TriggerCapture? Match(string? line) => Match(line, out _);
+
+    /// <summary>
+    /// The same, and whether this pattern gave up rather than answering.
+    ///
+    /// <paramref name="timedOut"/> is what lets a caller that has many lines to check stop
+    /// asking a pattern that has already proved it cannot answer in time. One badly shaped
+    /// pattern asked about two hundred lines in a burst is two hundred time limits of
+    /// drawing the window; asking it once about that burst, and not again until the next
+    /// one, is the difference between one slow line and a terminal that has stopped.
+    /// </summary>
+    public TriggerCapture? Match(string? line, out bool timedOut)
     {
+        timedOut = false;
         if (line is null) return null;
         try
         {
@@ -119,6 +131,7 @@ public sealed class TriggerPattern
         }
         catch (RegexMatchTimeoutException)
         {
+            timedOut = true;
             return null;
         }
     }

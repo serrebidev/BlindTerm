@@ -19,7 +19,17 @@ public sealed class JawsScreenReader : IScreenReader
 {
     private const string ProgId = "FreedomSci.JawsApi";
 
+    /// <summary>
+    /// The bound COM object, or null when there is none.
+    ///
+    /// Every use of it is under <see cref="_gate"/> and through a local copy, because this is
+    /// reached from two threads at once: the window thread saying something the user asked to
+    /// hear, and the announcer's own timer saying a batch of streamed output. Binding,
+    /// calling and dropping are three separate reads of this field otherwise, and a JAWS that
+    /// restarts in the middle of them leaves one thread calling a method on nothing.
+    /// </summary>
     private object? _api;
+    private readonly Lock _gate = new();
 
     public string Name => "JAWS";
 
@@ -29,11 +39,22 @@ public sealed class JawsScreenReader : IScreenReader
         {
             // The COM object is registered by the installer and only answers while JAWS runs,
             // so a successful bind is the test.
-            if (_api is not null) return true;
-            return TryBind();
+            lock (_gate)
+            {
+                if (_api is not null) return true;
+                return TryBind();
+            }
         }
     }
 
+    /// <summary>
+    /// Binds the automation object, or says there is none. Called under <see cref="_gate"/>.
+    ///
+    /// The catch list is everything a COM activation can raise on a machine where JAWS is
+    /// half-installed, the wrong bitness, or being upgraded while this runs. None of those is
+    /// a reason for a terminal to stop working, and "bound late by ProgID" is only worth
+    /// anything if failing to bind is quiet.
+    /// </summary>
     private bool TryBind()
     {
         try
@@ -44,10 +65,15 @@ public sealed class JawsScreenReader : IScreenReader
             _api = Activator.CreateInstance(type);
             return _api is not null;
         }
-        catch (COMException) { return false; }
-        catch (InvalidOperationException) { return false; }
-        catch (NotSupportedException) { return false; }
-        catch (TypeLoadException) { return false; }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException
+                                   or NotSupportedException or TypeLoadException
+                                   or MissingMethodException or MemberAccessException
+                                   or FileNotFoundException or FileLoadException
+                                   or BadImageFormatException or InvalidComObjectException)
+        {
+            _api = null;
+            return false;
+        }
     }
 
     /// <summary>
@@ -72,15 +98,24 @@ public sealed class JawsScreenReader : IScreenReader
 
     private bool Invoke(string method, params object[] arguments)
     {
-        if (_api is null && !TryBind()) return false;
+        // The local copy is the whole point: whatever happens to _api while this call is in
+        // flight, this thread is holding something and running on it rather than reading the
+        // field a second time and finding it gone.
+        object? api;
+        lock (_gate)
+        {
+            if (_api is null && !TryBind()) return false;
+            api = _api;
+        }
+        if (api is null) return false;
 
         try
         {
-            _api!.GetType().InvokeMember(
+            api.GetType().InvokeMember(
                 method,
                 BindingFlags.InvokeMethod,
                 binder: null,
-                target: _api,
+                target: api,
                 args: arguments);
             return true;
         }
@@ -88,10 +123,25 @@ public sealed class JawsScreenReader : IScreenReader
         {
             // JAWS has gone since we bound. Drop it, so the next call re-probes rather than
             // failing forever against a dead object.
-            _api = null;
+            Forget(api);
             return false;
         }
+        catch (TargetInvocationException) { Forget(api); return false; }
         catch (MissingMethodException) { return false; }
-        catch (TargetInvocationException) { _api = null; return false; }
+        // Anything else a dying COM object can raise. This is called from the announcer's
+        // timer, where an unhandled exception is not a lost utterance but a lost process.
+        catch (Exception) { Forget(api); return false; }
+    }
+
+    /// <summary>
+    /// Drops the bound object, but only if it is still the one that failed -- a JAWS that came
+    /// back and re-bound while this call was out must not have the new object thrown away.
+    /// </summary>
+    private void Forget(object failed)
+    {
+        lock (_gate)
+        {
+            if (ReferenceEquals(_api, failed)) _api = null;
+        }
     }
 }

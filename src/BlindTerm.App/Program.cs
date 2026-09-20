@@ -222,7 +222,27 @@ internal sealed class TerminalWindows : ApplicationContext
     {
         var host = new TerminalHost(settings.Columns, settings.Rows, SynchronizationContext.Current!);
         var form = new MainForm(host, settings, store);
-        form.Shown += (_, _) => host.Start(shell);
+        // The shell is started after the window is up, because the window is what the first
+        // output is read into. That is also the one place a shell can fail to start for a
+        // reason a person needs told: a name in the settings that is not a program on this
+        // machine. Left unhandled, this is an exception thrown from a Shown handler on the
+        // window thread, which takes the process down and says nothing about which name was
+        // wrong -- and the window is already on screen by then, so closing it is the honest
+        // end to saying so.
+        form.Shown += (_, _) =>
+        {
+            try { host.Start(shell); }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+                                       or IOException or ArgumentException
+                                       or InvalidOperationException)
+            {
+                MessageBox.Show(form,
+                    "Could not start the shell." + Environment.NewLine
+                    + Environment.NewLine + ex.Message,
+                    "BlindTerm could not start a shell", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                form.Close();
+            }
+        };
         Track(form, settings, store);
         form.Show();
     }

@@ -23,8 +23,8 @@ public class ScreenWipeTests
     [InlineData("^[[?2J", 0, 5)]
     // An explicitly written default, which is the same erase.
     [InlineData("^[[02J", 0, 5)]
-    // Multiple parameters, the erase among them.
-    [InlineData("^[[1;2J", 0, 6)]
+    // The erase is the first parameter; anything after it is not another erase.
+    [InlineData("^[[2;1J", 0, 6)]
     public void FindsAWipe(string input, int offset, int length)
     {
         var found = TerminalCore.FindScreenWipe(Bytes(input));
@@ -38,7 +38,13 @@ public class ScreenWipeTests
     [InlineData("^[[1J")]        // erase to start of screen only
     [InlineData("^[[2A")]        // cursor up, not an erase
     [InlineData("^[[2K")]        // erase in line, not in screen
-    [InlineData("^[]0;title")]
+    [InlineData("^[]0;title")]
+    // ED reads only its first parameter, so a 2 behind a 1 is not the erase: this is
+    // erase-above, and splitting the feed for it would read rows the terminal is keeping.
+    [InlineData("^[[1;2J")]
+    // Long enough to wrap a 32-bit accumulator round to 2. It means a very large number, not
+    // an erase, and a scanner that wrapped would report a screen wipe nobody asked for.
+    [InlineData("^[[4294967298J")]
     public void IgnoresEverythingElse(string input)
         => Assert.Null(TerminalCore.FindScreenWipe(Bytes(input)));
 

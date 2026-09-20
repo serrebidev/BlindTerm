@@ -90,6 +90,16 @@ public sealed class TelnetProtocol
     /// <summary>Options the other end has been told it may perform.</summary>
     private readonly HashSet<byte> _remoteOn = new();
 
+    /// <summary>
+    /// The most a subnegotiation may hold before it is abandoned.
+    ///
+    /// The text is bounded by the read it arrived in, but this is assembled across reads and
+    /// only ends when the far end says it does, so a server that opens one and never closes
+    /// it would grow it for as long as the connection lasted. Generous enough for the largest
+    /// thing any of these carries -- a GMCP room, an MSSP block -- and still a bound.
+    /// </summary>
+    private const int MaximumSubnegotiation = 64 * 1024;
+
     private readonly List<byte> _subnegotiation = new();
     private readonly List<string> _soundRequests = new();
     private readonly List<GmcpMessage> _gmcp = new();
@@ -163,8 +173,19 @@ public sealed class TelnetProtocol
                 case State.Dont: AnswerDont(value, reply); _state = State.Data; break;
 
                 case State.Subnegotiation:
-                    if (value == Iac) _state = State.SubnegotiationIac;
-                    else _subnegotiation.Add(value);
+                    if (value == Iac) { _state = State.SubnegotiationIac; break; }
+                    if (_subnegotiation.Count >= MaximumSubnegotiation)
+                    {
+                        // A subnegotiation that has run this long is never going to be closed,
+                        // and everything sent after it would be swallowed as more of it too --
+                        // the terminal would be permanently deaf, with nothing to say why.
+                        // Give up on it and read what follows as text, which is the only
+                        // reading that leaves something anyone can use.
+                        _subnegotiation.Clear();
+                        _state = State.Data;
+                        break;
+                    }
+                    _subnegotiation.Add(value);
                     break;
 
                 case State.SubnegotiationIac:

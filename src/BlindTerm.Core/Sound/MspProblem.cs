@@ -12,6 +12,12 @@ public enum MspProblem
     /// <summary>The sound is not on this machine and BlindTerm is not allowed to fetch it.</summary>
     NotHere,
 
+    /// <summary>
+    /// It is not here and is being fetched now, in the background. It will play from the next
+    /// time the MUD asks for it.
+    /// </summary>
+    Downloading,
+
     /// <summary>It is not here, and could not be fetched from where the MUD said it lives.</summary>
     CouldNotFetch,
 

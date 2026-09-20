@@ -121,8 +121,13 @@ public sealed record MudGame
     /// Whether BlindTerm could open this. A web-only listing has no host, and offering to
     /// connect to one would fail in a way that looks like BlindTerm's fault.
     /// </summary>
+    /// <remarks>
+    /// Asks whether the host is empty rather than how long it is, because a listing read from
+    /// a published file can carry a null where the word was: JSON writes one, and the
+    /// initializer above only fills in a key that is absent.
+    /// </remarks>
     [JsonIgnore]
-    public bool CanConnect => Host.Length > 0 && Port is >= 1 and <= 65535;
+    public bool CanConnect => !string.IsNullOrEmpty(Host) && Port is >= 1 and <= 65535;
 
     /// <summary>
     /// Whether anything has reached this host lately.
@@ -281,4 +286,29 @@ public sealed record MudGame
 
     private static string Count(int howMany, string noun)
         => howMany == 1 ? $"1 {noun}" : $"{howMany} {noun}s";
+
+    /// <summary>
+    /// The same listing with every word that arrived as a null left out instead.
+    ///
+    /// Applied to listings read from a published file, where a field can be explicitly null
+    /// and the initializers above do nothing about it. Nothing downstream should have to ask
+    /// whether a field it reads with <c>.Length</c> is there, and a missing genre is not
+    /// worth an exception on a list somebody is only arrowing through.
+    /// </summary>
+    public MudGame Tidy() => this with
+    {
+        Source = Source ?? string.Empty,
+        SourceId = SourceId ?? string.Empty,
+        Name = Name ?? string.Empty,
+        Intro = Intro ?? string.Empty,
+        Host = Host ?? string.Empty,
+        Genre = Genre ?? string.Empty,
+        GameType = GameType ?? string.Empty,
+        Roleplaying = Roleplaying ?? string.Empty,
+        Codebase = Codebase ?? string.Empty,
+        Website = Website ?? string.Empty,
+        ListingUrl = ListingUrl ?? string.Empty,
+        StatisticsSource = StatisticsSource ?? string.Empty,
+        StatisticsUrl = StatisticsUrl ?? string.Empty,
+    };
 }

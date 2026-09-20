@@ -85,7 +85,12 @@ public sealed class MudStatus
         bool vitalsChanged = false;
         foreach ((string name, MsdpValue value) in message.Variables)
         {
-            _msdp[name] = value;
+            // Only the names this actually asks about are kept. A server chooses the variable
+            // names it sends, so remembering all of them means a dictionary that grows for the
+            // whole life of a connection on nothing but the server's say-so -- and every one
+            // of these is read back by name from a fixed list of the ones that mean something.
+            if (RoomVariables.Contains(name) || VitalsVariables.Contains(name))
+                _msdp[name] = value;
             roomChanged |= RoomVariables.Contains(name);
             vitalsChanged |= VitalsVariables.Contains(name);
 
@@ -347,7 +352,13 @@ public sealed class MudStatus
         return value.ValueKind switch
         {
             JsonValueKind.Number when value.TryGetInt64(out long number) => number,
-            JsonValueKind.Number when value.TryGetDouble(out double number) => (long)number,
+            // Bounded before the cast. A double outside long's range converts to something
+            // arbitrary rather than throwing -- on this platform, the smallest possible number
+            // -- so a MUD sending 1e300 for a hit point total would have the character read
+            // out with a figure that is not wrong so much as from nowhere. A value that is not
+            // a number anyone could mean is treated as no value at all.
+            JsonValueKind.Number when value.TryGetDouble(out double number)
+                                   && number is >= -9.0e18 and <= 9.0e18 => (long)number,
             JsonValueKind.String when long.TryParse(value.GetString(), NumberStyles.Integer,
                                                     CultureInfo.InvariantCulture,
                                                     out long number) => number,

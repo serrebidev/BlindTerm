@@ -260,7 +260,18 @@ public sealed class TerminalCore
         return null;
     }
 
-    /// <summary>Whether an ED parameter list asks for the screen (2) or the scrollback (3).</summary>
+    /// <summary>
+    /// Whether an ED parameter list asks for the screen (2) or the scrollback (3).
+    ///
+    /// Only the first parameter is read, which is what ED means: <c>ESC [ 1 ; 2 J</c> is the
+    /// same erase-above as <c>ESC [ 1 J</c>, and treating that second number as another erase
+    /// would report a screen wipe the terminal is not going to perform -- and this scanner
+    /// exists to read the screen just before it goes.
+    ///
+    /// The number is also read with a ceiling rather than as a plain int. These arrive from the
+    /// far end, and a parameter long enough to wrap a 32-bit accumulator lands on 2 without
+    /// meaning it, which would be the same false wipe arrived at another way.
+    /// </summary>
     private static bool ErasesEverything(ReadOnlySpan<byte> parameters)
     {
         int value = 0;
@@ -269,16 +280,15 @@ public sealed class TerminalCore
         {
             if (b >= (byte)'0' && b <= (byte)'9')
             {
-                value = value * 10 + (b - (byte)'0');
+                // Past two digits it is larger than any ED parameter that means anything, and
+                // stops growing rather than wrapping round.
+                if (value < 100) value = value * 10 + (b - (byte)'0');
                 sawDigit = true;
+                continue;
             }
-            else if (b == (byte)';')
-            {
-                if (sawDigit && (value == 2 || value == 3)) return true;
-                value = 0;
-                sawDigit = false;
-            }
-            // '?' and other private markers do not change which erase this is.
+            // '?' and the other private markers do not change which erase this is. A separator
+            // ends the question, because it ends the parameter that counts.
+            if (b == (byte)';') break;
         }
         return sawDigit && (value == 2 || value == 3);
     }

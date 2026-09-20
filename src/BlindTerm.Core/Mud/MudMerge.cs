@@ -70,9 +70,11 @@ public static class MudMerge
         {
             Host = first.CanConnect ? first.Host : second.Host,
             Port = first.CanConnect ? first.Port : second.Port,
-            TlsPort = first.TlsPort ?? (first.CanConnect || second.TlsPort is null
-                ? first.TlsPort ?? second.TlsPort
-                : second.TlsPort),
+            // The same rule as the address above, and for the same reason: a TLS port belongs
+            // to the host it was published for. A listing with no address of its own keeps
+            // nothing, so taking its encrypted port would offer a connection to the other
+            // game's server on a port that was never about this one.
+            TlsPort = first.CanConnect ? first.TlsPort ?? second.TlsPort : second.TlsPort,
             Intro = first.Intro.Length > 0 ? first.Intro : second.Intro,
             Genre = first.Genre.Length > 0 ? first.Genre : second.Genre,
             GameType = first.GameType.Length > 0 ? first.GameType : second.GameType,
@@ -217,12 +219,26 @@ public static class MudMerge
     {
         if (string.IsNullOrWhiteSpace(name)) return string.Empty;
 
-        var letters = new StringBuilder(name.Length);
-        foreach (char character in name)
+        // The article comes off before the punctuation does, and only as a whole word.
+        // Stripping it from the folded letters instead would take the first three characters
+        // of any name beginning with them -- "Thera" would key as "ra" and be merged with a
+        // game actually called "Ra", which is the one failure this class exists to avoid.
+        // "Threshold RPG" keeps its name for the same reason.
+        string working = TrimLeadingArticle(name.Trim());
+
+        var letters = new StringBuilder(working.Length);
+        foreach (char character in working)
             if (char.IsLetterOrDigit(character)) letters.Append(char.ToLowerInvariant(character));
 
-        string key = letters.ToString();
-        if (key.StartsWith("the", StringComparison.Ordinal) && key.Length > 3) key = key[3..];
-        return key;
+        return letters.ToString();
+    }
+
+    /// <summary>A name without a leading article, when that is what the first word is.</summary>
+    private static string TrimLeadingArticle(string name)
+    {
+        if (name.Length <= 3 || !name.StartsWith("the", StringComparison.OrdinalIgnoreCase))
+            return name;
+        // Only when the following character ends the word. "theatre" is not "atre".
+        return char.IsLetterOrDigit(name[3]) ? name : name[3..];
     }
 }

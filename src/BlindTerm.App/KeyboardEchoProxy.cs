@@ -13,8 +13,6 @@ namespace BlindTerm.App;
 [SupportedOSPlatform("windows")]
 internal sealed class KeyboardEchoProxy : TextBox
 {
-    private bool _settingRemoteText;
-
     public KeyboardEchoProxy()
     {
         Multiline = false;
@@ -32,17 +30,10 @@ internal sealed class KeyboardEchoProxy : TextBox
     {
         line = line.TrimEnd();
         int caret = Math.Clamp(column, 0, line.Length);
-        if (!string.Equals(Text, line, StringComparison.Ordinal))
-        {
-            _settingRemoteText = true;
-            try { Text = line; }
-            finally { _settingRemoteText = false; }
-        }
+        if (!string.Equals(Text, line, StringComparison.Ordinal)) Text = line;
         SelectionStart = caret;
         SelectionLength = 0;
     }
-
-    public bool SettingRemoteText => _settingRemoteText;
 
     /// <summary>Keys that must remain local to the terminal rather than edit this proxy.</summary>
     public static bool IsTerminalNavigation(Keys keyData)

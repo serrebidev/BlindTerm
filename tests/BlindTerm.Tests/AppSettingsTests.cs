@@ -27,15 +27,41 @@ public class AppSettingsTests
     }
 
     [Fact]
-    public void InvalidSettingsFallBackToDefaults()
+    public void AValueOutOfRangeIsBroughtInsideRatherThanLosingEverything()
     {
         string path = Path.GetTempFileName();
         try
         {
-            File.WriteAllText(path, "{\"Columns\":0,\"Rows\":-1}");
+            // What a hand-edited file looks like. The dimensions are impossible, and there are
+            // preferences in here that cannot be got back from the defaults -- which is why
+            // this must not answer a bad number with a whole new set of settings.
+            File.WriteAllText(path,
+                "{\"Columns\":0,\"Rows\":-1,\"Shell\":\"pwsh.exe -NoLogo\",\"SoundVolume\":400}");
             AppSettings actual = new SettingsStore().Load(path);
+
+            Assert.Equal(TerminalSize.MinimumColumns, actual.Columns);
+            Assert.Equal(TerminalSize.MinimumRows, actual.Rows);
+            Assert.Equal("pwsh.exe -NoLogo", actual.Shell);
+            Assert.Equal(100, actual.SoundVolume);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void AFileThatWillNotParseIsKeptRatherThanOverwritten()
+    {
+        string path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, "{ this is not json");
+
+            AppSettings actual = new SettingsStore().Load(path);
+
             Assert.Equal(120, actual.Columns);
-            Assert.Equal(30, actual.Rows);
+            // Kept beside the original, because the next save writes over that and whatever was
+            // in it -- every trigger its owner wrote, most likely -- is not reproducible.
+            Assert.True(File.Exists(path + ".corrupt"));
+            File.Delete(path + ".corrupt");
         }
         finally { File.Delete(path); }
     }
@@ -88,7 +114,7 @@ public class AppSettingsTests
     }
 
     [Fact]
-    public void NullShellFallsBackToDefaults()
+    public void AMissingWordBecomesAnEmptyOneWithoutLosingTheRest()
     {
         string path = Path.GetTempFileName();
         try
@@ -98,8 +124,10 @@ public class AppSettingsTests
             AppSettings actual = new SettingsStore().Load(path);
 
             Assert.Equal(string.Empty, actual.Shell);
-            Assert.Equal(120, actual.Columns);
-            Assert.Equal(30, actual.Rows);
+            // A null where a word should be is one field's problem. Both of these used to be
+            // reset with it, because the whole file was thrown away and rebuilt.
+            Assert.Equal(88, actual.Columns);
+            Assert.Equal(22, actual.Rows);
         }
         finally { File.Delete(path); }
     }

@@ -167,6 +167,14 @@ public sealed class TriggerEngine
         var outcome = new TriggerOutcome();
         if (!Enabled || _triggers.Count == 0 || lines is null || lines.Count == 0) return outcome;
 
+        // A pattern that has already given up on this batch is not asked again for the rest of
+        // it. Its own time limit is per line, and a burst is hundreds of lines: one badly
+        // shaped pattern would otherwise spend hundreds of time limits drawing the window,
+        // which is the freeze the limit was written to prevent, arrived at a different way.
+        // Skipping it costs only the lines it could not have answered anyway -- it threw away
+        // the line it timed out on, and would throw away every one after it.
+        var unanswered = new HashSet<TriggerPattern>();
+
         DateTimeOffset now = _time.GetUtcNow();
         foreach (string line in lines)
         {
@@ -175,13 +183,29 @@ public sealed class TriggerEngine
             {
                 Trigger trigger = compiled.Trigger;
                 if (!trigger.Enabled || compiled.Pattern is null) continue;
+                if (unanswered.Contains(compiled.Pattern)) continue;
                 if (!trigger.AppliesTo(session)) continue;
-                if (compiled.Pattern.Match(line) is not { } capture) continue;
 
-                if (!MayFire(compiled, now, outcome)) continue;
+                TriggerCapture? capture = compiled.Pattern.Match(line, out bool timedOut);
+                if (timedOut) unanswered.Add(compiled.Pattern);
+                if (capture is not { } matched) continue;
 
-                Fire(trigger, capture, outcome);
-                if (trigger.StopProcessing) break;
+                bool acted = MayFire(compiled, now, outcome);
+                if (acted) Fire(trigger, capture, outcome);
+
+                // Acting on the line and taking responsibility for it are two different
+                // things, and only one of them is about the wait between firings. "Everything
+                // from this channel, except when it mentions me" is written as a silence
+                // trigger with StopProcessing over a channel trigger, and it has to hold for
+                // the lines in between as much as for the first: a trigger waiting out its
+                // own cooldown has not spoken, but the line it was written to protect is
+                // still a line it matched, and letting the triggers below it run would talk
+                // over exactly what the user asked to keep quiet.
+                //
+                // A trigger that has just paused itself for running away is the exception.
+                // It is no longer a trigger at all, and a match it can no longer act on is
+                // not a reason to stop every trigger listed after it from working.
+                if (trigger.StopProcessing && !compiled.Paused) break;
             }
         }
 

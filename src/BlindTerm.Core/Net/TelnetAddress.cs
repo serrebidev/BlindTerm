@@ -55,6 +55,13 @@ public static class TelnetAddress
         }
         if (value.Length == 0) return false;
 
+        // A scheme this does not speak, still attached. Left in, the two slashes after the
+        // colon read as the second colon of an unbracketed IPv6 literal below, and
+        // "http://mud.example.com:80" becomes a host called "http://mud.example.com:80" on the
+        // default port -- so the connection failure names a machine that does not exist
+        // instead of refusing an address that was never a MUD.
+        if (value.Contains("://", StringComparison.Ordinal)) return false;
+
         // A trailing slash is what a browser adds to an address someone pasted out of one.
         value = value.TrimEnd('/');
         if (value.Length == 0) return false;

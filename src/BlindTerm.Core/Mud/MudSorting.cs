@@ -82,14 +82,17 @@ public static class MudSorting
         perPage = Math.Max(1, perPage);
         page = Math.Max(1, page);
 
-        int start = (page - 1) * perPage;
+        // Worked out in long. page is only bounded below, and (int.MaxValue - 1) * perPage
+        // overflows to a negative start -- which reads as "before the first page" and quietly
+        // returns the first one instead of nothing.
+        long start = (long)(page - 1) * perPage;
         if (start >= games.Count)
             return new MudDirectoryPage { Games = [], Page = page, PerPage = perPage, Total = games.Count };
 
-        int length = Math.Min(perPage, games.Count - start);
+        int length = (int)Math.Min(perPage, games.Count - start);
         return new MudDirectoryPage
         {
-            Games = [.. games.Skip(start).Take(length)],
+            Games = [.. games.Skip((int)start).Take(length)],
             Page = page,
             PerPage = perPage,
             Total = games.Count,

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Media;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using BlindTerm.App.Defterm;
@@ -186,6 +187,12 @@ public sealed class MainForm : Form
         {
             _sounds?.Tick();
             _triggerSounds?.Tick();
+
+            // Nothing left to watch, so stop watching. The timer starts when a sound starts
+            // and only ever stopped when sounds were turned off or the window closed, so a
+            // window that had played one sound kept waking four times a second for the rest
+            // of the session -- on the window thread, for nothing.
+            if (_sounds?.IsPlaying != true && _triggerSounds?.IsPlaying != true) _soundTimer.Stop();
         };
         _completionEchoTimer.Tick += (_, _) =>
         {
@@ -1132,6 +1139,12 @@ public sealed class MainForm : Form
             MspProblem.NotHere =>
                 "This MUD's sounds are not on this machine. Turn on Download sounds a MUD "
                 + "offers, in the Read menu, to fetch them.",
+            // Said once, and only because the first request for a sound that has to be fetched
+            // is silent by its nature: the fetch is in the background, so this is the only
+            // moment anyone could be told why nothing was heard. From the next trigger on it
+            // plays normally.
+            MspProblem.Downloading =>
+                "Fetching this MUD's sounds. They will play from the next one it asks for.",
             MspProblem.CouldNotFetch =>
                 "This MUD's sounds could not be downloaded.",
             MspProblem.CannotPlay =>
@@ -1381,8 +1394,29 @@ public sealed class MainForm : Form
         string text = ScreenMode && _screen is not null
             ? string.Join(Environment.NewLine, _screen)
             : _host.Transcript.Text();
-        if (text.Length > 0) Clipboard.SetText(text);
-        Say("Copied");
+        CopyToClipboard(text, "Copied");
+    }
+
+    /// <summary>
+    /// Puts text on the clipboard, or says it could not.
+    ///
+    /// Setting the clipboard throws when another process is holding it open, which is ordinary
+    /// -- a clipboard manager, or whatever the user last copied from. This runs from a menu
+    /// handler on the window thread, where an exception is not a failed copy but a terminated
+    /// terminal, and the person who pressed the key is owed a sentence either way.
+    /// </summary>
+    private void CopyToClipboard(string text, string said)
+    {
+        if (text.Length > 0)
+        {
+            try { Clipboard.SetText(text); }
+            catch (ExternalException)
+            {
+                Say("Another program is using the clipboard. Try again.");
+                return;
+            }
+        }
+        Say(said);
     }
 
     // ---- Triggers ----
@@ -1451,6 +1485,12 @@ public sealed class MainForm : Form
             _settings.Shell = next.Shell;
             _settings.Columns = next.Columns;
             _settings.Rows = next.Rows;
+            // Every field the dialog can change has to be copied back here, and this one was
+            // not. The dialog saves a copy of the settings, so its version of the colours
+            // reached the file and this window kept the old one -- and the next save from
+            // anywhere, connecting to a MUD or turning MUD sounds off, wrote the old value
+            // back over the new one. Choosing dark worked until the next thing that saved.
+            _settings.Theme = next.Theme;
             _settings.AutomaticallyCheckForUpdates = next.AutomaticallyCheckForUpdates;
             _settings.UpdateCheckIntervalMinutes = next.UpdateCheckIntervalMinutes;
             _settings.MudSounds = next.MudSounds;
@@ -1567,14 +1607,12 @@ public sealed class MainForm : Form
             string latest = _host.Kind == TerminalSessionKind.Remote
                 ? _latestResponse.Text(_host.Transcript)
                 : _host.Transcript.Text();
-            if (latest.Length > 0) Clipboard.SetText(latest);
-            Say("Copied command output");
+            CopyToClipboard(latest, "Copied command output");
             return;
         }
         int index = _commandBlockIndex < 0 ? blocks.Count - 1 : _commandBlockIndex;
         string text = _host.Core.CommandBlocks.CopyOutput(index, _host.Transcript);
-        if (text.Length > 0) Clipboard.SetText(text);
-        Say("Copied command output");
+        CopyToClipboard(text, "Copied command output");
     }
 
     private void ShowAbout()
@@ -1626,8 +1664,12 @@ public sealed class MainForm : Form
             Close();
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException
-                                   or InvalidOperationException or UnauthorizedAccessException)
+        // Everything, not a list of the exceptions expected. This runs from a timer and from
+        // an async event handler, where an exception nobody caught is not a failed update but
+        // a dead process -- and what it is checking is a file somebody else publishes. A
+        // release manifest with a field written as null took the whole terminal down; a
+        // background check for a newer version must never be able to do that.
+        catch (Exception ex)
         {
             if (!automatic)
             {
@@ -1882,13 +1924,20 @@ public sealed class MainForm : Form
 
         if (_passThroughNext)
         {
+            // Disarmed whatever key arrived. It used to stay armed when the next key had no
+            // terminal translation -- a plain letter, say -- so "pass the next key to the
+            // program" waited instead for the next key that happened to have one, which could
+            // be minutes later and a completely different key from the one meant.
+            _passThroughNext = false;
+
             byte[]? passed = KeyTranslator.Translate(keyData, _host.Engine.ApplicationCursorKeys);
             if (passed is not null)
             {
-                _passThroughNext = false;
                 _host.Send(passed);
                 return true;
             }
+            // Nothing to translate, so this is ordinary typing: fall through to the paths
+            // below, which is where a character reaches the program.
         }
 
         // Alt belongs to BlindTerm and its menu everywhere, so there is always a way back out.

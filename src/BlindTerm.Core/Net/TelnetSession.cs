@@ -26,6 +26,16 @@ public sealed class TelnetSession : ITerminalSession
 
     private readonly BlockingCollection<byte[]> _writes = new(new ConcurrentQueue<byte[]>());
     private readonly CancellationTokenSource _stopping = new();
+
+    /// <summary>
+    /// Held for the whole of one submitted line -- its text, its gap, and its terminator.
+    ///
+    /// The queue below serialises individual writes, which is not the same thing: the gap
+    /// between a line and its terminator is an await, and two lines submitted close together
+    /// put their texts next to each other and their terminators after both -- one command
+    /// made of two. A trigger that sends is the way this happens without anybody typing.
+    /// </summary>
+    private readonly SemaphoreSlim _lineGate = new(1, 1);
     private readonly TelnetProtocol _protocol;
     private readonly MspScanner _sounds = new();
     private readonly List<MspTrigger> _triggers = new();
@@ -41,6 +51,9 @@ public sealed class TelnetSession : ITerminalSession
     private TelnetAccessibilityFilter? _accessibility;
     private Thread? _readThread;
     private Thread? _writeThread;
+
+    /// <summary>Whether the reading and writing loops have been started on this connection.</summary>
+    private bool _started;
     private int _disposed;
 
     public event Action<ReadOnlyMemory<byte>>? Output;
@@ -231,7 +244,12 @@ public sealed class TelnetSession : ITerminalSession
     public void Begin()
     {
         if (_stream is null) throw new InvalidOperationException("Session is not connected.");
-        if (IsRunning) return;
+        // Once per session, and deliberately not "once while it is running": by the time the
+        // loops have ended the stream is closed and the protocol is still holding the
+        // negotiation state of a conversation that is over, so starting them again would run
+        // fresh threads against both. A window that wants another connection dials another one.
+        if (_started) return;
+        _started = true;
 
         IsRunning = true;
         _readThread = new Thread(ReadLoop) { IsBackground = true, Name = "BlindTerm telnet read" };
@@ -311,27 +329,39 @@ public sealed class TelnetSession : ITerminalSession
         {
             // The connection dropped, which is an ordinary way for a session to end.
         }
+        // Anything else came from a subscriber. This loop hands bytes, sounds and status on
+        // synchronously, on this thread, so a listener that throws lands here -- a bug in the
+        // listener, but not a reason for the session to end up half-closed with IsRunning
+        // still true and the window showing a connection that died hours ago.
+        catch (Exception) { }
 
-        // Anything held back waiting to become a sound trigger never will now, and is text.
-        int trailing = _sounds.Flush(sounds);
-        if (trailing > 0)
+        // Whatever ended the loop, the session is over and the window has to be told: anything
+        // held back waiting to become a sound trigger never will now and is ordinary text.
+        try
         {
-            if (_accessibility is null) Output?.Invoke(new ReadOnlyMemory<byte>(sounds, 0, trailing));
-            else
+            int trailing = _sounds.Flush(sounds);
+            if (trailing > 0)
             {
-                byte[] accessible = _accessibility.Process(sounds.AsSpan(0, trailing));
-                if (accessible.Length > 0) Output?.Invoke(accessible);
+                if (_accessibility is null) Output?.Invoke(new ReadOnlyMemory<byte>(sounds, 0, trailing));
+                else
+                {
+                    byte[] accessible = _accessibility.Process(sounds.AsSpan(0, trailing));
+                    if (accessible.Length > 0) Output?.Invoke(accessible);
+                }
+            }
+            if (_accessibility is not null)
+            {
+                byte[] withheld = _accessibility.Flush();
+                if (withheld.Length > 0) Output?.Invoke(withheld);
             }
         }
-        if (_accessibility is not null)
+        catch (Exception) { }
+        finally
         {
-            byte[] withheld = _accessibility.Flush();
-            if (withheld.Length > 0) Output?.Invoke(withheld);
+            IsRunning = false;
+            // A closed connection has no exit code. Nothing here can invent one.
+            Exited?.Invoke(null);
         }
-
-        IsRunning = false;
-        // A closed connection has no exit code. Nothing here can invent one.
-        Exited?.Invoke(null);
     }
 
     private void WriteLoop()
@@ -351,8 +381,12 @@ public sealed class TelnetSession : ITerminalSession
     /// <summary>Queues typed bytes, in call order, with any literal 255 escaped for the wire.</summary>
     public void Write(ReadOnlySpan<byte> bytes)
     {
-        if (bytes.IsEmpty || _writes.IsAddingCompleted) return;
-        _writes.Add(TelnetProtocol.Escape(bytes));
+        if (bytes.IsEmpty) return;
+        // Asked by trying rather than by asking first: IsAddingCompleted and Add are two
+        // separate steps, and the window closing between them -- which is exactly when a
+        // queued line is still on its way -- throws out of a caller with nowhere to put it.
+        try { _writes.Add(TelnetProtocol.Escape(bytes)); }
+        catch (InvalidOperationException) { }
     }
 
     public void Write(string text) => Write(Encoding.UTF8.GetBytes(text));
@@ -360,15 +394,24 @@ public sealed class TelnetSession : ITerminalSession
     /// <summary>Bytes that are already protocol, and must not be escaped again.</summary>
     private void Send(List<byte> protocol)
     {
-        if (protocol.Count == 0 || _writes.IsAddingCompleted) return;
-        _writes.Add([.. protocol]);
+        if (protocol.Count == 0) return;
+        try { _writes.Add([.. protocol]); }
+        catch (InvalidOperationException) { }
     }
 
     public async Task WriteLineSplit(string text, string terminator, int gapMs)
     {
-        if (text.Length > 0) Write(text);
-        if (gapMs > 0) await Task.Delay(gapMs).ConfigureAwait(false);
-        Write(terminator);
+        if (gapMs > 0) await _lineGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (text.Length > 0) Write(text);
+            if (gapMs > 0) await Task.Delay(gapMs).ConfigureAwait(false);
+            Write(terminator);
+        }
+        finally
+        {
+            if (gapMs > 0) _lineGate.Release();
+        }
     }
 
     /// <summary>
@@ -403,6 +446,7 @@ public sealed class TelnetSession : ITerminalSession
 
         _stopping.Dispose();
         _writes.Dispose();
+        _lineGate.Dispose();
         IsRunning = false;
     }
 }

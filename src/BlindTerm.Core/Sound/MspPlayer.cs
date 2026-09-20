@@ -42,10 +42,14 @@ public sealed class MspPlayer : IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Fetches a missing sound and returns where it was written, or null. Left unset, nothing
-    /// is downloaded and a sound the machine does not have is simply not played.
+    /// Fetches a missing sound, and says whether it is here, on its way, or not coming.
+    /// Left unset, nothing is downloaded and a sound the machine does not have is simply not
+    /// played.
+    ///
+    /// This is called with the player's lock held, on the thread that produced the trigger, so
+    /// an implementation must return rather than wait -- see <see cref="SoundDownloader.Fetch"/>.
     /// </summary>
-    public Func<MspTrigger, string?>? Download { get; init; }
+    public Func<MspTrigger, MspFetch>? Download { get; init; }
 
     /// <summary>Scales every sound. 0 silences without turning the protocol off.</summary>
     public int MasterVolume { get; set; } = 100;
@@ -66,6 +70,15 @@ public sealed class MspPlayer : IDisposable
 
     /// <summary>What is playing now, for tests and for anything that wants to report it.</summary>
     public int PlayingSounds { get { lock (_gate) return _sounds.Count; } }
+
+    /// <summary>
+    /// Whether anything at all is still playing.
+    ///
+    /// What a caller driving <see cref="Tick"/> from a timer asks to know when it can stop:
+    /// a tick only exists to restart what has repeats left and to forget what has finished,
+    /// so with nothing playing there is nothing for it to do.
+    /// </summary>
+    public bool IsPlaying { get { lock (_gate) return _sounds.Count > 0 || _music is not null; } }
 
     public string? PlayingMusic { get { lock (_gate) return _music is null ? null : _musicPath; } }
 
@@ -260,9 +273,10 @@ public sealed class MspPlayer : IDisposable
         MspTrigger asked = trigger.Url is null && _soundUrl is not null
             ? trigger with { Url = _soundUrl }
             : trigger;
-        string? fetched = Download(asked);
-        if (fetched is null) _problem = MspProblem.CouldNotFetch;
-        return fetched;
+        MspFetch fetched = Download(asked);
+        if (fetched.Path is null)
+            _problem = fetched.Pending ? MspProblem.Downloading : MspProblem.CouldNotFetch;
+        return fetched.Path;
     }
 
     /// <summary>Where this MUD has said its sounds live, if it has said.</summary>

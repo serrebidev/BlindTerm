@@ -80,6 +80,26 @@ public sealed class Announcer : IDisposable
     public TimeSpan FloodAfter { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
+    /// How long a silence has to last before the unbroken run of output being measured
+    /// against <see cref="FloodAfter"/> counts as over.
+    ///
+    /// Deliberately not <see cref="IdleWindow"/>, which is the wrong question asked of the
+    /// right field. That one is about batching -- is the next read part of this burst -- and
+    /// 25 milliseconds is the right answer there because a pseudo console hands a command's
+    /// output over in reads a few milliseconds apart. Judging a *flood* by it means every
+    /// program whose output is spaced more widely than that looks like a fresh burst each
+    /// time: Windows resolves a program's own delay to a 15.6 millisecond tick, so a build
+    /// printing a line every 16 milliseconds -- sixty a second, far faster than anyone can be
+    /// read to -- reset the counter on every line and was never treated as flooding at all.
+    /// The feature worked only for output faster than the timer could resolve.
+    ///
+    /// A gap this long is the honest reading of "the run has finished": it is long enough to
+    /// cover any cadence a program prints at, and short enough that a command's output
+    /// followed by a prompt still ends the run.
+    /// </summary>
+    public TimeSpan FloodGap { get; set; } = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>
     /// How often a flooding terminal is spoken.
     ///
     /// Long enough for each report to be worth hearing. At the ordinary cap a flood would be
@@ -164,9 +184,10 @@ public sealed class Announcer : IDisposable
 
             long now = Stopwatch.GetTimestamp();
 
-            // A gap longer than the wait for output to stop means the last run finished and
-            // was spoken. What arrives now is a new run, however long the previous one was.
-            if (_lastEnqueued == 0 || Stopwatch.GetElapsedTime(_lastEnqueued) > IdleWindow)
+            // A silence longer than FloodGap means the last run finished and was spoken. What
+            // arrives now is a new run, however long the previous one was. See FloodGap for
+            // why this is not IdleWindow.
+            if (_lastEnqueued == 0 || Stopwatch.GetElapsedTime(_lastEnqueued) > FloodGap)
             {
                 _streamingSince = now;
                 _flooding = false;
@@ -326,6 +347,22 @@ public sealed class Announcer : IDisposable
         {
             DisarmFlushTimer();
             if (_disposed || _pending.Count + _urgent.Count == 0) return;
+
+            // The window can be left between a batch being queued and this firing, and nothing
+            // is spoken into an empty seat. DiscardStreamed is what normally clears the way,
+            // but it cannot close a race it is on the other side of: if this thread already
+            // held the lock, that call found nothing to clear and returned, and this text
+            // would then be said into whatever window the user had gone to read -- the exact
+            // interruption the attended gate exists to prevent. Asking again here, under the
+            // same lock, is what makes the answer current at the moment it matters.
+            //
+            // Only the streamed path: an urgent line was already decided against an attended
+            // window when it was interjected, and the gate would have refused it there.
+            if (priority == SpeechPriority.Normal && !Listening)
+            {
+                _pending.Clear();
+                return;
+            }
 
             // While the terminal is flooding, what is already queued is out of date: it
             // describes output the program has since printed past. Speaking this batch behind

@@ -42,6 +42,17 @@ public sealed class PtySession : ITerminalSession
 
     private readonly BlockingCollection<byte[]> _writes = new(new ConcurrentQueue<byte[]>());
     private readonly CancellationTokenSource _stopping = new();
+
+    /// <summary>
+    /// Held for the whole of one submitted line -- its text, its gap, and its Return.
+    ///
+    /// The queue below serialises individual writes, which is not the same thing: the gap
+    /// between a line and its Return is an await, and two submissions that overlap in it put
+    /// their texts next to each other and their Returns after both. What reached the child
+    /// was one command made of two, followed by two blank lines. Only one line is in flight
+    /// at a time, which is also what a person typing at a prompt does.
+    /// </summary>
+    private readonly SemaphoreSlim _lineGate = new(1, 1);
     private Thread? _readThread;
     private Thread? _writeThread;
     private Thread? _waitThread;
@@ -156,33 +167,47 @@ public sealed class PtySession : ITerminalSession
         _inputWrite = inputWrite;
         _outputRead = outputRead;
 
+        // Everything below here can fail for ordinary reasons -- a name typed wrong, a tool
+        // that is not installed, a Windows that will not give us the job. None of it is
+        // cleaned up by anything later: the pseudo console handle and the attribute block are
+        // raw pointers with no finalizer behind them, and a session that never started is
+        // never disposed by the window either, because it attached this one and it is the
+        // only reference there is. So a half-built session unwinds itself here.
         try
         {
-            var size = new COORD { X = (short)columns, Y = (short)rows };
-            int hr = CreatePseudoConsole(size, inputRead, outputWrite, 0, out _handle);
-            if (hr != 0) throw new Win32Exception(hr, "CreatePseudoConsole failed.");
+            try
+            {
+                var size = new COORD { X = (short)columns, Y = (short)rows };
+                int hr = CreatePseudoConsole(size, inputRead, outputWrite, 0, out _handle);
+                if (hr != 0) throw new Win32Exception(hr, "CreatePseudoConsole failed.");
+            }
+            finally
+            {
+                // The pseudo console has duplicated these; our copies go now, before the child
+                // is created. Closing them is also what lets the read loop see EOF when the
+                // child exits -- holding them open would hang the session forever.
+                inputRead.Dispose();
+                outputWrite.Dispose();
+            }
+
+            StartChild(commandLine, environment, workingDirectory);
+
+            _writer = new FileStream(_inputWrite, FileAccess.Write);
+            _reader = new FileStream(_outputRead, FileAccess.Read);
+            IsRunning = true;
+
+            _readThread = new Thread(ReadLoop) { IsBackground = true, Name = "BlindTerm PTY read" };
+            _writeThread = new Thread(WriteLoop) { IsBackground = true, Name = "BlindTerm PTY write" };
+            _waitThread = new Thread(WaitLoop) { IsBackground = true, Name = "BlindTerm PTY wait" };
+            _readThread.Start();
+            _writeThread.Start();
+            _waitThread.Start();
         }
-        finally
+        catch
         {
-            // The pseudo console has duplicated these; our copies go now, before the child is
-            // created. Closing them is also what lets the read loop see EOF when the child
-            // exits -- holding them open would hang the session forever.
-            inputRead.Dispose();
-            outputWrite.Dispose();
+            Dispose();
+            throw;
         }
-
-        StartChild(commandLine, environment, workingDirectory);
-
-        _writer = new FileStream(_inputWrite, FileAccess.Write);
-        _reader = new FileStream(_outputRead, FileAccess.Read);
-        IsRunning = true;
-
-        _readThread = new Thread(ReadLoop) { IsBackground = true, Name = "BlindTerm PTY read" };
-        _writeThread = new Thread(WriteLoop) { IsBackground = true, Name = "BlindTerm PTY write" };
-        _waitThread = new Thread(WaitLoop) { IsBackground = true, Name = "BlindTerm PTY wait" };
-        _readThread.Start();
-        _writeThread.Start();
-        _waitThread.Start();
     }
 
     /// <summary>
@@ -425,20 +450,43 @@ public sealed class PtySession : ITerminalSession
         catch (ObjectDisposedException) { }
     }
 
+    /// <summary>
+    /// Watches for the child to exit, in slices rather than in one endless wait.
+    ///
+    /// Waiting for ever means nothing can interrupt it, and closing the window then closes
+    /// the process handle out from under a thread that is blocked on it -- which is undefined
+    /// behaviour, and can surface as the session reporting an exit code that never existed.
+    /// A slice is short enough that Dispose can wait for this thread to notice and stop before
+    /// the handle goes.
+    /// </summary>
     private void WaitLoop()
     {
         if (_process == IntPtr.Zero) return;
-        WaitForSingleObject(_process, 0xFFFFFFFF);
+
+        while (WaitForSingleObject(_process, WaitSlice) == WAIT_TIMEOUT)
+        {
+            if (_stopping.IsCancellationRequested) return;
+        }
+        if (_stopping.IsCancellationRequested) return;
+
         int? code = GetExitCodeProcess(_process, out int value) ? value : null;
         IsRunning = false;
         Exited?.Invoke(code);
     }
 
+    private const uint WAIT_TIMEOUT = 0x00000102;
+    private const uint WaitSlice = 100;
+
     /// <summary>Queues bytes for the child's input, in call order.</summary>
     public void Write(ReadOnlySpan<byte> bytes)
     {
-        if (bytes.IsEmpty || _writes.IsAddingCompleted) return;
-        _writes.Add(bytes.ToArray());
+        if (bytes.IsEmpty) return;
+
+        // Asked by trying rather than by asking first. IsAddingCompleted and Add are two
+        // separate steps, and closing the window between them -- which is when a queued
+        // Return is still on its way -- throws out of a caller that has nowhere to put it.
+        try { _writes.Add(bytes.ToArray()); }
+        catch (InvalidOperationException) { }
     }
 
     public void Write(string text) => Write(Encoding.UTF8.GetBytes(text));
@@ -451,12 +499,23 @@ public sealed class PtySession : ITerminalSession
     /// paste -- so a Return in the same write as a long line is pasted text rather than
     /// "send this", and nothing happens. Splitting the write leaves the Return unmistakable
     /// however long the line is.
+    ///
+    /// The whole of it is one operation, see <see cref="_lineGate"/>: the gap is what another
+    /// submission would otherwise land in.
     /// </summary>
     public async Task WriteLineSplit(string text, string terminator = "\r", int gapMs = 20)
     {
-        if (text.Length > 0) Write(text);
-        if (gapMs > 0) await Task.Delay(gapMs).ConfigureAwait(false);
-        Write(terminator);
+        if (gapMs > 0) await _lineGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (text.Length > 0) Write(text);
+            if (gapMs > 0) await Task.Delay(gapMs).ConfigureAwait(false);
+            Write(terminator);
+        }
+        finally
+        {
+            if (gapMs > 0) _lineGate.Release();
+        }
     }
 
     /// <summary>
@@ -495,6 +554,13 @@ public sealed class PtySession : ITerminalSession
         _stopping.Cancel();
         _writes.CompleteAdding();
 
+        // The waiter is looking at _process and may be blocked inside the kernel on it.
+        // CloseHandle while another thread is waiting on the same handle is undefined -- the
+        // wait can fail outright, or land on something else entirely if Windows has recycled
+        // the value -- so let it notice the cancellation and stop first. Bounded, because the
+        // waiter checks between slices and gives up on its own.
+        _waitThread?.Join(TimeSpan.FromSeconds(2));
+
         // Closing the pseudo console signals the child that the terminal has gone, which is
         // what lets a well-behaved shell exit on its own.
         if (_handle != IntPtr.Zero) { ClosePseudoConsole(_handle); _handle = IntPtr.Zero; }
@@ -525,6 +591,7 @@ public sealed class PtySession : ITerminalSession
 
         _stopping.Dispose();
         _writes.Dispose();
+        _lineGate.Dispose();
         IsRunning = false;
     }
 }

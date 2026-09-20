@@ -88,10 +88,24 @@ public sealed class MudFeed
         feed.Types ??= [];
         feed.Roleplaying ??= [];
         feed.Games ??= [];
-        // A listing with no address is nothing a terminal can open, and one that arrived
-        // without a name cannot be chosen from a list that is read out.
-        feed.Games.RemoveAll(game => game is null || string.IsNullOrWhiteSpace(game.Name)
-                                     || !game.CanConnect);
+        // A listing is kept only if it can be connected to and can be chosen from a list that
+        // is read out, and a listing that is kept has every null word filled in first. JSON
+        // writes a null where a key is explicitly null -- the initializers on the record do
+        // nothing about that, they only cover a key that is absent -- and every one of these
+        // fields is read with .Length or handed to something that is. The file is published
+        // by a scheduled job in this repository, so this is not a defence against anybody; it
+        // is what stops one hand-edited listing from throwing somewhere the message would not
+        // say what had happened.
+        for (int i = 0; i < feed.Games.Count; i++)
+        {
+            MudGame? game = feed.Games[i];
+            if (game is null || !game.CanConnect || string.IsNullOrWhiteSpace(game.Name))
+            {
+                feed.Games.RemoveAt(i--);
+                continue;
+            }
+            feed.Games[i] = game.Tidy();
+        }
         return feed;
     }
 }

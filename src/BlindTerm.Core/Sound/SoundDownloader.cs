@@ -17,8 +17,20 @@ public sealed class SoundDownloader : IDisposable
 {
     private readonly HttpClient _http;
     private readonly SoundLibrary _library;
-    private readonly HashSet<string> _failed = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>URLs already tried, so a MUD naming something it does not have is not a loop.</summary>
+    private readonly HashSet<string> _attempted = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _gate = new();
+
+    /// <summary>
+    /// How many addresses are remembered before no more are attempted.
+    ///
+    /// A bound on a set that only ever grows: every distinct address the server names is
+    /// remembered for the life of the session, and the addresses are the server's to choose.
+    /// Past this, a session has already been asked to fetch far more than any sound pack
+    /// holds, and refusing the rest costs nothing a user would notice.
+    /// </summary>
+    private const int MaximumAttempts = 512;
 
     public SoundDownloader(SoundLibrary library, HttpClient? http = null)
     {
@@ -28,56 +40,82 @@ public sealed class SoundDownloader : IDisposable
     }
 
     /// <summary>
-    /// Fetches the trigger's file if it is missing, and returns where it now is, or null if it
-    /// could not or should not be fetched.
+    /// The file for a trigger if it is here, starting a fetch in the background when it is
+    /// not, and reporting which of those happened.
+    ///
+    /// Nothing is ever waited for. This is reached from the window's own thread at the moment
+    /// a trigger arrives, and the address being fetched is the server's to choose: waiting on
+    /// it there means a MUD that names a host which never answers freezes the terminal for
+    /// the whole of the timeout, with the sound board locked behind the same gate. So the
+    /// fetch runs on its own thread and the sound plays the next time the MUD asks -- which
+    /// for the MUDs that use sound packs is after every room description.
     /// </summary>
-    public string? Fetch(MspTrigger trigger)
+    public MspFetch Fetch(MspTrigger trigger)
     {
         ArgumentNullException.ThrowIfNull(trigger);
 
         Uri? source = SoundLibrary.DownloadFor(trigger);
         string? destination = _library.DestinationFor(trigger);
-        if (source is null || destination is null) return null;
+        if (source is null || destination is null) return MspFetch.No();
+
+        if (File.Exists(destination)) return MspFetch.Here(destination);
 
         lock (_gate)
         {
             // One attempt per address. A MUD that names a sound it does not have would
             // otherwise send this back to the network on every room description.
-            if (!_failed.Add(source.AbsoluteUri)) return null;
+            if (_attempted.Count >= MaximumAttempts || !_attempted.Add(source.AbsoluteUri))
+                return MspFetch.No();
         }
 
+        _ = Task.Run(() => FetchNow(source, destination));
+        return MspFetch.Fetching();
+    }
+
+    /// <summary>
+    /// Does the fetch and writes the file. Runs on a thread pool thread, off the window's own.
+    /// </summary>
+    private void FetchNow(Uri source, string destination)
+    {
+        string? temporary = null;
         try
         {
             string? folder = Path.GetDirectoryName(destination);
-            if (folder is null) return null;
+            if (folder is null) return;
             Directory.CreateDirectory(folder);
-            if (File.Exists(destination)) return destination;
+            if (File.Exists(destination)) return;
 
             using HttpResponseMessage response =
                 _http.Send(new HttpRequestMessage(HttpMethod.Get, source), HttpCompletionOption.ResponseHeadersRead);
-            if (!response.IsSuccessStatusCode) return null;
-            if (response.Content.Headers.ContentLength > SoundLibrary.MaximumDownloadBytes) return null;
+            if (!response.IsSuccessStatusCode) return;
+            if (response.Content.Headers.ContentLength > SoundLibrary.MaximumDownloadBytes) return;
 
             using Stream body = response.Content.ReadAsStream();
             // Written beside the destination and moved into place, so an interrupted download
             // never leaves half a sound to be played next time.
-            string temporary = destination + ".part";
+            temporary = destination + ".part";
             using (var file = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                if (!CopyCapped(body, file)) { file.Dispose(); TryDelete(temporary); return null; }
+                if (!CopyCapped(body, file)) return;
             }
 
             File.Move(temporary, destination, overwrite: false);
-            lock (_gate) _failed.Remove(source.AbsoluteUri);
-            return destination;
+            temporary = null;
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException
-                                   or UnauthorizedAccessException or NotSupportedException
-                                   or InvalidOperationException)
+        catch (Exception)
         {
-            // A sound that cannot be fetched is a sound that does not play. Nothing about a
-            // MUD session should stop because a web server did.
-            return null;
+            // A sound that cannot be fetched is a sound that does not play, and nothing about
+            // a MUD session should stop because a web server did. Caught as everything rather
+            // than as the likely set: this is a thread-pool task, where an exception nobody
+            // observed is a silent leak rather than a message anybody reads.
+        }
+        finally
+        {
+            // Two ways to arrive here with a part file: the cap was reached mid-copy, or the
+            // move failed because something else put a file there first. Either way it is
+            // half a sound under a name nothing will ever look for, and left alone it
+            // accumulates one per address the server names.
+            if (temporary is not null) TryDelete(temporary);
         }
     }
 

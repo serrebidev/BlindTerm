@@ -40,6 +40,15 @@ public sealed record MspTrigger(
     /// <summary>Loop for as long as nothing stops it.</summary>
     public const int Forever = -1;
 
+    /// <summary>
+    /// More repeats than any sound pack asks for, and a bound on a number a server sent.
+    ///
+    /// The count comes from the far end, and a sound with an unbounded one outlives the
+    /// session that started it: the repeats are counted here, a tick at a time, so a number
+    /// of two billion is a sound still playing long after the window is closed.
+    /// </summary>
+    public const int MaximumLoops = 1000;
+
     /// <summary>Whether this asks for everything of its kind to stop.</summary>
     public bool IsOff => FileName.Equals("Off", StringComparison.OrdinalIgnoreCase);
 
@@ -110,8 +119,9 @@ public sealed record MspTrigger(
             name,
             Math.Clamp(volume, 0, 100),
             // Anything below -1 is meaningless; treat it as the one negative that means
-            // something rather than as a count that can never be reached.
-            loops < Forever ? Forever : loops,
+            // something rather than as a count that can never be reached. Anything above the
+            // cap is a number nobody asked for and no sound should outlive the session for.
+            Math.Clamp(loops, Forever, MaximumLoops),
             Math.Clamp(priority, 0, 100),
             keepPlaying,
             type,

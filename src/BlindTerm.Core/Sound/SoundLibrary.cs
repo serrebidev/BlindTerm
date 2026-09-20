@@ -175,13 +175,40 @@ public sealed class SoundLibrary
         if (segment.Contains('/') || segment.Contains('\\')) return false;
         // A drive letter, a device name or a stream would all be a path rather than a name.
         if (segment.Contains(':')) return false;
+        if (IsReservedDevice(segment)) return false;
         return segment.IndexOfAny(Path.GetInvalidFileNameChars()
             .Where(c => c is not '*' and not '?').ToArray()) < 0;
+    }
+
+    /// <summary>
+    /// Names Windows answers with a device rather than with a file, whatever is written after
+    /// them: "NUL.wav" is the null device and "COM1.wav" a serial port, not sounds called NUL
+    /// and COM1. A download named one is written to nowhere, or to a piece of hardware, and
+    /// the extension that makes it look playable is exactly what hides it.
+    /// </summary>
+    private static readonly IReadOnlySet<string> ReservedDevices =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        };
+
+    private static bool IsReservedDevice(string segment)
+    {
+        int dot = segment.IndexOf('.');
+        string stem = dot < 0 ? segment : segment[..dot];
+        return ReservedDevices.Contains(stem.TrimEnd(' '));
     }
 
     private string FolderFor(string? type)
     {
         if (type is null) return Directory;
+        // IsSafeSegment lets a wildcard through on purpose -- it is about a file name, where
+        // one means "any of these" -- but a subfolder is not a file name, and Windows will not
+        // create a directory with one in it either. A pattern here would be the disk walked
+        // rather than a folder read.
+        if (type.Contains('*') || type.Contains('?')) return string.Empty;
         return IsSafeSegment(type) ? Path.Combine(Directory, type) : string.Empty;
     }
 
@@ -192,7 +219,11 @@ public sealed class SoundLibrary
         if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder)) return [];
         try
         {
-            return System.IO.Directory.EnumerateFiles(folder, name, SearchOption.TopDirectoryOnly);
+            // Materialised inside the try, not handed back as a lazy sequence. EnumerateFiles
+            // does its work when the sequence is walked, which is somewhere else entirely --
+            // in the middle of resolving a sound to play, where a refused directory would be
+            // an exception rather than the "no matches" this is here to produce.
+            return [.. System.IO.Directory.EnumerateFiles(folder, name, SearchOption.TopDirectoryOnly)];
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
                                    or ArgumentException)

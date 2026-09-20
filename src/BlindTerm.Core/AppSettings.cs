@@ -181,12 +181,24 @@ public sealed class AppSettings
                                        RecentSshHosts.Count - MaximumRecentSshHosts);
     }
 
+    /// <summary>
+    /// Brings every value inside the range this program can use.
+    ///
+    /// Nothing here throws, and that is the whole point. This runs on a file a person may have
+    /// edited by hand, or that a later version may have written with more of something. It used
+    /// to refuse an out-of-range dimension with an exception, which <see cref="SettingsStore.Load"/>
+    /// caught and answered by starting again from the defaults -- so a single wrong number cost
+    /// every trigger, every remembered address and every other preference in the file, and the
+    /// next save made that permanent. A number outside what a terminal can be is brought inside
+    /// it; a word that is absent or absurdly long becomes an empty one. Nothing in a preference
+    /// file is worth losing the rest of it over.
+    /// </summary>
     public void Validate()
     {
-        TerminalSize.Validate(Columns, Rows);
-        if (Shell is null || Shell.Length > 32_768) throw new ArgumentOutOfRangeException(nameof(Shell));
-        if (SoundDirectory is null || SoundDirectory.Length > 32_768)
-            throw new ArgumentOutOfRangeException(nameof(SoundDirectory));
+        Columns = Math.Clamp(Columns, TerminalSize.MinimumColumns, TerminalSize.MaximumColumns);
+        Rows = Math.Clamp(Rows, TerminalSize.MinimumRows, TerminalSize.MaximumRows);
+        if (TooLong(Shell)) Shell = string.Empty;
+        if (TooLong(SoundDirectory)) SoundDirectory = string.Empty;
         SoundVolume = Math.Clamp(SoundVolume, 0, 100);
         // A settings file written by hand, or by a later version that offers more of these,
         // must not leave the window with no colours at all.
@@ -213,6 +225,9 @@ public sealed class AppSettings
         foreach (Trigger trigger in Triggers) trigger.Clamp();
         if (Triggers.Count > MaximumTriggers) Triggers.RemoveRange(MaximumTriggers, Triggers.Count - MaximumTriggers);
     }
+
+    /// <summary>Longer than any command line or folder Windows would take, so it is not one.</summary>
+    private static bool TooLong(string? value) => value is null || value.Length > 32_768;
 
     public AppSettings Copy() => new()
     {
@@ -268,20 +283,48 @@ public sealed class SettingsStore
     public AppSettings Load(string? path = null)
     {
         path ??= DefaultPath;
+
+        string json;
         try
         {
             if (!File.Exists(path)) return new AppSettings();
-            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), JsonOptions)
-                ?? new AppSettings();
-            settings.Validate();
-            return settings;
+            json = File.ReadAllText(path);
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException
-                                   or NotSupportedException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A corrupt or inaccessible preference file must not prevent the terminal starting.
+            // Unreadable rather than wrong: a locked file, or one this account may not open.
+            // There is nothing to preserve and nothing to complain about.
             return new AppSettings();
         }
+
+        AppSettings? settings;
+        try
+        {
+            settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
+        {
+            // A file this version cannot parse. The next save would write over it, so a copy
+            // is kept beside it first: whatever was in there -- every trigger its owner ever
+            // wrote, most likely -- cannot be reproduced from the defaults, and "corrupt or
+            // inaccessible preference file must not prevent the terminal starting" is not a
+            // reason to destroy it.
+            KeepUnreadable(path);
+            return new AppSettings();
+        }
+
+        settings ??= new AppSettings();
+        // Everything out of range is brought back inside. This does not throw, deliberately:
+        // see Validate.
+        settings.Validate();
+        return settings;
+    }
+
+    /// <summary>Keeps a copy of a settings file this version could not read.</summary>
+    private static void KeepUnreadable(string path)
+    {
+        try { File.Copy(path, path + ".corrupt", overwrite: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     public void Save(AppSettings settings, string? path = null)
@@ -293,9 +336,13 @@ public sealed class SettingsStore
         string? directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
-        string temporary = path + ".tmp";
+        // A temporary name this process alone writes. The rename below is what makes the write
+        // atomic -- a crash leaves the previous settings.json whole -- but the rename cannot do
+        // that if two BlindTerm windows are writing the same temporary file, which is ordinary
+        // when BlindTerm is the default terminal and several consoles are open at once. One of
+        // them would move the other's half-written file into place.
+        string temporary = $"{path}.{Environment.ProcessId}.tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(settings, JsonOptions));
         File.Move(temporary, path, overwrite: true);
     }
-
 }

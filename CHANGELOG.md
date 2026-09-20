@@ -4,6 +4,82 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.11 - 2026-09-20
+
+- Stop a release manifest from taking the whole program down. Every field in it was declared as
+  a string that is always there, and JSON writes a null where the publisher wrote one, so a
+  single `"version": null` in the file BlindTerm downloads to look for updates became a
+  NullReferenceException thrown from a background timer where nothing was listening for it and
+  nothing caught it. The fields are read as what they are, the address has to be https, and the
+  check catches everything: looking for a newer version must never be able to end the terminal.
+- Keep every setting when one of them is wrong. A hand-edited number outside what a terminal
+  can be -- `"Columns": 0` -- was refused with an exception, and the whole file was answered by
+  starting again from the defaults: every trigger, every remembered address, every preference,
+  gone, and made permanent by the next save. Values are brought inside their range instead, a
+  file that will not parse is copied to `settings.json.corrupt` before the defaults replace it,
+  and the temporary file a save writes through is named after the process, so two windows open
+  at once cannot move each other's half-written settings into place.
+- Keep the colours that were chosen. The settings dialog saves a copy of the settings, and the
+  window copied every field back from it except the theme -- so choosing dark worked until the
+  next thing that saved anything, connecting to a MUD or turning MUD sounds off, at which point
+  the old value was written back over it.
+- Count a flood by its own clock. The run of output the flood detector measures was ended by any
+  gap longer than the batch window, which is 25 milliseconds, and Windows resolves a program's
+  own delay to 15.6 -- so a build printing sixty lines a second reset the count on every line
+  and was never treated as flooding at all. Speech queued behind it exactly as it had before
+  that feature existed. This is the one thing here that was visible in the test suite: two of
+  the flood tests failed on every run.
+- Say what a trigger was told to say even while it is waiting. A trigger with a wait between
+  firings also stopped the triggers listed below it from running, because the cooldown and
+  "stop checking later triggers" were answered by the same branch -- so "everything from this
+  channel, except when it mentions me" let the channel through for as long as the mention was
+  still being throttled.
+- Stop joining two games into one. The join took the first three letters off any name that
+  began with them, so a game called "Thera" keyed the same as one called "Ra" and the two shared
+  each other's player counts -- the exact failure the merge is written to avoid, and the one the
+  README promises cannot happen. An article is now removed only when it is the whole word, and a
+  listing with no address of its own no longer lends its encrypted port to the game that has one.
+- Never wait for a sound to download. A missing sound was fetched on the window's thread with
+  the sound board's lock held, so a MUD naming an address that never answers froze the terminal
+  for the whole of the twenty-second timeout. The fetch happens in the background now and the
+  sound plays from the next trigger, which for the MUDs that use sound packs is the next room
+  description.
+- Bound three things a server chooses. A telnet subnegotiation that was never closed grew for
+  the life of the connection and swallowed every byte after it, leaving a terminal permanently
+  deaf with nothing to say why. A sound named "NUL.wav" or "COM1.wav" reached the device Windows
+  answers with rather than a file, and a wildcard in the sound folder was a pattern rather than
+  a folder. A loop count of two billion was a sound that outlived the session that started it.
+- Send one line at a time. The gap between a submitted line and its Return is an await, and two
+  submissions that overlapped in it put their texts next to each other and their Returns after
+  both: one command made of two, followed by two blank lines. A trigger that sends is how that
+  happened without anybody typing.
+- Tidy up after a shell that would not start. A mistyped shell name threw out of the window's
+  own startup, taking the process with it and leaving the pseudo console and its attribute block
+  behind -- raw handles with no finalizer, belonging to a session the window had already
+  attached and would never dispose. It now names the program it could not find, closes the
+  window, and lets go of everything it had built.
+- Keep a reader that has stopped from stopping the terminal. JAWS is bound late and called from
+  two threads at once, and one thread dropping a dead object between another thread's check and
+  its call was a NullReferenceException out of a timer thread, which is the end of the process.
+  The object is read once, under a lock, and called through that.
+- Keep the reader's place when a connection ends half-way. A telnet session that ended for any
+  reason other than a closed socket or a dropped connection never announced it and went on
+  reporting itself as live, and asking it to read again after that started fresh threads against
+  a closed stream.
+- Stop two things that grew with the length of a session. Every marker of a shell-integration
+  session was looked through for every row the transcript read, and every command that had ever
+  finished was re-checked with them, so a long session cost more the longer it ran; and a MUD's
+  own variables were remembered for every name the server felt like sending.
+- Let go of the caret, the clipboard and the timer. Pass Next waited for a key it could
+  translate rather than passing the one that was pressed; a copy taken while another program
+  held the clipboard open ended the process; and a sound timer waked four times a second for the
+  rest of a session that had played one sound.
+- Stop reading addresses and numbers as things they are not. "http://mud.example.com:80" was
+  taken for an unbracketed IPv6 address and dialled as a host by that name; a parameter long
+  enough to wrap a 32-bit accumulator was read as a screen wipe, and a wipe behind another wipe
+  as one; a MUD's hit points of 1e300 were read out as a figure from nowhere; and a page number
+  far past the end of the list returned the first page rather than nothing.
+
 ## v0.7.10 - 2026-09-02
 
 - Close a window itself once the program it was opened for has finished cleanly. A console

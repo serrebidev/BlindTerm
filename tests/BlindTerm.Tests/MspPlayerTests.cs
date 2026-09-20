@@ -109,7 +109,7 @@ public class MspPlayerTests
     public void ASoundThatCannotBeFetchedSaysThatInstead()
     {
         var output = new FakeOutput();
-        var player = new MspPlayer(output, Library()) { Download = _ => null };
+        var player = new MspPlayer(output, Library()) { Download = _ => MspFetch.No() };
         var problems = new List<MspProblem>();
         player.Unplayable += problems.Add;
 
@@ -124,7 +124,7 @@ public class MspPlayerTests
         bool asked = false;
         var player = new MspPlayer(output, Library())
         {
-            Download = _ => { asked = true; return null; },
+            Download = _ => { asked = true; return MspFetch.No(); },
         };
         var problems = new List<MspProblem>();
         player.Unplayable += problems.Add;
@@ -357,7 +357,7 @@ public class MspPlayerTests
             Download = trigger =>
             {
                 asked.Add(trigger.FileName);
-                return @"C:\sounds\fetched.wav";
+                return MspFetch.Here(@"C:\sounds\fetched.wav");
             },
         };
 
@@ -377,7 +377,7 @@ public class MspPlayerTests
         var asked = new List<MspTrigger>();
         var player = new MspPlayer(output, Library())
         {
-            Download = trigger => { asked.Add(trigger); return null; },
+            Download = trigger => { asked.Add(trigger); return MspFetch.No(); },
         };
 
         player.Handle(Trigger("Off U=https://mud.example/sounds/"));
@@ -394,7 +394,7 @@ public class MspPlayerTests
         var asked = new List<MspTrigger>();
         var player = new MspPlayer(output, Library())
         {
-            Download = trigger => { asked.Add(trigger); return null; },
+            Download = trigger => { asked.Add(trigger); return MspFetch.No(); },
         };
 
         player.Handle(Trigger("Off U=https://mud.example/sounds/"));
