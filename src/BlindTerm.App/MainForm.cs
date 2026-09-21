@@ -706,6 +706,15 @@ public sealed class MainForm : Form
     private void OnBell()
     {
         SystemSounds.Beep.Play();
+
+        // While the terminal's own line editor owns the line, every keystroke is being sent
+        // to it, so a bell here is that editor answering one of them: a completion that found
+        // nothing, or an arrow with nowhere to go. A shell rings at the end of a line every
+        // time somebody presses an arrow into it, and reading the prompt out as "Attention" on
+        // each of those is not information, it is the far end's keyboard feedback shouted back.
+        // "Your turn", which is the bell worth hearing, is rung when nobody is typing.
+        if (_completionInput.Active) return;
+
         string detail = _live.Text.Trim();
         // Claude Code rings the bell when it wants input, so this is how you know it is your
         // turn. Saying only "attention" would leave you to go and look.
@@ -1942,6 +1951,16 @@ public sealed class MainForm : Form
     private void StepHistory(int delta)
     {
         if (CurrentHistory.Step(delta) is not { } recalled) return;
+
+        // The recalled line is this window's and the far end has never seen it. If Tab had
+        // handed the line to the shell's own editor, that has to be given up here: left
+        // owning it, the next Return would send the terminator alone and run the empty line
+        // still sitting over there, so a command that had been typed and recalled simply would
+        // not run -- and every arrow would go to an editor whose cursor is somewhere else,
+        // which is what a shell answers with its bell.
+        EndCompletionEcho();
+        _completionInput.TakeBack();
+
         _command.Text = recalled;
         _command.SelectionStart = _command.TextLength;
     }

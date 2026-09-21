@@ -84,4 +84,24 @@ public class CommandCompletionInputTests
         Assert.False(input.FinishLine());
         Assert.Null(input.Character('x'));
     }
+
+    /// <summary>
+    /// A recalled history line exists only in this window, so the shell's editor has to stop
+    /// owning the line before the box can hold one. Left owning it, Return would send the
+    /// terminator alone -- FinishLine would still say the terminal had the text -- and the
+    /// command that was typed and recalled would never run.
+    /// </summary>
+    [Fact]
+    public void TakingTheLineBackMakesReturnSendItAgain()
+    {
+        var input = new CommandCompletionInput();
+        input.Begin("echo hello");
+
+        input.TakeBack();
+
+        Assert.False(input.Active);
+        Assert.False(input.HasText);
+        Assert.False(input.FinishLine());
+        Assert.Null(input.Character('x'));
+    }
 }

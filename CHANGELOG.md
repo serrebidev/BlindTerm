@@ -4,6 +4,29 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.18 - 2026-09-20
+
+- Run the command you recalled. Once Tab has handed the line to the shell's own editor, that
+  editor owns it until Return: BlindTerm streams typing to it and sends the terminator alone at
+  the end. Recalling a history line then put text in the box that the far end had never seen,
+  while the far end went on owning an empty line -- so Return sent the terminator by itself and
+  ran that empty line, and a command that had been typed and then recalled simply did not run.
+  Worse quietly: every arrow was still forwarded to an editor whose cursor was somewhere else,
+  which is what a shell answers with its bell. A recalled line belongs to this window, and the
+  terminal's editor is told it no longer owns the line before anything is put there. This held
+  for a local shell as much as for one over SSH; it was found by running it, not by reading it.
+- Stop reading a shell's keyboard feedback out as "Attention". While the terminal's own line
+  editor owns the line, every keystroke is being sent to it, so a bell there is that editor
+  answering one of them -- a completion that matched nothing, or an arrow with nowhere to go --
+  and a shell rings each time somebody arrows into the end of a line. It was announced as
+  "Attention" followed by the prompt, on every single press, over the top of the character the
+  caret had actually moved to. The bell is still sounded; it is no longer described. A bell
+  worth hearing is rung when nobody is typing, which is what Claude Code does when it wants a
+  turn.
+- Ask for the line back in one place. The recall rule and the local shell's own arrow handling
+  are two doors onto the same history, and putting the hand-back at either of them would have
+  left the other one broken.
+
 ## v0.7.17 - 2026-09-20
 
 - Stop the arrow keys at an SSH prompt from ringing the far end's bell and reading out nothing.

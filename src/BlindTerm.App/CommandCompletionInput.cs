@@ -59,8 +59,23 @@ internal sealed class CommandCompletionInput
     public bool FinishLine()
     {
         bool wasActive = Active;
+        TakeBack();
+        return wasActive;
+    }
+
+    /// <summary>
+    /// BlindTerm owns the line again.
+    ///
+    /// Tab handed the line to the terminal's own editor, and something has since put text
+    /// there that the far end has never seen -- a recalled history line, which exists only in
+    /// this window. Left as it was, the next Return would send the terminator alone and run
+    /// the empty line still sitting at the far end, and every arrow would be forwarded to an
+    /// editor whose cursor is somewhere else entirely, which is what a shell answers with its
+    /// bell.
+    /// </summary>
+    public void TakeBack()
+    {
         Active = false;
         HasText = false;
-        return wasActive;
     }
 }
