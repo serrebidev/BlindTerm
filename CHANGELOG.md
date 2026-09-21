@@ -4,6 +4,31 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.17 - 2026-09-20
+
+- Stop the arrow keys at an SSH prompt from ringing the far end's bell and reading out nothing.
+  The window works out who a keystroke belongs to from the session's kind, and a connection
+  somebody *typed* is not one of the kinds that says where it goes: `--ssh` and the Terminal
+  menu are. A client typed at a prompt leaves the window a local shell with a child process,
+  which is exactly what a nested `cmd` or a Python prompt looks like, so every rule that asked
+  the kind answered "local" -- and at an empty command line all four arrows, Left and Right
+  included, were handed to the far end. A bash prompt answers those with its own history when it
+  has one and its bell when it has not, and BlindTerm reads a bell out as "Attention" beside the
+  prompt, so pressing an arrow said the prompt back again while the caret the reader was
+  standing in never moved: the "blank" and the "Caret didn't move before timeout" that came with
+  every press. The line that started the client is now remembered for as long as that client
+  runs, and it is asked again each time a line is submitted at an idle prompt, because starting
+  a program is the only thing such a line can do. Up and Down at an SSH prompt walk back through
+  the lines this window has sent, readably, in the command line; Left, Right, Home and End are
+  ordinary caret keys; and nothing is sent over the wire merely to be answered with a bell.
+- Ask one question about where a session's far end is, and ask it in one place. The rules that
+  needed the answer had been working it out separately -- which is how an SSH session came out
+  local to the key rules and remote to the history rule, and why neither of them could see a
+  client typed at a prompt at all. v0.7.16 chased this same bell by making the history rule ask
+  the session kind rather than a flag, which was the right shape and the wrong question: the
+  kind is Shell for a connection typed at a prompt, so it fixed the symptom only for
+  connections BlindTerm had opened itself.
+
 ## v0.7.16 - 2026-09-20
 
 - Recall what you sent at an SSH prompt with Up and Down. A window connected to a host decides

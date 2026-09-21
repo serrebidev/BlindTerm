@@ -114,6 +114,18 @@ public sealed class MainForm : Form
     /// </summary>
     private bool _agentLineProgram;
 
+    /// <summary>
+    /// A shell started by this window is running the ssh client, so the prompt in front of the
+    /// reader is on a machine at the other end of a connection.
+    ///
+    /// The session kind cannot tell anyone that: --ssh and the Terminal menu are the kinds that
+    /// say Ssh, and a client typed at a prompt leaves this window a Shell with a child process.
+    /// Remembered from the line that started it, and worked out again every time a line is
+    /// submitted at an idle prompt, because starting a program is the only thing a submitted
+    /// line at an idle prompt can do.
+    /// </summary>
+    private bool _sshLineProgram;
+
     /// <summary>The screen a full-screen program is showing, or null in line mode.</summary>
     private string[]? _screen;
 
@@ -148,8 +160,15 @@ public sealed class MainForm : Form
     /// handed over. A remote shell has no local process tree to detect a program in, so the
     /// empty-command-line key rules that drive an agent CLI's pickers must not be assumed, and
     /// its history is BlindTerm's to keep rather than the far end's to answer with.
+    ///
+    /// This is the one answer both of those rules ask, and it has two ways to be yes: a session
+    /// BlindTerm opened itself knows from its kind, and a shell running the ssh client that
+    /// somebody typed knows from the line that started it. Working the answer out separately at
+    /// each place that needed it is how the key rules came to call an ssh session local while
+    /// the session itself said Remote, and how an ssh client typed at a prompt was missed
+    /// altogether.
     /// </summary>
-    private bool RemoteSession => AppShortcuts.IsRemoteHost(_host.Kind);
+    private bool RemoteSession => AppShortcuts.IsRemoteHost(_host.Kind) || _sshLineProgram;
 
     public MainForm(TerminalHost host, AppSettings settings, SettingsStore settingsStore)
     {
@@ -1744,6 +1763,11 @@ public sealed class MainForm : Form
             // startup grace, so the first keys afterwards reach the program rather than the
             // shell that is busy starting it.
             if (completedLineHasText) _foregroundProgram.SubmittedUnknownLine();
+            // The terminal's editor owns the line's text now, but the box was refilled from it
+            // when the completion stopped, and that is the only account of what was run. A
+            // completed line can start the ssh client exactly as a typed one can.
+            if (!_host.ProgramOwnsInput)
+                _sshLineProgram = SshCommand.IsSshLaunch(_command.Text);
             // The pending text and every character typed after completion already reached the
             // program. Only Return remains; resending the edit control would duplicate text.
             _host.SendLine(string.Empty, _agentLineProgram);
@@ -1774,6 +1798,11 @@ public sealed class MainForm : Form
         {
             _agentLineProgram = _host.Kind != TerminalSessionKind.Remote
                                 && AccessibleAgentCommand.IsAgentLaunch(text);
+            // Asked again rather than tracked to an exit, because starting a program is the
+            // only thing a line submitted at an idle prompt can do: this decides where the far
+            // end is for as long as that program runs, and the next such line decides again.
+            _sshLineProgram = _host.Kind != TerminalSessionKind.Remote
+                              && SshCommand.IsSshLaunch(text);
         }
         string accessible = _host.Kind == TerminalSessionKind.Remote
             ? text
@@ -1993,7 +2022,7 @@ public sealed class MainForm : Form
             return true;
         }
 
-        if (AppShortcuts.ShouldRecallRemoteHistory(keyData, _host.Kind, commandFocused))
+        if (AppShortcuts.ShouldRecallRemoteHistory(keyData, RemoteSession, commandFocused))
         {
             StepHistory((keyData & Keys.KeyCode) == Keys.Up ? -1 : 1);
             return true;

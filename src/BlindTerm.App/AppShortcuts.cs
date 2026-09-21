@@ -232,17 +232,20 @@ internal static class AppShortcuts
     /// Only unmodified Up and Down do this. Left and Right remain editing/navigation keys, and
     /// arrows in the output stay in the output so somebody reading never gets moved away.
     ///
-    /// An SSH shell used to be left out of this, because the window asked the question as
-    /// "is this telnet" and answered no. The arrows went to the far end instead, where a shell
-    /// prompt replies with its own history at best and its bell at worst -- which BlindTerm
-    /// reads out as "Attention" alongside the prompt, while the line that was recalled is
-    /// nowhere the reader can go and read it. The session kind is passed rather than a flag
-    /// worked out beforehand, because working it out at the call site is how the two ends of
-    /// one question got out of step.
+    /// Without it the arrows are handed to the far end, where a shell prompt replies with its
+    /// own history at best and its bell at worst -- which BlindTerm reads out as "Attention"
+    /// alongside the prompt, while the line that was recalled is nowhere the reader can go and
+    /// read it.
+    ///
+    /// <paramref name="remoteHost"/> is the window's single answer to "is the far end another
+    /// machine", rather than the session kind: a client typed at a prompt is started by a local
+    /// shell, so the kind says Shell for the whole of a connection that is not local at all.
+    /// Asking the kind here while the key rules asked something else is how the two got out of
+    /// step, and it is why this takes the answer and not the question.
     /// </summary>
-    public static bool ShouldRecallRemoteHistory(Keys keyData, TerminalSessionKind kind,
+    public static bool ShouldRecallRemoteHistory(Keys keyData, bool remoteHost,
         bool terminalInputFocused)
-        => IsRemoteHost(kind)
+        => remoteHost
             && terminalInputFocused
             && (keyData & (Keys.Control | Keys.Alt | Keys.Shift)) == Keys.None
             && (keyData & Keys.KeyCode) is Keys.Up or Keys.Down;

@@ -188,28 +188,24 @@ public class AppShortcutTests
     public void ArrowsInOutputStayInOutput(Keys key)
     {
         Assert.False(AppShortcuts.ShouldRecallRemoteHistory(
-            key, TerminalSessionKind.Remote, terminalInputFocused: false));
+            key, remoteHost: true, terminalInputFocused: false));
         Assert.False(AppShortcuts.ShouldPassNavigationKey(
             key, foregroundProgramActive: true, terminalInputFocused: false,
             commandLineEmpty: true));
     }
 
     /// <summary>
-    /// An SSH shell is on the far end of a wire just as a telnet one is, and its arrows have to
-    /// arrive in the same place. The window used to ask "is this telnet" and answer no, so Up
-    /// and Down went to the far end instead: a bash prompt answers with its own history at best
-    /// and its bell at worst, which is read out as "Attention" beside the prompt, and the
-    /// recalled line is never anywhere the reader can go and read it.
+    /// An arrow in the command line of a session whose far end is another machine walks the
+    /// lines BlindTerm has sent, rather than being handed over the wire. Handing them over is
+    /// what made every press of an arrow at an SSH prompt ring that machine's bell and say
+    /// nothing a reader could go and look at afterwards.
     /// </summary>
     [Theory]
-    [InlineData(Keys.Up, TerminalSessionKind.Remote)]
-    [InlineData(Keys.Down, TerminalSessionKind.Remote)]
-    [InlineData(Keys.Up, TerminalSessionKind.Ssh)]
-    [InlineData(Keys.Down, TerminalSessionKind.Ssh)]
-    public void PlainUpAndDownRecallTheHistoryOfASessionOnTheFarEnd(
-        Keys key, TerminalSessionKind kind)
+    [InlineData(Keys.Up)]
+    [InlineData(Keys.Down)]
+    public void PlainUpAndDownRecallTheHistoryOfAFarEnd(Keys key)
         => Assert.True(AppShortcuts.ShouldRecallRemoteHistory(
-            key, kind, terminalInputFocused: true));
+            key, remoteHost: true, terminalInputFocused: true));
 
     [Theory]
     [InlineData(Keys.Left)]
@@ -219,21 +215,24 @@ public class AppShortcutTests
     [InlineData(Keys.Alt | Keys.Up)]
     public void EditingAndModifiedArrowsAreNotRemoteHistory(Keys key)
         => Assert.False(AppShortcuts.ShouldRecallRemoteHistory(
-            key, TerminalSessionKind.Ssh, terminalInputFocused: true));
+            key, remoteHost: true, terminalInputFocused: true));
 
-    [Theory]
-    [InlineData(TerminalSessionKind.Shell)]
-    [InlineData(TerminalSessionKind.Handoff)]
-    public void ALocalSessionLeavesHistoryToTheNativeEdit(TerminalSessionKind kind)
+    [Fact]
+    public void ALocalSessionLeavesHistoryToTheNativeEdit()
         => Assert.False(AppShortcuts.ShouldRecallRemoteHistory(
-            Keys.Up, kind, terminalInputFocused: true));
+            Keys.Up, remoteHost: false, terminalInputFocused: true));
 
+    /// <summary>
+    /// Which session kinds are on the far end of a wire. This is only half the answer the
+    /// window needs, and it is the half that cannot see a client typed at a prompt.
+    /// </summary>
     [Theory]
     [InlineData(TerminalSessionKind.Remote, true)]
     [InlineData(TerminalSessionKind.Ssh, true)]
     [InlineData(TerminalSessionKind.Shell, false)]
     [InlineData(TerminalSessionKind.Handoff, false)]
-    public void OnlyASessionOnAnotherMachineCountsAsRemote(TerminalSessionKind kind, bool remote)
+    public void ASessionBlindTermOpenedKnowsWhereItsFarEndIs(
+        TerminalSessionKind kind, bool remote)
         => Assert.Equal(remote, AppShortcuts.IsRemoteHost(kind));
 
     [Theory]
