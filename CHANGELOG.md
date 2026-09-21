@@ -4,6 +4,23 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.15 - 2026-09-20
+
+- Put Home and End where they belong in a full-screen editor. nano's Home and End moved nano's
+  cursor and left the caret the reader was standing in exactly where it was, because those two
+  keys were held back from the native edit control along with Up and Down -- the control exists
+  to give NVDA and JAWS a real caret, and it was never told about them, so NVDA waited the tenth
+  of a second it allows for a caret move that was never coming, timed out, and read out the
+  character it had been sitting on. Pressing Home at the start of a line's worth of "and" said
+  "a", "n", "d", "d", "d" and moved nowhere. Movement along a line is the one kind that control
+  can express, since it holds the line the cursor is on, so Home and End now reach it exactly as
+  Left and Right always have: the program is still sent the key, and the caret moves to where
+  the program put its cursor.
+- Land End on the last character of the line rather than past it. A native edit puts the caret
+  after the final character, where there is nothing to read, so End answered "blank" on a line
+  that was not empty. A terminal's cursor is always on a character, and the control the reader
+  is in is standing for the terminal's cursor.
+
 ## v0.7.14 - 2026-09-20
 
 - Bring the thirty-day player averages back. The published list has been carrying none of them,
