@@ -1,5 +1,6 @@
 using System.Windows.Forms;
 using BlindTerm.App;
+using BlindTerm.Core;
 
 namespace BlindTerm.Tests;
 
@@ -186,19 +187,29 @@ public class AppShortcutTests
     [InlineData(Keys.Right)]
     public void ArrowsInOutputStayInOutput(Keys key)
     {
-        Assert.False(AppShortcuts.ShouldRecallTelnetHistory(
-            key, remoteSession: true, terminalInputFocused: false));
+        Assert.False(AppShortcuts.ShouldRecallRemoteHistory(
+            key, TerminalSessionKind.Remote, terminalInputFocused: false));
         Assert.False(AppShortcuts.ShouldPassNavigationKey(
             key, foregroundProgramActive: true, terminalInputFocused: false,
             commandLineEmpty: true));
     }
 
+    /// <summary>
+    /// An SSH shell is on the far end of a wire just as a telnet one is, and its arrows have to
+    /// arrive in the same place. The window used to ask "is this telnet" and answer no, so Up
+    /// and Down went to the far end instead: a bash prompt answers with its own history at best
+    /// and its bell at worst, which is read out as "Attention" beside the prompt, and the
+    /// recalled line is never anywhere the reader can go and read it.
+    /// </summary>
     [Theory]
-    [InlineData(Keys.Up)]
-    [InlineData(Keys.Down)]
-    public void PlainUpAndDownRecallLocalTelnetHistory(Keys key)
-        => Assert.True(AppShortcuts.ShouldRecallTelnetHistory(
-            key, remoteSession: true, terminalInputFocused: true));
+    [InlineData(Keys.Up, TerminalSessionKind.Remote)]
+    [InlineData(Keys.Down, TerminalSessionKind.Remote)]
+    [InlineData(Keys.Up, TerminalSessionKind.Ssh)]
+    [InlineData(Keys.Down, TerminalSessionKind.Ssh)]
+    public void PlainUpAndDownRecallTheHistoryOfASessionOnTheFarEnd(
+        Keys key, TerminalSessionKind kind)
+        => Assert.True(AppShortcuts.ShouldRecallRemoteHistory(
+            key, kind, terminalInputFocused: true));
 
     [Theory]
     [InlineData(Keys.Left)]
@@ -206,14 +217,24 @@ public class AppShortcutTests
     [InlineData(Keys.Shift | Keys.Up)]
     [InlineData(Keys.Control | Keys.Up)]
     [InlineData(Keys.Alt | Keys.Up)]
-    public void EditingAndModifiedArrowsAreNotTelnetHistory(Keys key)
-        => Assert.False(AppShortcuts.ShouldRecallTelnetHistory(
-            key, remoteSession: true, terminalInputFocused: true));
+    public void EditingAndModifiedArrowsAreNotRemoteHistory(Keys key)
+        => Assert.False(AppShortcuts.ShouldRecallRemoteHistory(
+            key, TerminalSessionKind.Ssh, terminalInputFocused: true));
 
-    [Fact]
-    public void ALocalShellDoesNotUseTheTelnetHistoryRule()
-        => Assert.False(AppShortcuts.ShouldRecallTelnetHistory(
-            Keys.Up, remoteSession: false, terminalInputFocused: true));
+    [Theory]
+    [InlineData(TerminalSessionKind.Shell)]
+    [InlineData(TerminalSessionKind.Handoff)]
+    public void ALocalSessionLeavesHistoryToTheNativeEdit(TerminalSessionKind kind)
+        => Assert.False(AppShortcuts.ShouldRecallRemoteHistory(
+            Keys.Up, kind, terminalInputFocused: true));
+
+    [Theory]
+    [InlineData(TerminalSessionKind.Remote, true)]
+    [InlineData(TerminalSessionKind.Ssh, true)]
+    [InlineData(TerminalSessionKind.Shell, false)]
+    [InlineData(TerminalSessionKind.Handoff, false)]
+    public void OnlyASessionOnAnotherMachineCountsAsRemote(TerminalSessionKind kind, bool remote)
+        => Assert.Equal(remote, AppShortcuts.IsRemoteHost(kind));
 
     [Theory]
     [InlineData('a')]

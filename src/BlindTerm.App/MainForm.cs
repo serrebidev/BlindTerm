@@ -146,9 +146,10 @@ public sealed class MainForm : Form
     /// <summary>
     /// Whether the far end is a host on the network rather than a shell or console Windows
     /// handed over. A remote shell has no local process tree to detect a program in, so the
-    /// empty-command-line key rules that drive an agent CLI's pickers must not be assumed.
+    /// empty-command-line key rules that drive an agent CLI's pickers must not be assumed, and
+    /// its history is BlindTerm's to keep rather than the far end's to answer with.
     /// </summary>
-    private bool RemoteSession => _host.Kind is TerminalSessionKind.Remote or TerminalSessionKind.Ssh;
+    private bool RemoteSession => AppShortcuts.IsRemoteHost(_host.Kind);
 
     public MainForm(TerminalHost host, AppSettings settings, SettingsStore settingsStore)
     {
@@ -1992,8 +1993,7 @@ public sealed class MainForm : Form
             return true;
         }
 
-        if (AppShortcuts.ShouldRecallTelnetHistory(
-                keyData, _host.Kind == TerminalSessionKind.Remote, commandFocused))
+        if (AppShortcuts.ShouldRecallRemoteHistory(keyData, _host.Kind, commandFocused))
         {
             StepHistory((keyData & Keys.KeyCode) == Keys.Up ? -1 : 1);
             return true;

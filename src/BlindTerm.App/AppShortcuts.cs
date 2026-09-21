@@ -1,3 +1,5 @@
+using BlindTerm.Core;
+
 namespace BlindTerm.App;
 
 /// <summary>
@@ -150,9 +152,10 @@ internal static class AppShortcuts
     ///
     /// Codex, Claude Code, OpenCode and Freebuff all ask questions no line of text can answer:
     /// a model list chosen with Up and Down, a reasoning level adjusted with Left and Right,
-    /// a picker dismissed with Escape. Those keys have to reach the program. Telnet is the
-    /// exception handled by <see cref="ShouldRecallTelnetHistory"/>: BlindTerm owns its sent
-    /// line history because servers do not consistently provide one.
+    /// a picker dismissed with Escape. Those keys have to reach the program. A session on the
+    /// far end of a wire is the exception handled by <see cref="ShouldRecallRemoteHistory"/>:
+    /// BlindTerm owns its sent line history, because neither a server nor a shell on the other
+    /// end of a connection hands one back in anything a reader can sit in.
     ///
     /// An empty command line is the boundary. With nothing typed there is no text to move
     /// through and every one of these keys is dead weight, so the program gets them. The
@@ -209,13 +212,37 @@ internal static class AppShortcuts
     }
 
     /// <summary>
-    /// Whether an arrow in a telnet command line recalls BlindTerm's local sent-line history.
+    /// Whether this session's far end is another machine rather than a shell or a console on
+    /// this one.
+    ///
+    /// Two separate answers follow from it, which is why it is asked in one place. A remote
+    /// shell has no local process tree to detect a running program in, so the empty-command-line
+    /// key rules that drive an agent CLI's pickers must not be assumed. And nobody on the far
+    /// end can hand its own history back as something a reader can sit in, so BlindTerm keeps
+    /// that here instead. A shell reached through the Windows OpenSSH client counts: spoken to
+    /// through a local program is not the same thing as local.
+    /// </summary>
+    public static bool IsRemoteHost(TerminalSessionKind kind)
+        => kind is TerminalSessionKind.Remote or TerminalSessionKind.Ssh;
+
+    /// <summary>
+    /// Whether an arrow in the command line of a session on the far end of a wire recalls
+    /// BlindTerm's own sent-line history.
+    ///
     /// Only unmodified Up and Down do this. Left and Right remain editing/navigation keys, and
     /// arrows in the output stay in the output so somebody reading never gets moved away.
+    ///
+    /// An SSH shell used to be left out of this, because the window asked the question as
+    /// "is this telnet" and answered no. The arrows went to the far end instead, where a shell
+    /// prompt replies with its own history at best and its bell at worst -- which BlindTerm
+    /// reads out as "Attention" alongside the prompt, while the line that was recalled is
+    /// nowhere the reader can go and read it. The session kind is passed rather than a flag
+    /// worked out beforehand, because working it out at the call site is how the two ends of
+    /// one question got out of step.
     /// </summary>
-    public static bool ShouldRecallTelnetHistory(Keys keyData, bool remoteSession,
+    public static bool ShouldRecallRemoteHistory(Keys keyData, TerminalSessionKind kind,
         bool terminalInputFocused)
-        => remoteSession
+        => IsRemoteHost(kind)
             && terminalInputFocused
             && (keyData & (Keys.Control | Keys.Alt | Keys.Shift)) == Keys.None
             && (keyData & Keys.KeyCode) is Keys.Up or Keys.Down;

@@ -4,6 +4,24 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.16 - 2026-09-20
+
+- Recall what you sent at an SSH prompt with Up and Down. A window connected to a host decides
+  whether a program is running by asking whether it owns the input, and over SSH the answer is
+  always yes -- there is no local process tree to look at -- so the arrows were handed to the
+  far end instead of the box being typed in. A bash prompt answers those with its own history
+  when it has one and its bell when it has not, and BlindTerm reads a bell out as "Attention"
+  beside the prompt, so the only thing heard on every press was the prompt read back again,
+  while the line that had actually been recalled was nowhere to go and read. Up and Down at an
+  SSH prompt now do what they do at a local one: they walk back through the lines this window
+  has sent, in the command line, where a reader can sit in them and edit them. A telnet
+  connection has worked that way from the beginning, and SSH was left out by a question asked
+  as "is this telnet", which is a different question with a different answer.
+- Ask one question about where a session's far end is. Nothing the user sees changes; what
+  changes is that a shell reached through the Windows OpenSSH client is stated to be a remote
+  host in one place rather than worked out at each place that needs to know, which is how the
+  window's key rules and the history rule came to disagree about the same session.
+
 ## v0.7.15 - 2026-09-20
 
 - Put Home and End where they belong in a full-screen editor. nano's Home and End moved nano's
