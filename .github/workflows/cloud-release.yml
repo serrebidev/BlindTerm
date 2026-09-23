@@ -1,0 +1,116 @@
+name: Cloud Release
+
+# Cloud agents ONLY. On the Windows release host follow docs/BUILD.md
+# ("Publishing a release"): build.ps1 locally, tag, gh release create.
+# BlindTerm is Windows-only (WinForms + ConPTY), so this builds Windows only.
+#
+# Before a real run, commit the release like the host does: bump <Version> in
+# Directory.Build.props and add the "## vX.Y.Z - date" CHANGELOG.md entry, in a
+# "Release vX.Y.Z: ..." commit on master. This workflow then tests, runs the
+# same build.ps1, tags v<Version>, and publishes the release (portable ZIP,
+# installer, BlindTerm-update.json) with that CHANGELOG entry as its notes.
+#
+#   gh workflow run cloud-release.yml -f dry_run=true    # test + build, publish nothing
+#   gh workflow run cloud-release.yml -f dry_run=false   # real release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Test and build as workflow artifacts; tag and publish nothing
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Require master
+        if: ${{ github.ref != 'refs/heads/master' }}
+        run: |
+          echo "::error::Cloud releases run from master only (got ${{ github.ref }})."
+          exit 1
+
+      - uses: actions/checkout@v5
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Read version and release notes
+        id: plan
+        run: |
+          $v = [regex]::Match((Get-Content Directory.Build.props -Raw), '<Version>([^<]+)</Version>').Groups[1].Value
+          if (-not $v) { throw "No <Version> in Directory.Build.props" }
+          $m = [regex]::Match((Get-Content CHANGELOG.md -Raw), '(?ms)^##\s+v' + [regex]::Escape($v) + '\b[^\n]*\n(?<body>.*?)(?=^##\s|\z)')
+          if (-not $m.Success -or -not $m.Groups['body'].Value.Trim()) { throw "CHANGELOG.md has no entry for v$v" }
+          $notes = Join-Path $env:RUNNER_TEMP "notes.md"
+          [IO.File]::WriteAllText($notes, $m.Groups['body'].Value.Trim() + "`n")
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "notes=$notes" >> $env:GITHUB_OUTPUT
+          git fetch --tags --force
+          if (git tag --list "v$v") {
+            if ("${{ inputs.dry_run }}" -eq "true") { "::warning::v$v already exists; bump Directory.Build.props before a real release." }
+            else { throw "Tag v$v already exists. Bump <Version> and add a CHANGELOG entry first." }
+          }
+
+      - name: Test
+        run: |
+          dotnet test BlindTerm.sln --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw "dotnet test failed" }
+          pwsh -File tests\run-replay-tests.ps1
+          if ($LASTEXITCODE -ne 0) { throw "replay tests failed" }
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found" }
+          "INNO_SETUP_COMPILER=$($iscc.FullName)" >> $env:GITHUB_ENV
+
+      - name: Build
+        run: .\build.ps1 build
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: BlindTerm-windows
+          path: |
+            dist/BlindTerm-v*.zip
+            dist/BlindTerm-Setup-v*.exe
+            dist/BlindTerm-update.json
+          if-no-files-found: error
+
+      - name: Tag and publish
+        if: ${{ !inputs.dry_run }}
+        env:
+          V: ${{ steps.plan.outputs.version }}
+          NOTES: ${{ steps.plan.outputs.notes }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$env:V" -m "BlindTerm v$env:V"
+          git push origin "v$env:V"
+          if ($LASTEXITCODE -ne 0) { throw "tag push failed" }
+          gh release create "v$env:V" "dist\BlindTerm-v$env:V.zip" "dist\BlindTerm-Setup-v$env:V.exe" dist\BlindTerm-update.json `
+            --verify-tag --title "BlindTerm v$env:V" --notes-file $env:NOTES --latest
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          $state = gh release view "v$env:V" --json isDraft | ConvertFrom-Json
+          if ($state.isDraft) { throw "v$env:V is still a draft" }
+          $latest = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name
+          if ($latest -ne "v$env:V") { throw "/releases/latest is $latest, expected v$env:V" }
+          "Published v$env:V as Latest."

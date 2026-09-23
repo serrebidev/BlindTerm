@@ -42,3 +42,5 @@ The installer is currently unsigned for public distribution unless a signing cer
 ## Publishing a release
 
 After tests and the local build pass, commit the versioned files and create the matching Git tag. Push the branch and tag, then publish one GitHub release containing the portable ZIP, installer, and `BlindTerm-update.json`. The tag and release title use `v<version>` and `BlindTerm v<version>` respectively.
+
+Cloud agents without this Windows machine use `.github/workflows/cloud-release.yml` instead, which runs the same build on a GitHub Windows runner after the version and changelog commit is pushed; see `AGENTS.md`.
