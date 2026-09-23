@@ -82,6 +82,28 @@ public class KeyTranslatorTests
         => Assert.Null(KeyTranslator.Translate(key, false));
 
     [Theory]
+    [InlineData(Keys.ControlKey)]
+    [InlineData(Keys.ShiftKey)]
+    [InlineData(Keys.Menu)]
+    [InlineData(Keys.LWin)]
+    [InlineData(Keys.RWin)]
+    [InlineData(Keys.ControlKey | Keys.Shift)]
+    public void AModifierPressedOnItsOwnIsToldApartFromItsChord(Keys key)
+    {
+        // Windows sends the modifier first and the chord after it. Pass Next has to hold its arm
+        // through the first and spend it on the second, so it has to be able to tell them apart.
+        Assert.True(KeyTranslator.IsBareModifier(key));
+    }
+
+    [Theory]
+    [InlineData(Keys.X)]
+    [InlineData(Keys.Up)]
+    [InlineData(Keys.X | Keys.Alt)]
+    [InlineData(Keys.X | Keys.Control)]
+    public void AChordIsNotAModifierOnItsOwn(Keys key)
+        => Assert.False(KeyTranslator.IsBareModifier(key));
+
+    [Theory]
     [InlineData(Keys.A)]
     [InlineData(Keys.Z)]
     [InlineData(Keys.D5)]

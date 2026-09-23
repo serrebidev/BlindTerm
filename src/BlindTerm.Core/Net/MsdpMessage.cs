@@ -251,8 +251,12 @@ public sealed class MsdpMessage
             int start = _at;
             while (_at < bytes.Length && bytes[_at] is not (>= Variable and <= ArrayClose))
             {
-                // NUL and IAC are forbidden inside MSDP strings by the protocol.
-                if (bytes[_at] is 0 or 255)
+                // NUL cannot appear in an MSDP string. A 255 can: the wire escapes IAC as a
+                // doubled IAC, and the telnet layer has already collapsed that pair back to
+                // one byte by the time this sees it, so a single 255 here is ordinary data.
+                // Rejecting it failed the whole message -- every variable in it -- over one
+                // byte the server was entitled to send.
+                if (bytes[_at] is 0)
                 {
                     text = null;
                     return false;

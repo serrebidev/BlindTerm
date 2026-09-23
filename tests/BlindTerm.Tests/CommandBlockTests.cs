@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using BlindTerm.Core;
 using BlindTerm.Core.Vt;
@@ -74,5 +75,27 @@ public class CommandBlockTests
 
         Assert.Equal(1, resyncs);
         Assert.False(core.CommandBlocks.Blocks[0].IsResolved);
+    }
+
+    [Fact]
+    public void TheRowToLineMapDoesNotGrowForTheWholeSession()
+    {
+        // A marker only ever arrives on a row near the bottom of the buffer, so a row far behind
+        // can never be asked about again. The map used to keep an entry for every row the session
+        // ever read -- the same unbounded growth the block list had, one entry per row.
+        var tracker = new CommandBlockTracker();
+        var rows = (Dictionary<int, int>)typeof(CommandBlockTracker)
+            .GetField("_rowLines", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(tracker)!;
+
+        for (int row = 0; row < 200_000; row++) tracker.RowBecameLine(row, row);
+
+        // Bounded by the remembering window rather than by how long the session has run.
+        Assert.InRange(rows.Count, 1, 8_193);
+
+        // And a row near the bottom is still answered from the map, which is what the markers
+        // that arrive after their row was read depend on.
+        tracker.RowBecameLine(200_000, 200_000);
+        Assert.Equal(200_000, rows[200_000]);
     }
 }

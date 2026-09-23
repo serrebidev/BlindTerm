@@ -183,7 +183,7 @@ public sealed partial class MudConnectorDirectory : IMudDirectory, IDisposable
     }
 
     [GeneratedRegex(
-        """<tr>\s*<td>(?<rank>\d*)</td>.*?mode=mud_listing&mud=(?<slug>[^']*)'[^>]*>(?<name>[^<]*)</a>.*?url=telnet://(?<host>[^:']+):(?<port>\d+)'.*?(?:<td><a href='(?<website>[^']*)'[^>]*>[^<]*</a></td>\s*)?<td>(?<status>[^<]*)</td>\s*</tr>""",
+        """<tr>\s*<td>(?<rank>\d*)</td>(?:(?!</tr>).)*?mode=mud_listing&mud=(?<slug>[^']*)'[^>]*>(?<name>[^<]*)</a>(?:(?!</tr>).)*?url=telnet://(?<host>[^:']+):(?<port>\d+)'(?:(?!</tr>).)*?(?:<td><a href='(?<website>[^']*)'[^>]*>[^<]*</a></td>\s*)?<td>(?<status>[^<]*)</td>\s*</tr>""",
         RegexOptions.Singleline | RegexOptions.IgnoreCase)]
     private static partial Regex Row();
 

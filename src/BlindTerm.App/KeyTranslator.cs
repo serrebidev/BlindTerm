@@ -20,6 +20,16 @@ namespace BlindTerm.App;
 internal static class KeyTranslator
 {
     /// <summary>
+    /// True for a modifier pressed on its own. Windows delivers the modifier first and the
+    /// chord it belongs to afterwards, so anything deciding what a keystroke means has to be
+    /// able to tell the two apart: Alt alone is a key press with no terminal meaning, and
+    /// Alt+X is the chord that follows it.
+    /// </summary>
+    public static bool IsBareModifier(Keys keyData)
+        => (keyData & Keys.KeyCode) is Keys.ControlKey or Keys.ShiftKey or Keys.Menu
+            or Keys.LWin or Keys.RWin;
+
+    /// <summary>
     /// The bytes for a key press, or null if this is not a key screen mode should send --
     /// a bare modifier, or something with no terminal meaning. Plain typing returns null too
     /// and is handled as a character instead, so that the keyboard layout and dead keys are
@@ -35,8 +45,7 @@ internal static class KeyTranslator
         if ((keyData & Keys.Shift) == Keys.Shift) modifiers |= KeyModifiers.Shift;
 
         // Bare modifiers are not key presses.
-        if (key is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin)
-            return null;
+        if (IsBareModifier(keyData)) return null;
 
         string? name = key switch
         {

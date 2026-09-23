@@ -143,7 +143,9 @@ public sealed class GrapevineDirectory : IMudDirectory, IDisposable
         // are what a terminal can use, and Grapevine is the only directory here that names
         // the encrypted one outright instead of leaving it to be discovered.
         string host = string.Empty;
-        int port = 0, tls = 0;
+        int port = 0;
+        string tlsHost = string.Empty;
+        int tls = 0;
         if (item.TryGetProperty("connections", out JsonElement connections) &&
             connections.ValueKind == JsonValueKind.Array)
         {
@@ -156,8 +158,8 @@ public sealed class GrapevineDirectory : IMudDirectory, IDisposable
 
                 if (kind.Contains("secure", StringComparison.OrdinalIgnoreCase))
                 {
+                    tlsHost = where;
                     tls = which;
-                    if (host.Length == 0) host = where;
                 }
                 else if (kind.Equals("telnet", StringComparison.OrdinalIgnoreCase))
                 {
@@ -168,7 +170,18 @@ public sealed class GrapevineDirectory : IMudDirectory, IDisposable
         }
 
         // A game that only offers an encrypted port is still a game a terminal can open.
-        if (port == 0 && tls != 0) port = tls;
+        if (port == 0 && tls != 0)
+        {
+            host = tlsHost;
+            port = tls;
+            tls = 0;
+        }
+
+        // An encrypted port belongs to the machine that published it. A listing whose plain
+        // address is on one host and whose encrypted port was named by another would offer a
+        // connection to a server that was never this game's, so the port is dropped rather
+        // than kept against an address it does not belong to.
+        if (tls != 0 && !string.Equals(tlsHost, host, StringComparison.OrdinalIgnoreCase)) tls = 0;
 
         return new MudGame
         {

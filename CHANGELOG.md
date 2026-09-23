@@ -4,6 +4,49 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.19 - 2026-09-23
+
+- Stop a MUD directory pairing one machine's encrypted port with another machine's address.
+  Grapevine is the only source here that names the secure port outright, which is why it is read
+  at all, but the port was taken from whichever connection named one and then kept against the
+  plain address whichever connection named that -- so a listing whose two halves sit on
+  different hosts was published as *"plain.example, port 4000, or port 7443 with TLS"*, where
+  7443 had been published by a server that was never this game's. Nothing about dialling that
+  can connect. An encrypted port is now kept only when the machine that published it is the
+  machine being dialled, which is the rule the join between directories already follows -- two
+  directories are not allowed to lend each other an encrypted port either, and a source is not
+  allowed to do it to itself.
+- Read a telnet subnegotiation's escaped 255 as the byte it is. An MSDP string carries a literal
+  255 as a doubled IAC, and the telnet layer collapses that pair before the MSDP parser is
+  handed the payload, so a lone 255 there is ordinary data. It was refused -- and refused
+  fatally, failing the whole subnegotiation rather than the one string that held it. One such
+  byte inside a room name discarded HEALTH, the room, the exits and every other variable in that
+  update, silently, every time the server sent it.
+- Skip a Big List row that has no address instead of giving it the next row's. The Mud
+  Connector's rows are read by one pattern each, and that pattern's lazy runs were free to cross
+  the row's own `</tr>` to reach the address they were looking for. A game with no telnet link
+  therefore took the next game's host, port, website and connect status, and the game that owned
+  them was dropped from the list altogether -- a listing you cannot connect with, and a
+  connection you cannot find, from one row that simply had nothing in it. The pattern can no
+  longer leave the row it started in, which is the failure the row reader always documented:
+  losing one listing beats inventing one.
+- Let Pass Next actually pass an Alt chord. Alt arrives as a press of its own before the chord it
+  belongs to, and that bare Alt spent the arming and then opened the menu bar, which swallowed
+  the chord behind it. So the one case the command exists for -- sending an Alt chord to a
+  full-screen program -- was the one case it could not do, in either mode. A modifier on its own
+  now holds the arming and is swallowed, so the chord that follows still finds it armed.
+- Bound the command block tracker's row map. It kept one entry for every buffer row the session
+  ever read, for the whole life of the session, while only the rows near the bottom can ever be
+  asked about again -- the same unbounded growth the block list itself had to be given a ceiling
+  for, at one entry per row rather than one per command.
+- Refuse an update helper argument that names a path rather than a file. The name was reduced to
+  its basename before it was checked, so the check compared a value with itself and could never
+  fail. The refusal now happens before the staging directory is created or the archive is
+  unpacked, so an invocation that cannot be right leaves everything where it was.
+- Serialise the capture tool's writes to its output file. The pseudo console's read thread wrote
+  the capture while the main thread flushed it, and a child that is still painting when the
+  settle window expires reaches both at once.
+
 ## v0.7.18 - 2026-09-20
 
 - Run the command you recalled. Once Tab has handed the line to the shell's own editor, that

@@ -65,6 +65,16 @@ public sealed class CommandBlockTracker
     /// </summary>
     private const int MaximumBlocks = 2000;
 
+    /// <summary>
+    /// How far back a row's line number is remembered.
+    ///
+    /// A marker only ever arrives on a row near the bottom of the buffer, so a row this far
+    /// behind the newest one can never be asked about again. The map used to keep an entry for
+    /// every row the session ever read -- the same unbounded growth the block list had, one
+    /// entry per row rather than per command.
+    /// </summary>
+    private const int RememberedRows = 4096;
+
     private sealed class ActiveBlock
     {
         public CommandBlockAnchor Start { get; init; } = null!;
@@ -137,6 +147,16 @@ public sealed class CommandBlockTracker
     public void RowBecameLine(int row, int line)
     {
         _rowLines[row] = line;
+
+        // Rows only ever move forward, so everything below the window is dead weight. Dropped
+        // in a batch rather than one at a time, because this runs for every row of every
+        // wrapped group.
+        if (_rowLines.Count > RememberedRows * 2)
+        {
+            int keepFrom = row - RememberedRows;
+            foreach (int stale in _rowLines.Keys.Where(r => r < keepFrom).ToList()) _rowLines.Remove(stale);
+        }
+
         if (!_anchors.Remove(row, out List<CommandBlockAnchor>? waiting)) return;
 
         foreach (CommandBlockAnchor anchor in waiting)

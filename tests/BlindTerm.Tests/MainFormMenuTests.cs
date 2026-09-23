@@ -105,6 +105,26 @@ public class MainFormMenuTests
             Assert.False((bool)passThrough.GetValue(form)!);
         });
 
+    [Fact]
+    public void PassNextHoldsItsArmThroughTheModifierOfAnAltChord()
+        => OnAWindowThread(() =>
+        {
+            using var host = new TerminalHost(80, 25, new SynchronizationContext());
+            using var form = new MainForm(host, new AppSettings(), new SettingsStore());
+            FieldInfo passThrough = typeof(MainForm).GetField("_passThroughNext",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            passThrough.SetValue(form, true);
+
+            // Alt arrives as a press of its own before the chord it belongs to. Spending the arm
+            // there -- or letting that bare Alt open the menu bar, which then swallows the chord
+            // -- is what stopped an Alt chord being passed to the program at all.
+            InvokeProcessCmdKey(form, Keys.Menu);
+            Assert.True((bool)passThrough.GetValue(form)!);
+
+            InvokeProcessCmdKey(form, Keys.X | Keys.Alt);
+            Assert.False((bool)passThrough.GetValue(form)!);
+        });
+
     private static void Raise(MenuStrip menu, string method)
         => typeof(MenuStrip).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(menu, [EventArgs.Empty]);

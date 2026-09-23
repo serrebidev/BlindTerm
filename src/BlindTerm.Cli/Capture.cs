@@ -61,6 +61,11 @@ internal static class Capture
 
         using var file = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var session = new PtySession();
+        // The handler below runs on the pseudo console's own read thread, and the flush at the
+        // end of this method runs on this one. A FileStream is not safe to use from two threads
+        // at once, and a child that is still painting when the settle window expires reaches
+        // both at the same time.
+        var writeGate = new object();
 
         // Decoded only for the operator's benefit; the file gets the raw bytes.
         var decoder = Encoding.UTF8.GetDecoder();
@@ -69,7 +74,7 @@ internal static class Capture
         session.Output += memory =>
         {
             var span = memory.Span;
-            file.Write(span);
+            lock (writeGate) file.Write(span);
             Interlocked.Add(ref total, span.Length);
 
             if (quiet) return;
@@ -129,7 +134,7 @@ internal static class Capture
         } while (Interlocked.Read(ref total) != settled
                  && settleDeadline.Elapsed < TimeSpan.FromSeconds(2));
 
-        file.Flush();
+        lock (writeGate) file.Flush();
 
         Console.Error.WriteLine();
         Console.Error.WriteLine(

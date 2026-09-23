@@ -75,6 +75,21 @@ public class MsdpMessageTests
                      Assert.Single(message!.Find("REPORT")).ScalarValues());
     }
 
+    [Fact]
+    public void AnEscapedIacByteDoesNotThrowAwayTheWholeMessage()
+    {
+        // The wire sends a literal 255 as a doubled IAC, and the telnet layer has already
+        // collapsed that pair back to one byte by the time this sees it, so it is ordinary data.
+        // Refusing it failed the whole subnegotiation -- HEALTH and the room with it -- over one
+        // byte the server was entitled to send.
+        Assert.True(MsdpMessage.TryParse(
+            Bytes(Var, "ROOM_NAME", Val, "Room ", (byte)0xff, " 7", Var, "HEALTH", Val, "75"),
+            out MsdpMessage? message));
+
+        Assert.Equal("75", Assert.Single(message!.Find("health")).Text);
+        Assert.StartsWith("Room ", Assert.Single(message.Find("room_name")).Text);
+    }
+
     [Theory]
     [MemberData(nameof(Malformed))]
     public void MalformedDataIsIgnoredRatherThanEscapingIntoTheTranscript(byte[] payload)

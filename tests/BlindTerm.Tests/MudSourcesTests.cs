@@ -245,6 +245,83 @@ public class MudSourcesTests
         Assert.Equal("Known", merged[0].Name);
     }
 
+    [Fact]
+    public async Task AnEncryptedPortIsNotTakenFromAnotherHost()
+    {
+        // The two halves of one listing do not always sit on the same machine. Taking the secure
+        // connection whatever host named it paired the address being dialled with a port that
+        // belongs to a different server, which is a listing that cannot connect to anything.
+        const string page = """
+        {"items":[{"name":"Split","short_name":"Split","connections":[
+            {"host":"plain.example","port":4000,"type":"telnet"},
+            {"host":"secure.example","port":7443,"type":"secure telnet"}]}],
+         "links":[]}
+        """;
+        using var directory = new GrapevineDirectory("https://grapevine.example",
+            new HttpClient(new Once(page)));
+
+        MudGame game = Assert.Single(await directory.GamesAsync());
+
+        Assert.Equal("plain.example", game.Host);
+        Assert.Equal(4000, game.Port);
+        Assert.Null(game.TlsPort);
+    }
+
+    [Fact]
+    public async Task AnEncryptedPortOnTheSameHostIsKept()
+    {
+        // The companion case, and the whole reason this source is read: Grapevine naming a
+        // secure port on the machine it named the plain one for.
+        const string page = """
+        {"items":[{"name":"Whole","short_name":"Whole","connections":[
+            {"host":"mud.example","port":4000,"type":"telnet"},
+            {"host":"mud.example","port":7443,"type":"secure telnet"}]}],
+         "links":[]}
+        """;
+        using var directory = new GrapevineDirectory("https://grapevine.example",
+            new HttpClient(new Once(page)));
+
+        MudGame game = Assert.Single(await directory.GamesAsync());
+
+        Assert.Equal("mud.example", game.Host);
+        Assert.Equal(7443, game.TlsPort);
+    }
+
+    [Fact]
+    public void ARowWithNoAddressIsSkippedRatherThanMergedWithTheNext()
+    {
+        // The Big List is read by one pattern per row, and the row with no telnet link used to
+        // take the next row's address: the match ran past its own </tr> looking for a url, so one
+        // listing was published dialling another game's server while the game that owned the
+        // address was dropped altogether.
+        const string page = """
+        <table id='biglist-table'><tbody>
+        <tr> <td>1</td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/search.cgi?mode=mud_listing&mud=First'>First</a></td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/telnet.cgi?mud=First&url=telnet://first.example:4000' data-tooltip='Connect'>first.example 4000</a></td>
+        <td>Connected</td> </tr>
+        <tr> <td>2</td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/search.cgi?mode=mud_listing&mud=WebOnly'>WebOnly</a></td>
+        <td>Play in your browser</td>
+        <td>Connected</td> </tr>
+        <tr> <td>3</td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/search.cgi?mode=mud_listing&mud=Third'>Third</a></td>
+        <td><a href='https://www.mudconnect.com/cgi-bin/telnet.cgi?mud=Third&url=telnet://third.example:5000' data-tooltip='Connect'>third.example 5000</a></td>
+        <td>Connect Refused</td> </tr>
+        </tbody></table>
+        """;
+
+        IReadOnlyList<MudGame> games = MudConnectorDirectory.Parse(page);
+
+        Assert.Equal(2, games.Count);
+        Assert.Equal(["First", "Third"], games.Select(game => game.Name).ToArray());
+        Assert.Equal("first.example", games[0].Host);
+        // Third keeps its own address and its own connect status rather than inheriting either.
+        Assert.Equal("third.example", games[1].Host);
+        Assert.Equal(5000, games[1].Port);
+        Assert.False(games[1].ConfirmedOnline);
+    }
+
     /// <summary>Answers the first request with a body, and every later one with an empty page.</summary>
     private sealed class Once(string json) : HttpMessageHandler
     {

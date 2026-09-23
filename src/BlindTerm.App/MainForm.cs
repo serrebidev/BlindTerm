@@ -1983,8 +1983,15 @@ public sealed class MainForm : Form
 
         if (_passThroughNext)
         {
-            // Disarmed whatever key arrived. It used to stay armed when the next key had no
-            // terminal translation -- a plain letter, say -- so "pass the next key to the
+            // A modifier on its own is not the key being passed. Alt arrives as a press of its
+            // own before the chord it belongs to, and consuming the arm there -- or letting that
+            // bare Alt open the menu bar, which then eats the chord -- is what stopped an Alt
+            // chord being passed at all. Hold the arm and swallow the modifier, so the chord
+            // that follows still finds it armed.
+            if (KeyTranslator.IsBareModifier(keyData)) return true;
+
+            // Disarmed whatever other key arrived. It used to stay armed when the next key had
+            // no terminal translation -- a plain letter, say -- so "pass the next key to the
             // program" waited instead for the next key that happened to have one, which could
             // be minutes later and a completely different key from the one meant.
             _passThroughNext = false;

@@ -11,11 +11,14 @@ public static class UpdateApplier
         if (args.Length != 4 || !int.TryParse(args[0], out int pid)) return 2;
         string install = Path.GetFullPath(args[1]);
         string archive = Path.GetFullPath(args[2]);
-        string executableName = Path.GetFileName(args[3]);
 
         try
         {
-            ValidatePaths(install, archive, executableName);
+            // Checked before it is reduced to a name. Comparing the basename with itself, as
+            // this once did, is a check that cannot fail, so a caller naming a path was read
+            // as the file at the end of it rather than refused.
+            ValidatePaths(install, archive, args[3]);
+            string executableName = Path.GetFileName(args[3]);
             WaitForProcess(pid);
             string staging = Path.Combine(Path.GetTempPath(), "BlindTerm-stage-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(staging);
