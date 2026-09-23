@@ -4,6 +4,25 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.21 - 2026-09-23
+
+- Put the browser's status on the braille display as well as in the voice. Braille follows the
+  caret, and a caret in a terminal does not move for a fetch that timed out or a search that
+  matched nothing -- so every status v0.7.20 taught the browser to speak was still a status a
+  braille user never received at all. Dialog news now goes both ways. A reader that has no
+  braille of its own answers false, which is not a failure: asking must not cost it the voice.
+  The terminal's own output is deliberately not brailled this way -- braille already follows the
+  caret through it, and putting messages on top of that would fight it.
+- Say the rest of what the browser was silently thinking. The genre list failing to load, a key
+  being saved, and a live MUDVerse key's "choose Show MUDs to fetch with these choices" -- which
+  was a filter change that answered with nothing at all -- were the last three states that
+  reached the status label and stopped there.
+- Say something while dialling. A telnet address given on the command line connects before the
+  window exists, so a host that took twenty seconds to answer was twenty seconds in which a
+  blind user heard nothing whatever: no window, no speech, no braille, and the dialog that
+  reports a failure only arrives once the attempt is over. The address is announced before the
+  attempt starts; the window announces success itself in its first line of transcript.
+
 ## v0.7.20 - 2026-09-23
 
 - Read the MUD browser out loud. Every outcome a fetch could have -- that a search had started,

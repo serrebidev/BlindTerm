@@ -298,6 +298,12 @@ internal sealed class TerminalWindows : ApplicationContext
     {
         ArgumentNullException.ThrowIfNull(target);
         var terminal = new TerminalHost(settings.Columns, settings.Rows, SynchronizationContext.Current!);
+        // Said before the connection, because connecting happens before the window does. A host
+        // that takes twenty seconds to answer used to be twenty seconds in which a blind user
+        // heard nothing at all and had no way to tell whether the launch had done anything --
+        // and the dialog that reports a failure only arrives after the attempt is over. The
+        // window announces success itself, in its first line of transcript.
+        terminal.Announcer.AnnounceNow($"Dialling {target.Address}.");
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(ConnectTimeoutSeconds));

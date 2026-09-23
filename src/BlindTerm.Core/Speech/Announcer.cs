@@ -243,7 +243,17 @@ public sealed class Announcer : IDisposable
     public void AnnounceHere(string text, SpeechPriority priority = SpeechPriority.Now)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
-        Speak(text.Trim(), priority);
+        string said = text.Trim();
+
+        // Put on the braille display as well as spoken. Braille follows the caret, and a caret
+        // in a terminal does not move for a fetch that timed out or a search that matched
+        // nothing -- so a status that is spoken and not brailled is a status a braille user
+        // never receives at all. Only dialog news goes both ways: the terminal's own output is
+        // already followed by the reader's caret tracking, and pushing messages on top of that
+        // would fight it. A reader with no braille of its own (JAWS) answers false, and asking
+        // is not a failure -- it must not cost the reader its voice.
+        _reader.Braille(said);
+        Speak(said, priority);
     }
 
     /// <summary>

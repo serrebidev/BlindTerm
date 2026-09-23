@@ -306,6 +306,7 @@ internal sealed class MudBrowserForm : Form
         if (!IsInstant())
         {
             _status.Text = "Choose Show MUDs to fetch with these choices.";
+            Announce(_status.Text);
             return;
         }
 
@@ -335,6 +336,7 @@ internal sealed class MudBrowserForm : Form
         _directory?.Dispose();
         _directory = MudDirectories.Open(dialog.Key, dialog.Endpoint);
         _status.Text = "Saved.";
+        Announce(_status.Text);
         return true;
     }
 
@@ -354,6 +356,7 @@ internal sealed class MudBrowserForm : Form
             // A missing taxonomy is not fatal: everything still works unfiltered, and saying
             // so beats three empty combo boxes with no explanation.
             _status.Text = "The genre list could not be fetched. " + ex.Message;
+            Announce(_status.Text);
         }
         catch (Exception ex)
         {
@@ -362,6 +365,7 @@ internal sealed class MudBrowserForm : Form
             // that used to happen: it is not an address, and the request for it is refused
             // with something that is not a directory failure at all.
             _status.Text = "The genre list could not be fetched. " + ex.Message;
+            Announce(_status.Text);
         }
     }
 

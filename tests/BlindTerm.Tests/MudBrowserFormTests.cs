@@ -123,11 +123,16 @@ public class MudBrowserFormTests
                 .Invoke(browser, ["No MUDs matched. Try a wider genre."]);
 
             Assert.Equal(["No MUDs matched. Try a wider genre."], reader.Spoken);
+            // And to braille, which is the only channel a braille user has for this: braille
+            // follows the caret, and a caret in the terminal does not move for a fetch that
+            // timed out or a search that matched nothing.
+            Assert.Equal(reader.Spoken, reader.Brailled);
         });
 
     private sealed class RecordingReader : IScreenReader
     {
         public List<string> Spoken { get; } = [];
+        public List<string> Brailled { get; } = [];
 
         public string Name => "recording";
         public bool IsRunning => true;
@@ -138,7 +143,12 @@ public class MudBrowserFormTests
             return true;
         }
 
-        public bool Braille(string text) => true;
+        public bool Braille(string text)
+        {
+            Brailled.Add(text);
+            return true;
+        }
+
         public bool Silence() => true;
     }
 
