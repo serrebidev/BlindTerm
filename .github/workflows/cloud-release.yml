@@ -1,6 +1,6 @@
 name: Cloud Release
 
-# Cloud agents ONLY. On the Windows release host follow docs/BUILD.md
+# Muse agent and cloud agents ONLY. On the Windows release host follow docs/BUILD.md
 # ("Publishing a release"): build.ps1 locally, tag, gh release create.
 # BlindTerm is Windows-only (WinForms + ConPTY), so this builds Windows only.
 #
