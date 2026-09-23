@@ -69,9 +69,10 @@ jobs:
             else { throw "Tag v$v already exists. Bump <Version> and add a CHANGELOG entry first." }
           }
 
+      # MciSoundOutputTests open a real audio device; runners have none.
       - name: Test
         run: |
-          dotnet test BlindTerm.sln --configuration Release
+          dotnet test BlindTerm.sln --configuration Release --filter "FullyQualifiedName!~MciSoundOutputTests"
           if ($LASTEXITCODE -ne 0) { throw "dotnet test failed" }
           pwsh -File tests\run-replay-tests.ps1
           if ($LASTEXITCODE -ne 0) { throw "replay tests failed" }
