@@ -41,6 +41,30 @@ public class AnnouncerTests
         }
     }
 
+    /// <summary>
+    /// A dialog this process opened is the window the user is in, even though opening it
+    /// deactivated the terminal behind. Every word a dialog tried to say used to be dropped by
+    /// the rule written for a terminal somebody had walked away from -- which is why the MUD
+    /// browser's status, a fetch that timed out or a search that matched nothing, reached a
+    /// label and stopped there.
+    /// </summary>
+    [Fact]
+    public async Task ADialogsNewsIsHeardAlthoughTheTerminalBehindItIsNotInFront()
+    {
+        (Announcer announcer, Collector collected) = Make();
+        using (announcer)
+        {
+            // What opening a modal dialog does to the terminal it was opened from.
+            announcer.Attended = false;
+
+            announcer.AnnounceNow("a gated message that must not be heard");
+            announcer.AnnounceHere("No MUDs matched. Try a wider genre.");
+
+            await Task.Delay(150);
+            Assert.Equal(["No MUDs matched. Try a wider genre."], collected.Spoken);
+        }
+    }
+
     [Fact]
     public async Task LeavingABusyTerminalDoesNotGetOneLastSentenceOverTheTop()
     {

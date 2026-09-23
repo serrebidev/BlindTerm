@@ -1,6 +1,7 @@
 using System.Reflection;
 using BlindTerm.App;
 using BlindTerm.Core;
+using BlindTerm.Core.Speech;
 
 namespace BlindTerm.Tests;
 
@@ -98,6 +99,48 @@ public class MudBrowserFormTests
             Assert.Null(browser.AcceptButton);
             Assert.NotNull(browser.CancelButton);
         });
+
+    /// <summary>
+    /// The browser's status reaches the reader, even though opening the dialog deactivated the
+    /// terminal it was opened from. Every outcome a fetch can have -- it started, what came
+    /// back, it timed out, the directory could not be read -- was written to a label and
+    /// nowhere else, and a label is a place words sit for somebody to look at. A blind user
+    /// pressed Show MUDs and had no way to tell a slow fetch from a failed one from nothing
+    /// matching.
+    /// </summary>
+    [Fact]
+    public void TheBrowserSpeaksItsStatusAlthoughTheTerminalIsNotInFront()
+        => OnAWindowThread(() =>
+        {
+            var reader = new RecordingReader();
+            using var announcer = new Announcer(reader);
+            // What opening a modal dialog does to the terminal it was opened from.
+            announcer.Attended = false;
+
+            using var browser = new MudBrowserForm(new AppSettings(), null, announcer);
+            typeof(MudBrowserForm)
+                .GetMethod("Announce", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(browser, ["No MUDs matched. Try a wider genre."]);
+
+            Assert.Equal(["No MUDs matched. Try a wider genre."], reader.Spoken);
+        });
+
+    private sealed class RecordingReader : IScreenReader
+    {
+        public List<string> Spoken { get; } = [];
+
+        public string Name => "recording";
+        public bool IsRunning => true;
+
+        public bool Speak(string text, SpeechPriority priority = SpeechPriority.Normal)
+        {
+            Spoken.Add(text);
+            return true;
+        }
+
+        public bool Braille(string text) => true;
+        public bool Silence() => true;
+    }
 
     private static IEnumerable<Control> Walk(Control root)
     {

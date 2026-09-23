@@ -4,6 +4,51 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.20 - 2026-09-23
+
+- Read the MUD browser out loud. Every outcome a fetch could have -- that a search had started,
+  how many MUDs came back, that the directory did not answer in time, that it could not be read
+  at all -- was written to a status label and nowhere else, and a label is a place words sit for
+  somebody to look at: it raises nothing a reader announces. Pressing Show MUDs therefore gave a
+  blind user no way to tell a slow fetch from a failed one from nothing matching, and a network
+  that never answered meant up to two minutes of silence and then a line nobody heard. The
+  status line is spoken as well as shown.
+- Say it from a dialog, which needed a door of its own. Speech is gated on this window being the
+  one in front -- right for a terminal somebody has walked away from, wrong for a dialog the
+  program opened itself, because a modal dialog deactivates the terminal behind it and every
+  word the browser tried to say was dropped by that rule before it reached anyone. A dialog is
+  by definition the window the user is in, and `AnnounceHere` is the one place that is decided.
+- Name the control a full-screen program hands the keyboard to. It had no name at all, so the
+  moment nano or vim took over and focus moved there, the reader said a bare "edit" beside the
+  line under the program's cursor -- at the moment a blind user most needs to be told they are in
+  the program and not at the shell's command line. It reads "Full-screen program" now. Its whole
+  text is a zero-width space, which is how it went unnoticed: anything that only asked whether
+  the text was empty saw a name.
+- Say the choice back when the browser fills the connect dialog in. Focus lands on Connect, and
+  what was about to be dialled was put in that button's *description* -- the place the code said
+  the choice was "confirmed out loud", and not a place either reader reads when focus arrives. A
+  wrong port was discovered by failing to connect some seconds later. It is the button's name
+  now, which both readers do say.
+- Let Enter test the trigger instead of saving it. In the trigger editor's "Try a line" box,
+  Enter went to the dialog's Save button: the editor closed, the report that box exists to
+  produce never appeared, and the trigger was written from a form nobody had finished checking.
+  The MUD browser's search box was already wired against exactly this trap, and the editor now
+  is too.
+- Say why the command line is not there, and stop the painted screen taking focus. Alt+2 while a
+  full-screen program held the keyboard, or while a frozen screen was being read, did nothing
+  and said nothing -- a disabled control and a hidden one both refuse focus in silence. It now
+  says which of the two it is and how to get back. The painted surface is no longer selectable,
+  so a click can no longer take the keyboard off the proxy and onto an object with no name, role
+  or value; and the disabled "use as the default terminal" item carries its reason in its text
+  rather than in a tooltip, which only a mouse ever reads.
+- Take Pass Next back. Holding the bare modifier is what lets an Alt chord still arrive, and that
+  is also the key that opens the menu bar -- so an arming that was not meant left Alt swallowed,
+  the menu out of reach, and nothing said about either. The command that armed it cancels it,
+  and arming now says so.
+- Check the names, window by window. A new test walks the main window and every dialog and fails
+  on any control a reader can land on that has nothing to say for itself, counting a name made
+  of a zero-width space as no name at all -- which is what the proxy's was.
+
 ## v0.7.19 - 2026-09-23
 
 - Stop a MUD directory pairing one machine's encrypted port with another machine's address.

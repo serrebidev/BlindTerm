@@ -280,7 +280,10 @@ public sealed class MainForm : Form
         _live.Font = font;
         _live.Dock = DockStyle.Fill;
         _live.TabStop = false;
-        _live.AccessibleName = "Current line";
+        // A label has nowhere to put its content but its name, and naming it "Current line" --
+        // which is what this did -- left a reader that reached it with no way to read the line
+        // it holds. The name is the line; the description says what the line is.
+        _live.AccessibleDescription = "Current line: the prompt or output not yet finished.";
         _live.TabIndex = 1;
 
         _command.Font = font;
@@ -355,7 +358,7 @@ public sealed class MainForm : Form
             () => _host.Send([0x1b, (byte)'[', (byte)'Z'])));
         terminal.DropDownItems.Add(new ToolStripSeparator());
         terminal.DropDownItems.Add(Item("&Pass next chord to the program", AppShortcuts.PassNext,
-            () => { _passThroughNext = true; Say("Pass through next key"); }));
+            () => { _passThroughNext = true; Say("Pass through next key. Press Alt+P again to cancel"); }));
         terminal.DropDownItems.Add(new ToolStripSeparator());
         terminal.DropDownItems.Add(Item("E&xit", Keys.None, Close));
 
@@ -758,6 +761,10 @@ public sealed class MainForm : Form
         if (!DefaultTerminalConfig.IsSupported)
         {
             _defaultTerminalItem.Enabled = false;
+            // A tooltip is a mouse channel: a reader browsing this menu never hears one, and a
+            // disabled item cannot be focused to ask. The reason goes in the text, which both
+            // readers do read out on a disabled menu item.
+            _defaultTerminalItem.Text = "Use BlindTerm as the &default terminal (needs Windows 11)";
             _defaultTerminalItem.ToolTipText = "Windows 11 or later is needed to choose a default terminal.";
             return;
         }
@@ -987,6 +994,18 @@ public sealed class MainForm : Form
 
     private void FocusCommandLine()
     {
+        // A control that is not there to focus says nothing about it by itself: a disabled
+        // control and a hidden one both refuse focus without a word, so Alt+2 while a
+        // full-screen program held the keyboard, or while a frozen screen was being read, was
+        // a command that did nothing and said nothing about why.
+        if (ScreenMode)
+        {
+            Say(_reviewing
+                ? "Reading the frozen screen. Alt+3 goes back to the program"
+                : "The program has the keyboard, so there is no command line while it runs");
+            return;
+        }
+
         if (_command.Enabled) _command.Focus();
     }
 
@@ -1557,7 +1576,7 @@ public sealed class MainForm : Form
 
     private void ConnectToHost()
     {
-        using var dialog = new TelnetConnectForm(_settings, SaveDirectorySettings);
+        using var dialog = new TelnetConnectForm(_settings, SaveDirectorySettings, _host.Announcer);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         TelnetRequested?.Invoke(dialog.Target);
     }
@@ -1578,7 +1597,7 @@ public sealed class MainForm : Form
     /// </summary>
     private void BrowseForMuds()
     {
-        using var browser = new MudBrowserForm(_settings, SaveDirectorySettings);
+        using var browser = new MudBrowserForm(_settings, SaveDirectorySettings, _host.Announcer);
         if (browser.ShowDialog(this) != DialogResult.OK || browser.Chosen is not { } game) return;
 
         TelnetRequested?.Invoke(game.TlsPort is int tls
@@ -1983,6 +2002,17 @@ public sealed class MainForm : Form
 
         if (_passThroughNext)
         {
+            // Pressing the same command again is the way back out. Without one there is nowhere
+            // obvious to turn: the bare modifier has to be held for an Alt chord to arrive, and
+            // that is also the key that opens the menu bar, so an arming that was not meant
+            // swallowed Alt and left the menu out of reach with nothing said about it.
+            if (keyData == AppShortcuts.PassNext)
+            {
+                _passThroughNext = false;
+                Say("Pass through cancelled");
+                return true;
+            }
+
             // A modifier on its own is not the key being passed. Alt arrives as a press of its
             // own before the chord it belongs to, and consuming the arm there -- or letting that
             // bare Alt open the menu bar, which then eats the chord -- is what stopped an Alt

@@ -216,6 +216,18 @@ internal sealed class TriggerEditForm : Form
         _tryIt.AutoSize = true;
         _tryIt.AccessibleName = "Test the pattern against that line";
         _tryIt.Click += (_, _) => RunTest();
+        // Enter belongs to the box being typed in rather than to the dialog's Save button.
+        // Left to the default button it saved the trigger and closed the editor, so the report
+        // this box exists to produce never appeared and the trigger was written from a form
+        // nobody had finished checking -- the same trap the MUD browser's search box is wired
+        // against, and the same fix.
+        _test.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            RunTest();
+        };
         var row = new FlowLayoutPanel
         {
             AutoSize = true,

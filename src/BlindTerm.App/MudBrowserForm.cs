@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using BlindTerm.Core;
 using BlindTerm.Core.Mud;
+using BlindTerm.Core.Speech;
 
 namespace BlindTerm.App;
 
@@ -105,11 +106,14 @@ internal sealed class MudBrowserForm : Form
     /// <summary>The game that was chosen, once the dialog has been answered.</summary>
     public MudGame? Chosen { get; private set; }
 
-    public MudBrowserForm(AppSettings settings, Action<string, string>? save = null)
+    private readonly Announcer? _speaker;
+
+    public MudBrowserForm(AppSettings settings, Action<string, string>? save = null, Announcer? speaker = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _settings = settings;
         _save = save;
+        _speaker = speaker;
 
         Text = "Browse for MUDs";
         FormBorderStyle = FormBorderStyle.Sizable;
@@ -413,6 +417,7 @@ internal sealed class MudBrowserForm : Form
         bool adding = page > 1;
         UseWaitCursor = true;
         _status.Text = adding ? "Fetching more..." : "Fetching...";
+        Announce(_status.Text);
 
         try
         {
@@ -447,6 +452,7 @@ internal sealed class MudBrowserForm : Form
             }
 
             _status.Text = Describe(results, adding);
+            Announce(_status.Text);
             _results.AccessibleDescription = _status.Text + " " + Hint;
             if (_results.Items.Count > 0)
             {
@@ -466,7 +472,10 @@ internal sealed class MudBrowserForm : Form
             // newer one owns the status line, and saying "did not answer in time" about a
             // query nobody is waiting for is a lie that then gets read out.
             if (!IsDisposed && !Disposing && ReferenceEquals(_running, running))
+            {
                 _status.Text = directory.Name + " did not answer in time.";
+                Announce(_status.Text);
+            }
         }
         catch (MudDirectoryException ex)
         {
@@ -490,6 +499,7 @@ internal sealed class MudBrowserForm : Form
             // make a request do, which must not take the terminal down with it.
             if (IsDisposed || Disposing) return;
             _status.Text = "Could not read the directory: " + ex.Message;
+            Announce(_status.Text);
         }
         finally
         {
@@ -561,6 +571,19 @@ internal sealed class MudBrowserForm : Form
         // announces the item because the selection changed, not because of this.
         _results.TopIndex = Math.Max(0, index - 2);
     }
+
+    /// <summary>
+    /// Says what the status line says.
+    ///
+    /// Everything this window learns about a fetch -- that it started, what came back, that it
+    /// timed out, that the directory could not be read -- used to be written to a label and
+    /// nowhere else. A label is a place words sit for someone to look at; it raises nothing a
+    /// reader announces, so a blind user pressed Show MUDs and then had no way to tell a slow
+    /// fetch from a failed one from an empty result. The status line is spoken as well as
+    /// written, and spoken through <see cref="Announcer.AnnounceHere"/> because a modal dialog
+    /// has deactivated the terminal whose gate would otherwise drop every word of it.
+    /// </summary>
+    private void Announce(string text) => _speaker?.AnnounceHere(text);
 
     private string Describe(MudDirectoryPage results, bool adding)
     {

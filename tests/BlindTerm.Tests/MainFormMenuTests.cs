@@ -125,6 +125,28 @@ public class MainFormMenuTests
             Assert.False((bool)passThrough.GetValue(form)!);
         });
 
+    [Fact]
+    public void PassNextIsTakenBackByPressingTheSameCommandAgain()
+        => OnAWindowThread(() =>
+        {
+            using var host = new TerminalHost(80, 25, new SynchronizationContext());
+            using var form = new MainForm(host, new AppSettings(), new SettingsStore());
+            var spoken = new List<string>();
+            host.Announcer.Sink = (text, _) => spoken.Add(text);
+
+            FieldInfo passThrough = typeof(MainForm).GetField("_passThroughNext",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            passThrough.SetValue(form, true);
+
+            // The bare modifier has to be held so an Alt chord can arrive, and that is also the
+            // key that opens the menu bar -- so an arming that was not meant leaves nowhere
+            // obvious to turn. The command that armed it takes it back, and says so.
+            InvokeProcessCmdKey(form, AppShortcuts.PassNext);
+
+            Assert.False((bool)passThrough.GetValue(form)!);
+            Assert.Contains(spoken, said => said.Contains("cancel", StringComparison.OrdinalIgnoreCase));
+        });
+
     private static void Raise(MenuStrip menu, string method)
         => typeof(MenuStrip).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(menu, [EventArgs.Empty]);

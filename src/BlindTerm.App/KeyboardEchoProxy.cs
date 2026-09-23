@@ -20,6 +20,15 @@ internal sealed class KeyboardEchoProxy : TextBox
         HideSelection = false;
         ReadOnly = false;
         AccessibleRole = AccessibleRole.Text;
+        // Said out loud, because focus lands here the moment a full-screen program takes over.
+        // It had no name at all: the reader announced a bare "edit" beside the line under the
+        // program's cursor, which is exactly the moment a blind user most needs to be told
+        // where they are -- in the program, not at the shell's command line. Its whole text is
+        // a zero-width space, so anything that only asked "is the name empty" saw a name.
+        AccessibleName = "Full-screen program";
+        AccessibleDescription =
+            "The line the program's cursor is on. Arrows and typing go to the program; "
+            + "Alt+3 freezes the screen for reading.";
         Text = "\u200B";
         SelectionStart = 1;
         TabStop = false;

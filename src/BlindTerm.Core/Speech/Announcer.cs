@@ -230,6 +230,23 @@ public sealed class Announcer : IDisposable
     }
 
     /// <summary>
+    /// Says something for a window this process is showing that is not the terminal -- a dialog
+    /// it opened, which by being modal is the window the user is actually in.
+    ///
+    /// <see cref="AnnounceNow"/> is gated on this window being the one in front, and opening a
+    /// dialog takes that away: the terminal deactivates, so everything the dialog tried to say
+    /// was dropped by a rule written for a terminal somebody had walked away from. The dialog
+    /// is not that terminal, and without this its status -- a fetch that timed out, a search
+    /// that matched nothing, a directory that could not be read -- reached a label and stopped
+    /// there, which is a thing only a sighted user could read.
+    /// </summary>
+    public void AnnounceHere(string text, SpeechPriority priority = SpeechPriority.Now)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        Speak(text.Trim(), priority);
+    }
+
+    /// <summary>
     /// Says something the program did rather than something the user asked for: a full-screen
     /// program's cursor moving, a new file opening, a prompt appearing.
     ///

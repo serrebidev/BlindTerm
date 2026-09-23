@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using BlindTerm.Core;
 using BlindTerm.Core.Net;
+using BlindTerm.Core.Speech;
 
 namespace BlindTerm.App;
 
@@ -27,6 +28,7 @@ internal sealed class TelnetConnectForm : Form
     private readonly Button _connect;
     private readonly AppSettings _settings;
     private readonly Action<string, string>? _saveDirectorySettings;
+    private readonly Announcer? _speaker;
 
     /// <summary>Where to connect, once the dialog has been answered.</summary>
     public TelnetTarget Target { get; private set; } = new(string.Empty, TelnetAddress.DefaultPort);
@@ -39,11 +41,17 @@ internal sealed class TelnetConnectForm : Form
     /// Called with a key and endpoint entered while browsing, so it is asked for once rather
     /// than once per session. Null in a test, where nothing is being kept.
     /// </param>
-    public TelnetConnectForm(AppSettings settings, Action<string, string>? saveDirectorySettings = null)
+    /// <param name="speaker">
+    /// How the browser this dialog opens reaches the reader. Null in a test, where nobody is
+    /// listening.
+    /// </param>
+    public TelnetConnectForm(AppSettings settings, Action<string, string>? saveDirectorySettings = null,
+        Announcer? speaker = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _settings = settings;
         _saveDirectorySettings = saveDirectorySettings;
+        _speaker = speaker;
         IReadOnlyList<string> recent = settings.RecentTelnetHosts;
 
         Text = "Connect to a telnet host";
@@ -163,7 +171,7 @@ internal sealed class TelnetConnectForm : Form
     /// </summary>
     private void Browse()
     {
-        using var browser = new MudBrowserForm(_settings, _saveDirectorySettings);
+        using var browser = new MudBrowserForm(_settings, _saveDirectorySettings, _speaker);
         if (browser.ShowDialog(this) != DialogResult.OK || browser.Chosen is not { } game) return;
 
         _host.Text = game.Host;
@@ -181,9 +189,12 @@ internal sealed class TelnetConnectForm : Form
             _secure.Checked = false;
         }
 
-        // Focus lands on Connect, so Enter finishes the job, and the description says what is
-        // about to be dialled -- which is the only place the choice is confirmed out loud.
-        _connect.AccessibleDescription =
+        // Focus lands on Connect, so Enter finishes the job and the button's own name says what
+        // is about to be dialled. It was described rather than named, and a description is not
+        // what either reader says when focus arrives -- so the one place the choice was
+        // confirmed was a place neither of them reads, and a wrong port was discovered by
+        // failing to connect some seconds later.
+        _connect.AccessibleName =
             $"Connect to {game.Name}, {_host.Text} port {(int)_port.Value}"
             + (_secure.Checked ? ", encrypted." : ".");
         _connect.Focus();

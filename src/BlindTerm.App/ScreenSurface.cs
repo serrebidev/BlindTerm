@@ -25,6 +25,12 @@ internal sealed class ScreenSurface : Control
         // Focusable, and painted by us without flicker.
         SetStyle(ControlStyles.AllPaintingInWmPaint
                  | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+        // TabStop stops the Tab key and nothing else. Selectable is what a mouse click asks
+        // about, and a Control is selectable by default, so a click on the painted screen took
+        // Win32 focus off the keyboard proxy and onto an object with no name, role or value --
+        // the reader had nothing to announce and nothing to follow. Everything about this
+        // surface is meant to stay out of the reader's path, and this is where that is decided.
+        SetStyle(ControlStyles.Selectable, false);
         TabStop = false;
         BackColor = SystemColors.Window;
         ForeColor = SystemColors.WindowText;
