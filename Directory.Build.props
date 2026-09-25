@@ -8,5 +8,8 @@
     <Product>BlindTerm</Product>
     <Company>SerrebiProjects</Company>
     <Copyright>Copyright (c) SerrebiProjects and contributors</Copyright>
+    <!-- Allows dotnet restore/build of the Windows-targeted projects on Linux runners
+         (NuGet dependency submission). No-op on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 </Project>
