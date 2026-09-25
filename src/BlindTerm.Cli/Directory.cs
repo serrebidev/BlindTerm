@@ -172,7 +172,11 @@ internal static class Directory
     private static async Task<MudFeed> Build(string key, string? endpoint, string? mudstatsSite,
         string? grapevineSite, string? connectorSite, string? previous, bool skipStats, bool quiet)
     {
-        using var mudverse = new MudVerseDirectory(key, endpoint);
+        // Longer than the app's 25 seconds. Since 2026-09 MUDVerse takes more than that over
+        // page 1 of top_voted, most_reviewed and last_updated on every run, so those orderings
+        // gave nothing and the list held 63 of its 222 games. Nobody is waiting on this job.
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
+        using var mudverse = new MudVerseDirectory(key, endpoint, http);
         // Always reported, even under --quiet: a run that is retrying is a run in trouble, and
         // the log should say so while it is happening rather than only if it finally fails.
         mudverse.Retrying += trouble => Console.Error.WriteLine("directory: " + trouble);
