@@ -307,7 +307,7 @@ internal static class Directory
                     // The expected way for this to end, not an error. This ordering has gone
                     // as deep as MUDVerse will serve it; the next ordering starts from the top
                     // again, where it is fast.
-                    if (!quiet) Console.Error.WriteLine($"directory: MUDVerse {sort} stopped at page {page}: {ex.Message}");
+                    Console.Error.WriteLine($"directory: MUDVerse {sort} stopped at page {page}: {ex.Message}");
                     break;
                 }
 
@@ -316,7 +316,8 @@ internal static class Directory
                 if (!batch.HasMore || batch.Games.Count == 0) break;
                 await Task.Delay(BetweenRequests);
             }
-            if (!quiet) Console.Error.WriteLine($"directory: MUDVerse after {sort}: {described.Count} games");
+            // Always shown: this is how a run that stops short of MUDVerse's total explains itself.
+            Console.Error.WriteLine($"directory: MUDVerse after {sort}: {described.Count} games");
         }
 
         if (total > 0)
