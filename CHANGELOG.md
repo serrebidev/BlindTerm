@@ -4,6 +4,16 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.23 - 2026-09-25
+
+- Fixed the NuGet dependency-submission workflow: dotnet restore of the Windows-targeted
+  projects (BlindTerm.App, BlindTerm.Tests) failed on Linux runners with NETSDK1100.
+  EnableWindowsTargeting is now set in Directory.Build.props (the documented Microsoft fix;
+  a no-op for Windows builds).
+- CI now always logs how far each MUDVerse ordering got, and the MUD directory job has a
+  90-second MUDVerse timeout.
+- Documented that the cloud release workflow is for the Muse agent and cloud agents.
+
 ## v0.7.22 - 2026-09-23
 
 - Nothing changes in BlindTerm itself. This release is the first one built and published on GitHub's
