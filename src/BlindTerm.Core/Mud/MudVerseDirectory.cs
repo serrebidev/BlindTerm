@@ -320,7 +320,7 @@ public sealed class MudVerseDirectory : IMudDirectory, IDisposable
     /// time out again in exactly the same way, and a third attempt only spends another
     /// twenty-five seconds of a scheduled run proving it. A rejected key is not retried at all.
     /// </summary>
-    private const int Attempts = 2;
+    private const int Attempts = 4;
 
     /// <summary>Raised when a request is being tried again, so a slow run says so rather than just being slow.</summary>
     public event Action<string>? Retrying;

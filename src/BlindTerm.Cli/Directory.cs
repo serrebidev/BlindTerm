@@ -181,19 +181,32 @@ internal static class Directory
         // the log should say so while it is happening rather than only if it finally fails.
         mudverse.Retrying += trouble => Console.Error.WriteLine("directory: " + trouble);
 
-        MudDirectoryFilters filters = await mudverse.FiltersAsync();
         var feed = new MudFeed
         {
             Generated = DateTimeOffset.UtcNow,
-            Themes = [.. filters.Themes],
-            Types = [.. filters.GameTypes],
-            Roleplaying = [.. filters.Roleplaying],
         };
+
+        // MUDVerse is somebody else's website, like the rest: when it is having a bad
+        // day the run publishes from the other directories instead of failing outright.
+        // (Grapevine and The Mud Connector already degrade this way via Gather.)
+        IReadOnlyList<MudGame> fromMudVerse = [];
+        try
+        {
+            MudDirectoryFilters filters = await mudverse.FiltersAsync();
+            feed.Themes = [.. filters.Themes];
+            feed.Types = [.. filters.GameTypes];
+            feed.Roleplaying = [.. filters.Roleplaying];
+            fromMudVerse = [.. (await Harvest(mudverse, quiet)).Values];
+        }
+        catch (MudDirectoryException ex)
+        {
+            Console.Error.WriteLine("directory: MUDVerse unavailable, carrying on without it: " + ex.Message);
+        }
 
         // Richest first. Each source after fills in only what is still blank, so a game
         // listed in all of them ends up with everybody's half and one listed only in the
         // last still ends up connectable. See MudMerge.Describe.
-        IReadOnlyList<MudGame> fromMudVerse = [.. (await Harvest(mudverse, quiet)).Values];
+
         IReadOnlyList<MudGame> fromGrapevine = await Gather("Grapevine", quiet,
             () => new GrapevineDirectory(grapevineSite).GamesAsync());
         IReadOnlyList<MudGame> fromConnector = await Gather("The Mud Connector", quiet,
