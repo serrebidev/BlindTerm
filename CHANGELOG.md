@@ -4,6 +4,13 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.24 - 2026-10-03
+
+- The MUD directory build no longer fails outright when MUDVerse is down: it now
+  publishes from the other directories (Grapevine, The Mud Connector) and carries on
+  without MUDVerse's games, the way those sources already degrade. MUDVerse request
+  retries also went from 2 to 4, so a slow MUDVerse costs less of a scheduled run.
+
 ## v0.7.23 - 2026-09-25
 
 - Fixed the NuGet dependency-submission workflow: dotnet restore of the Windows-targeted
