@@ -235,14 +235,14 @@ public class MudDirectoryTests
     public async Task ASecondFailureIsNotChasedForever()
     {
         // A request that timed out because MUDVerse cannot serve that offset will time out
-        // again in exactly the same way. Two attempts, then the caller is told.
+        // again in exactly the same way. Four attempts, then the caller is told.
         var handler = new Flaky(HttpStatusCode.ServiceUnavailable, failures: 99, OneGame);
         using var directory = new MudVerseDirectory("key", http: new HttpClient(handler));
 
         await Assert.ThrowsAsync<MudDirectoryException>(
             () => directory.SearchAsync(new MudDirectoryQuery { Sort = MudDirectorySort.Newest }));
 
-        Assert.Equal(2, handler.Calls);
+        Assert.Equal(4, handler.Calls);
     }
 
     [Fact]
