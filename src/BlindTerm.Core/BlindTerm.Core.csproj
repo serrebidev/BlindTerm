@@ -3,14 +3,14 @@
   <PropertyGroup>
     <!-- Windows-targeted: the pseudo console is a Windows API, and JAWS is reached through
          COM, which needs the Windows targeting pack to bind by ProgID. -->
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="XTerm.NET" Version="1.2.0" />
+    <PackageReference Include="XTerm.NET" Version="*" />
   </ItemGroup>
 
   <ItemGroup>

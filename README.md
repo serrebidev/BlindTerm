@@ -58,7 +58,7 @@ The ZIP, installer, and update manifest are written to `dist\`.
 
 ## Run from source
 
-Install the .NET 9 SDK, then run:
+Install the .NET 10 SDK, then run:
 
 ```powershell
 dotnet run --project src\BlindTerm.App

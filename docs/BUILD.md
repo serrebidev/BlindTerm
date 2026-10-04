@@ -5,7 +5,7 @@ This is the local build path for BlindTerm. It creates the package you can test 
 ## Prerequisites
 
 - Windows 10 or newer with ConPTY support.
-- .NET 9 SDK.
+- .NET 10 SDK.
 - Inno Setup 6, normally at `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`.
 - NVDA for speech and braille verification. JAWS is optional.
 
