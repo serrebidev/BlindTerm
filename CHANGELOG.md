@@ -4,6 +4,13 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.25 - 2026-10-04
+
+- Updated the .NET packages to their current releases and dropped the version pins. BlindTerm
+  now targets .NET 10, so it needs the .NET 10 SDK to build and the .NET 10 runtime to run.
+- GitHub Actions moved to the current publisher releases; the JavaScript actions now run on
+  Node 24.
+
 ## v0.7.24 - 2026-10-03
 
 - The MUD directory build no longer fails outright when MUDVerse is down: it now
