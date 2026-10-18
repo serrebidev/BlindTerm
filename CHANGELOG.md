@@ -4,6 +4,26 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.26 - 2026-10-18
+
+- Walking at a MUD, the way other clients taught players to expect it. Type `.3n2e` to send
+  three north and two east at once, or `..3n2e` to walk it a room at a time, stopping where
+  the MUD refuses a step; Alt+Shift+S stops a careful walk. Every compass step is
+  remembered with detours folded out: Alt+Shift+D drops a breadcrumb, Alt+Shift+R sends
+  the whole way back.
+- Aliases typed at the MUD: `/alias sh * = shoot $1` makes `sh goblin` send
+  `shoot goblin`, with `/aliases` to read them back and `/unalias` to remove one. They are
+  stored with the rest of your settings.
+- Quick triggers typed at the MUD: `/trigger You are hungry = eat bread` writes an ordinary
+  trigger that sends a command when a line contains the text; `/triggers` and `/untrigger`
+  manage the ones written this way, and the Triggers dialog still manages all of them.
+- Several commands on one line at a MUD, separated by semicolons, are sent one at a time
+  in order; an alias's expansion can hold several too.
+- Ctrl+Enter on an empty command line sends the last command again.
+- Session logging: Alt+Shift+L (Terminal menu) starts and stops writing what the session
+  prints to a file under BlindTerm\logs in Application Data. What you type is never in the
+  transcript, so it is never in the log.
+
 ## v0.7.25 - 2026-10-04
 
 - Updated the .NET packages to their current releases and dropped the version pins. BlindTerm
