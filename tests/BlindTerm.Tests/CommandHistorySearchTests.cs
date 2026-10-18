@@ -70,9 +70,9 @@ public class CommandHistorySearchTests
         CommandHistory history = Filled();
         Assert.Equal("northeast", history.Step(-1, "n"));
 
-        // The line no longer holds what the search put there: "ne" typed afresh finds
+        // The line no longer holds what the search put there: "no" typed afresh finds
         // the same match from the bottom, rather than stepping on to "north".
-        Assert.Equal("northeast", history.Step(-1, "ne"));
+        Assert.Equal("northeast", history.Step(-1, "no"));
     }
 
     [Fact]
