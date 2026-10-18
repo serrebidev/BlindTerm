@@ -4,6 +4,33 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.28 - 2026-10-18
+
+- Timers, written the way aliases are. A trigger answers something the MUD said; a timer
+  answers the clock, and until now there was nowhere in BlindTerm to keep one. Type
+  `/timer sip 45 = drink water` and `drink water` is sent every 45 seconds for as long as
+  the window holds the MUD -- the interval can be written `2m` or `1h` as well, and the
+  word `once` before the equals sign makes it fire a single time, that long after the
+  timers start, which is a way to arrive somewhere already doing something. `/timers`
+  reads them back and `/untimer sip` takes one away. They are stored with the rest of your
+  settings, and what one sends goes the way a typed line goes: filled in against the
+  aliases, split on its semicolons, and heard by the breadcrumb trail.
+- The command line searches its own history. Up and Down on an empty line recall what was
+  sent, as they always have; type the start of a command first and they walk the lines
+  that begin with it instead -- Up to older matches, Down back towards the newest, and
+  Down once more gives you back what you typed. Finding the one command in forty stops
+  meaning pressing Up forty times.
+- Sounds a MUD asks for over GMCP are played. More MUDs now send their sounds as
+  `Client.Media` messages rather than in the text, following the protocol Mudlet speaks;
+  a client that only listens in the text hears nothing from them. BlindTerm advertises
+  the package and plays what arrives through the same player, under the same rules as the
+  MUD Sound Protocol: the address a load names is remembered for what follows, a play
+  carries its volume, its count of plays and its priority, a stop stops a kind or
+  everything, and nothing is downloaded unless downloads are switched on.
+- `/status` reads the session back: the address and how the connection is encrypted, the
+  character's name where the MUD has said it, and how many aliases, triggers and timers
+  the window holds -- facts that otherwise take three dialogs to gather.
+
 ## v0.7.27 - 2026-10-18
 
 - Say which version this is. The number the program calls itself was written out by hand beside
