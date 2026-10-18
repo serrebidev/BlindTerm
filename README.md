@@ -33,6 +33,8 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 - Needs no account and no API key to do it: the list is published for everyone and rebuilt every half hour.
 - Plays MUD sounds through the MUD Sound Protocol, and keeps its triggers out of the text whether sounds are on or off.
 - Reads a MUD's own account of the room, its exits and the character's health over GMCP or MSDP, so the way out is a list rather than a word to be found in a paragraph.
+- Walks routes typed the way MUD players write them — `.3n2e` sends the whole run at once, `..3n2e` walks it a room at a time and stops where the way is blocked — and remembers the way back, so `Alt+Shift+R` retraces your steps to the breadcrumb you dropped with `Alt+Shift+D`.
+- Gives a line typed at a MUD the shortcuts other clients taught players to expect: aliases written by typing `/alias`, quick triggers written by typing `/trigger`, several commands on one line separated by semicolons, `Ctrl+Enter` to send the last command again, and a session log (`Alt+Shift+L`) that writes what arrived to a file.
 - Includes a replay harness that turns raw PTY captures into repeatable regression tests.
 - Includes a self-contained Windows build, an Inno Setup installer, and a hash-verified update foundation.
 
@@ -122,7 +124,7 @@ Codex, Claude Code, OpenCode and Freebuff all ask questions no line of text can 
 
 **As soon as there is text in the command line, it is an ordinary edit box again.** Arrows move the caret through what you have typed, so a typo in a long prompt can still be fixed. Clear the line to get the remote control back, or use `Alt+P` to pass one key either way.
 
-Telnet keeps its own sent-line history in BlindTerm: Up and Down in the command line recall what you sent, and Enter sends the recalled line again. This history is separate from shell commands and never records protected password input.
+Telnet keeps its own sent-line history in BlindTerm: Up and Down in the command line recall what you sent, and Enter sends the recalled line again. `Ctrl+Enter` on an empty command line sends the last line again without recalling it first. This history is separate from shell commands and never records protected password input.
 
 **Tab asks whatever is reading the line to complete what you typed.** That is the shell's own completion at an idle prompt -- file names, commands, parameters -- and the program's own completion in Claude Code, Codex, OpenCode and similar inline programs. BlindTerm sends the pending edit text followed by Tab, reads the completed command aloud once the terminal has stopped redrawing it, and puts it back in the command box, where it can be reviewed a character at a time, corrected and sent. New typing and editing stay synchronized with the terminal until Enter, and its rendered line is authoritative after completion. Press `Shift+Tab` to move from input to the readable output, and press `Tab` in output to return to input. Freebuff and other full-screen programs use the same focus pair between live input and frozen review output. If a program itself needs `Shift+Tab`, press `Alt+P` first or choose **Terminal** &rarr; **Send Shift+Tab**.
 
@@ -151,6 +153,10 @@ For a telnet session, output remains the complete transcript. BlindTerm records 
 - `Alt+D`: change directory.
 - `Alt+N`: connect to a telnet host.
 - `Alt+Shift+B`: browse for MUDs.
+- `Alt+Shift+D`: drop a breadcrumb, and start measuring the way back from here.
+- `Alt+Shift+R`: retrace your steps to the breadcrumb.
+- `Alt+Shift+S`: stop a walk in progress.
+- `Alt+Shift+L`: start or stop logging this session to a file.
 
 The complete command list is also available from the menu bar. `Alt+T`, `Alt+R`, `Alt+G`, and `Alt+E` open its Terminal, Read, Go, and Edit menus, including while a full-screen program is running.
 
@@ -175,6 +181,17 @@ Two other things follow from speaking the protocol rather than driving a program
 Core MUD sends its opening ASCII logo before any client has time to answer that negotiation. BlindTerm recognizes that one unavoidable opening and rewrites it as ordinary prose, preserving the welcome, setting, story, server version, and login instructions without making NVDA read rows of dots, slashes, and bars. Later text remains byte-for-byte server output. BlindTerm also accepts a host's UTF-8 character-set offer, automatically speaks complete prompts that do not end in a newline, and changes the command line into a protected password field while a password, passphrase, passcode, or PIN is requested.
 
 Typing works as it does anywhere else in BlindTerm. Up and Down recall lines sent during the telnet session, so Enter can send one again; Left and Right edit the recalled line. `Escape`, `Ctrl+]`, and other terminal controls can still reach the host. Nothing is sent on connect, so a plain TCP service — a mail server, a web server — can still be poked at the way people use a telnet client for.
+
+### Walking, shortcuts and the session log
+
+A line typed at a MUD can be more than one command, or not a command for the MUD at all:
+
+- **Several commands at once.** Separate them with semicolons — `get sword;wield sword` sends both, in order.
+- **Aliases.** Type `/alias sh * = shoot $1` and from then on `sh goblin` sends `shoot goblin`. The `*` stands for what follows, `$1` is its first word, `$*` is all of it, and `$0` is the whole line typed. `/aliases` reads them back, `/unalias sh *` takes one away. They are kept with your other settings, and the same line can hold several commands: an alias whose expansion contains semicolons sends each of them.
+- **Quick triggers.** Type `/trigger You are hungry = eat bread` and BlindTerm sends `eat bread` whenever a line containing that text arrives. `/triggers` reads them back and `/untrigger You are hungry` takes one away. These are ordinary triggers underneath — visible in **Tools** &rarr; **Triggers** alongside the ones written there, with everything the dialog offers; the typed form is the quick way to write the common one.
+- **Walking.** Type a route as a dot followed by directions with counts: `.3n2e` is three north and two east, sent as fast as the connection carries it. Two dots walk carefully — `..3n2e` sends one step, waits to arrive, then sends the next, and stops with how much of the route was abandoned if the MUD refuses a step. `Alt+Shift+S` stops a careful walk; a burst is already on its way and cannot be stopped.
+- **The way back.** Every compass step you take — typed as a word, sent by a walk, or one of several commands on a line — is remembered, and stepping back the way you came folds the detour out of the record. `Alt+Shift+D` drops a breadcrumb and starts measuring from there; `Alt+Shift+R` sends the whole way back and forgets it. Moves the client cannot see a compass direction for — a portal, a teleport — are not in the record, which is what dropping a breadcrumb after one is for.
+- **The session log.** `Alt+Shift+L`, or **Terminal** &rarr; **Log this session to a file**, starts writing everything the session prints to a file named for the host and the moment, under `BlindTerm\logs` in Application Data; the same key stops it. The log holds what arrived, never what you typed: typing lives in the command line, not the transcript, and a password being asked for is not echoed by the MUD either.
 
 ### Encrypted connections
 

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Media;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -55,6 +56,7 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem _triggersActiveItem = new("Trigg&ers are active");
     private readonly ToolStripMenuItem _checkUpdatesItem = new("Check for &updates...");
     private readonly ToolStripMenuItem _defaultTerminalItem = new("Use BlindTerm as the &default terminal");
+    private readonly ToolStripMenuItem _sessionLogItem = new("Log this session to a &file");
     private readonly System.Windows.Forms.Timer _reviewFocusSpeechTimer = new() { Interval = 120 };
     // Sounds repeat by being started again when they finish, so something has to notice that
     // they have. Four times a second is under the gap anyone hears between two repeats.
@@ -93,6 +95,12 @@ public sealed class MainForm : Form
     /// settings when the window is built, and reloaded whenever the dialog changes them.
     /// </summary>
     private readonly TriggerEngine _triggers = new();
+
+    /// <summary>
+    /// The aliases in force over the settings' own list, so what is written or removed by
+    /// typing at a MUD is what the settings hold and what gets saved.
+    /// </summary>
+    private readonly MudAliasBook _aliases;
 
     /// <summary>Where a trigger's own sounds are played. Built the first time one asks.</summary>
     private SoundBoard? _triggerSounds;
@@ -180,6 +188,7 @@ public sealed class MainForm : Form
         _screenKeyboard = new KeyboardEchoProxy();
         _settings = settings;
         _settingsStore = settingsStore;
+        _aliases = new MudAliasBook(settings.Aliases);
         _host.Announcer.SpeakInBackground = settings.SpeakInBackground;
         ReloadTriggers();
 
@@ -360,6 +369,12 @@ public sealed class MainForm : Form
         terminal.DropDownItems.Add(Item("&Pass next chord to the program", AppShortcuts.PassNext,
             () => { _passThroughNext = true; Say("Pass through next key. Press Alt+P again to cancel"); }));
         terminal.DropDownItems.Add(new ToolStripSeparator());
+        _sessionLogItem.ShortcutKeys = AppShortcuts.ToggleSessionLog;
+        _sessionLogItem.AccessibleDescription =
+            "Write everything this session prints to a file under the BlindTerm folder in "
+            + "Application Data, for reading back later. Starts the log, or stops it.";
+        _sessionLogItem.Click += (_, _) => ToggleSessionLog();
+        terminal.DropDownItems.Add(_sessionLogItem);
         terminal.DropDownItems.Add(Item("E&xit", Keys.None, Close));
 
         var edit = new ToolStripMenuItem("&Edit");
@@ -437,6 +452,9 @@ public sealed class MainForm : Form
         read.DropDownItems.Add(new ToolStripSeparator());
         read.DropDownItems.Add(Item("Speak &room and exits", AppShortcuts.SpeakRoom, SpeakRoom));
         read.DropDownItems.Add(Item("Speak &health and other pools", AppShortcuts.SpeakVitals, SpeakVitals));
+        read.DropDownItems.Add(Item("Drop a &breadcrumb", AppShortcuts.DropBreadcrumb, DropBreadcrumb));
+        read.DropDownItems.Add(Item("&Retrace my steps", AppShortcuts.RetraceSteps, RetraceSteps));
+        read.DropDownItems.Add(Item("Sto&p walking", AppShortcuts.StopWalk, StopWalkCommand));
         _mudStatusItem.Checked = _settings.MudStatus;
         _mudStatusItem.AccessibleDescription =
             "Whether what a MUD says about the room and the character is written into the "
@@ -517,6 +535,11 @@ public sealed class MainForm : Form
                 _completionEchoTimer.Start();
             }
         }
+
+        // The log is the raw record, so it is written before triggers decide what is
+        // spoken: a line a trigger silences was still said, and it belongs in the record
+        // somebody reads back later.
+        _sessionLog?.Write(update.NewLines);
 
         // Worked out before anything is spoken, because one of the things a trigger can ask
         // for is that a line is not.
@@ -790,6 +813,9 @@ public sealed class MainForm : Form
     private void OnExited(int? code)
     {
         if (IsDisposed || Disposing) return;
+
+        // A walk whose connection has ended is over, wherever it had got to.
+        CancelWalk();
 
         // A connection dialled from a prompt ends the way a program run from a prompt ends:
         // by handing the window back to the shell that was underneath it, still where it was.
@@ -1257,6 +1283,27 @@ public sealed class MainForm : Form
     /// </summary>
     private readonly MudStatus _mud = new();
 
+    /// <summary>The way back to the last breadcrumb, as compass steps.</summary>
+    private readonly BreadcrumbTrail _trail = new();
+
+    /// <summary>Stops the walk in progress, if there is one. Null when there is not.</summary>
+    private CancellationTokenSource? _walkStop;
+
+    /// <summary>
+    /// How many GMCP and MSDP messages have arrived. A careful walk watches this to know
+    /// it has arrived somewhere: a MUD that reports rooms answers a move with one.
+    /// </summary>
+    private int _mudStatusArrivals;
+
+    /// <summary>
+    /// The transcript line a careful walk's last step was sent at, so what arrived since
+    /// can be read for a refusal without searching the whole session.
+    /// </summary>
+    private int _walkLineMark;
+
+    /// <summary>The session log being written, when one is. Null when it is not.</summary>
+    private SessionLog? _sessionLog;
+
     /// <summary>
     /// Records what a MUD has just said about the room or the character.
     ///
@@ -1266,6 +1313,7 @@ public sealed class MainForm : Form
     /// </summary>
     private void OnStatusReceived(GmcpMessage message)
     {
+        _mudStatusArrivals++;
         if (IsDisposed || Disposing || !_settings.MudStatus) return;
         if (_mud.News(message) is not { } line) return;
         _host.AppendExternal([$"[{line}]"], quiet: !_settings.SpeakMudStatus);
@@ -1273,6 +1321,7 @@ public sealed class MainForm : Form
 
     private void OnStatusReceived(MsdpMessage message)
     {
+        _mudStatusArrivals++;
         if (IsDisposed || Disposing || !_settings.MudStatus) return;
         string[] lines = _mud.News(message).Select(line => $"[{line}]").ToArray();
         if (lines.Length > 0)
@@ -1750,7 +1799,15 @@ public sealed class MainForm : Form
         switch (e.KeyCode)
         {
             case Keys.Enter:
-                Submit();
+                // Ctrl+Enter on an empty line sends the last command again: the way to
+                // keep doing something -- another round of hits, another page of a long
+                // look -- without retyping it. Ctrl+Enter with text on the line submits
+                // the text, exactly as Enter alone does, and at a shell it is left to
+                // the shell's own ways of repeating a command.
+                if (e.Control && _command.Text.Length == 0 && RemoteSession)
+                    ResendLastCommand();
+                else
+                    Submit();
                 e.SuppressKeyPress = true;
                 e.Handled = true;
                 break;
@@ -1840,9 +1897,308 @@ public sealed class MainForm : Form
         // Only an agent CLI's composer is worth keeping the Return waiting for. A shell that
         // has merely started a child -- a nested cmd, ssh, a Python prompt -- reads whatever
         // arrives, and made every Return wait a quarter of a second for nothing.
-        _host.SendLine(accessible, _agentLineProgram);
+        //
+        // A line at a MUD is not always the MUD's to read as it stands: it can be one of
+        // BlindTerm's own commands, an alias to fill in, a route to walk, or several
+        // commands at once. SubmitToMud decides, and sends what is left. A line being
+        // typed in secret -- a password -- is never any of those, and goes as it stands.
+        if (_host.Kind == TerminalSessionKind.Remote && !secret)
+            SubmitToMud(text);
+        else
+            _host.SendLine(accessible, _agentLineProgram);
         if (!secret) RememberHistory(text);
         _command.Clear();
+    }
+
+    /// <summary>
+    /// Acts on a line typed at a MUD, which is not always the MUD's to read as it stands.
+    ///
+    /// In order: one of BlindTerm's own commands for aliases and triggers, which is never
+    /// sent onwards; a
+    /// route, which is walked; and otherwise an ordinary line, filled in against the
+    /// aliases and split on its semicolons into the several commands it may be. Whatever
+    /// is sent goes a command at a time through <see cref="SendMudCommand"/>, so the
+    /// breadcrumb trail hears about every compass step however it was produced.
+    /// </summary>
+    private void SubmitToMud(string text)
+    {
+        switch (MudClientCommands.Parse(text, out string pattern, out string replacement))
+        {
+            case MudClientCommand.DefineAlias:
+                _aliases.Set(pattern, replacement);
+                TrySaveSettings();
+                _host.AppendExternal([$"Alias written: {pattern} sends {replacement}"]);
+                return;
+            case MudClientCommand.RemoveAlias:
+                if (_aliases.Remove(pattern))
+                {
+                    TrySaveSettings();
+                    _host.AppendExternal([$"Alias removed: {pattern}"]);
+                }
+                else
+                {
+                    _host.AppendExternal([$"There is no alias {pattern}."]);
+                }
+                return;
+            case MudClientCommand.ListAliases:
+                _host.AppendExternal(_aliases.All.Count == 0
+                    ? ["No aliases. Write one by typing /alias, a pattern, an equals sign and what to send."]
+                    : [.. _aliases.All.Select(alias => $"{alias.Pattern} = {alias.Replacement}")]);
+                return;
+            case MudClientCommand.DefineTrigger:
+                DefineTypedTrigger(pattern, replacement);
+                return;
+            case MudClientCommand.RemoveTrigger:
+                RemoveTypedTrigger(pattern);
+                return;
+            case MudClientCommand.ListTriggers:
+                ListTypedTriggers();
+                return;
+        }
+
+        if (MudRoute.TryParse(text, out MudRoute? route) && route is not null)
+        {
+            _ = WalkRouteAsync(route);
+            return;
+        }
+
+        string line = _aliases.TryExpand(text, out string expanded) ? expanded : text;
+        foreach (string part in line.Split(';',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            SendMudCommand(part);
+    }
+
+    /// <summary>
+    /// Sends one command to the MUD, remembering it in the breadcrumb trail first if it is
+    /// a compass step. The trail is how Alt+Shift+R knows the way back, and it can only
+    /// know about steps it was told about.
+    /// </summary>
+    private void SendMudCommand(string command)
+    {
+        if (Compass.TryParse(command, out string step)) _trail.Record(step);
+        _host.SendLine(command);
+    }
+
+    /// <summary>
+    /// Whether a trigger is one the typed commands manage: a MUD trigger whose whole job
+    /// is sending a command back. The dialog manages every trigger, these included; the
+    /// typed commands are the quick way to write the common one -- "when a line says I am
+    /// hungry, eat" -- without leaving the keyboard or the fight it is happening in.
+    /// </summary>
+    private static bool IsTypedTrigger(Trigger trigger)
+        => trigger.Where == TriggerWhere.Mud && trigger.Send.Length > 0;
+
+    /// <summary>Writes a typed trigger, or rewrites the sending of the one already watching for its pattern.</summary>
+    private void DefineTypedTrigger(string pattern, string send)
+    {
+        Trigger? existing = _settings.Triggers.FirstOrDefault(trigger =>
+            IsTypedTrigger(trigger)
+            && string.Equals(trigger.Pattern, pattern, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            existing.Send = send;
+            existing.Enabled = true;
+        }
+        else
+        {
+            if (_settings.Triggers.Count >= AppSettings.MaximumTriggers)
+            {
+                _host.AppendExternal(
+                    ["There is no room for another trigger. Remove one in Tools, Triggers first."]);
+                return;
+            }
+            _settings.Triggers.Add(new Trigger
+            {
+                Pattern = pattern,
+                Match = TriggerMatch.Contains,
+                Where = TriggerWhere.Mud,
+                Send = send,
+            });
+        }
+        TrySaveSettings();
+        ReloadTriggers();
+        _host.AppendExternal([$"Trigger written: when a line contains {pattern}, send {send}."]);
+    }
+
+    /// <summary>Takes a typed trigger away.</summary>
+    private void RemoveTypedTrigger(string pattern)
+    {
+        int removed = _settings.Triggers.RemoveAll(trigger =>
+            IsTypedTrigger(trigger)
+            && string.Equals(trigger.Pattern, pattern, StringComparison.OrdinalIgnoreCase));
+        if (removed == 0)
+        {
+            _host.AppendExternal([$"There is no typed trigger watching for {pattern}."]);
+            return;
+        }
+        TrySaveSettings();
+        ReloadTriggers();
+        _host.AppendExternal([$"Trigger removed: {pattern}"]);
+    }
+
+    /// <summary>Reads back the typed triggers: what each watches for, and what it sends.</summary>
+    private void ListTypedTriggers()
+    {
+        var typed = _settings.Triggers.Where(IsTypedTrigger).ToList();
+        _host.AppendExternal(typed.Count == 0
+            ? ["No typed triggers. Write one by typing /trigger, what to watch for, an equals sign and what to send."]
+            : [.. typed.Select(trigger => $"{trigger.Pattern} sends {trigger.Send}")]);
+    }
+
+    /// <summary>
+    /// Walks a route, and says how it ended.
+    ///
+    /// Starting a walk cancels the one in progress, the way starting to type a different
+    /// route means the first one is not where the player is going any more. A walk that
+    /// was replaced says nothing about stopping: its replacement is about to speak for
+    /// the pair of them.
+    /// </summary>
+    private async Task WalkRouteAsync(MudRoute route)
+    {
+        CancelWalk();
+        var stop = new CancellationTokenSource();
+        _walkStop = stop;
+
+        var walker = new MudWalker(
+            send: step =>
+            {
+                _trail.Record(step);
+                _walkLineMark = _host.Transcript.Count;
+                _host.SendLine(step);
+                return Task.CompletedTask;
+            },
+            waitForArrival: async cancellationToken =>
+            {
+                // Arrival is anything new to read: a room reported over GMCP or MSDP, or
+                // text printed. Half a second of neither is the wait on a MUD that reports
+                // nothing, and the walk carries on from there -- slower, and in the right
+                // place on a laggy link.
+                int status = _mudStatusArrivals;
+                int lines = _host.Transcript.Count;
+                var watch = Stopwatch.StartNew();
+                while (watch.ElapsedMilliseconds < 500)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_mudStatusArrivals != status || _host.Transcript.Count > lines) return;
+                    await Task.Delay(40, cancellationToken);
+                }
+            },
+            isBlocked: WalkWasBlocked);
+
+        MudWalkResult result;
+        try
+        {
+            result = await walker.WalkAsync(route, stop.Token);
+        }
+        catch (Exception)
+        {
+            // A walk is a convenience laid over a connection that is still there. Whatever
+            // went wrong inside it -- a transcript being rebuilt under the reading of it --
+            // is not worth the session, or an exception nobody is watching for.
+            if (ReferenceEquals(_walkStop, stop)) _walkStop = null;
+            stop.Dispose();
+            return;
+        }
+
+        bool superseded = !ReferenceEquals(_walkStop, stop);
+        if (!superseded) _walkStop = null;
+        stop.Dispose();
+
+        if (IsDisposed || Disposing) return;
+        if (result.Outcome == MudWalkOutcome.Stopped && superseded) return;
+        Say(result.Outcome switch
+        {
+            MudWalkOutcome.Arrived => "Arrived",
+            MudWalkOutcome.Blocked => $"Path blocked, {result.StepsAbandoned} steps abandoned",
+            _ => "Walk stopped",
+        });
+    }
+
+    /// <summary>
+    /// Whether what arrived since a careful walk's last step refuses it. The snapshot is
+    /// the locked copy, because the live line list is being appended to by the reader
+    /// thread while this is read.
+    /// </summary>
+    private bool WalkWasBlocked()
+        => _host.Transcript.Snapshot(_walkLineMark).Any(MudWalkBlock.IsBlockedLine);
+
+    /// <summary>Stops the walk in progress, if there is one, without saying so.</summary>
+    private void CancelWalk()
+    {
+        try { _walkStop?.Cancel(); }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>
+    /// Starts measuring the way back from here. The trail so far is forgotten, because
+    /// here is the place to be able to come back to.
+    /// </summary>
+    private void DropBreadcrumb()
+    {
+        _trail.DropBreadcrumb();
+        Say("Breadcrumb dropped. The way back starts here.");
+    }
+
+    /// <summary>
+    /// Walks back along the breadcrumb trail, in one burst, and forgets it on the
+    /// assumption it was made. A route that has changed since -- a door closed behind
+    /// the player -- will not stop this partway, which is what the transcript is for.
+    /// </summary>
+    private void RetraceSteps()
+    {
+        IReadOnlyList<string> home = _trail.Retrace();
+        if (home.Count == 0)
+        {
+            Say("No steps to retrace. Drop a breadcrumb with Alt+Shift+D first.");
+            return;
+        }
+        CancelWalk();
+        foreach (string step in home) _host.SendLine(step);
+        _trail.Clear();
+        Say($"Retracing {home.Count} steps.");
+    }
+
+    /// <summary>Stops a walk in progress. A burst route is already on its way and cannot be.</summary>
+    private void StopWalkCommand()
+    {
+        if (_walkStop is null)
+        {
+            Say("No walk in progress.");
+            return;
+        }
+        CancelWalk();
+    }
+
+    /// <summary>
+    /// Starts writing this session to a log file, or stops. The file is named for the
+    /// session and the moment, under the BlindTerm folder in Application Data, and what
+    /// goes into it is what arrived -- never what was typed, which lives in the command
+    /// line rather than the transcript. See <see cref="SessionLog"/>.
+    /// </summary>
+    private void ToggleSessionLog()
+    {
+        if (_sessionLog is not null)
+        {
+            _sessionLog.WriteLine($"[Log closed {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}]");
+            _sessionLog.Dispose();
+            _sessionLog = null;
+            _sessionLogItem.Checked = false;
+            Say("Session log closed.");
+            return;
+        }
+
+        if (!SessionLog.TryStart(SessionLog.DefaultDirectory,
+                Text.Replace(" — BlindTerm", string.Empty), DateTimeOffset.Now,
+                out SessionLog? log) || log is null)
+        {
+            Say("A session log could not be started.");
+            return;
+        }
+
+        _sessionLog = log;
+        _sessionLogItem.Checked = true;
+        log.WriteLine($"BlindTerm session log. Started {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}. Window: {Text}.");
+        Say($"Logging this session to {Path.GetFileName(log.FilePath)}.");
     }
 
     /// <summary>
@@ -1982,6 +2338,22 @@ public sealed class MainForm : Form
 
         _command.Text = recalled;
         _command.SelectionStart = _command.TextLength;
+    }
+
+    /// <summary>
+    /// Sends the last command again, through the whole of Submit -- aliases, routes and
+    /// all -- so a repeated command means the same thing the second time as the first.
+    /// </summary>
+    private void ResendLastCommand()
+    {
+        string? last = CurrentHistory.Last;
+        if (last is null)
+        {
+            Say("Nothing to send again yet.");
+            return;
+        }
+        _command.Text = last;
+        Submit();
     }
 
     private void RememberHistory(string text) => CurrentHistory.Remember(text);
@@ -2302,6 +2674,8 @@ public sealed class MainForm : Form
         _transcriptMirrorTimer.Dispose();
         _updateTimer.Dispose();
         _updates.Dispose();
+        CancelWalk();
+        _sessionLog?.Dispose();
         _host.Dispose();
         base.OnFormClosed(e);
     }

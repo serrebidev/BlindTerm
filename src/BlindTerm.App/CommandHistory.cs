@@ -8,6 +8,9 @@ internal sealed class CommandHistory
 
     public int Count => _lines.Count;
 
+    /// <summary>The newest line sent, or null when nothing has been sent yet.</summary>
+    public string? Last => _lines.Count == 0 ? null : _lines[^1];
+
     public void Remember(string text)
     {
         if (text.Length == 0) return;

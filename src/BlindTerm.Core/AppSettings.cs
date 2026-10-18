@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BlindTerm.Core.Net;
 using BlindTerm.Core.Triggers;
 
 namespace BlindTerm.Core;
@@ -146,8 +147,18 @@ public sealed class AppSettings
     /// </summary>
     public bool TriggersEnabled { get; set; } = true;
 
+    /// <summary>
+    /// Shortcuts for lines typed at a MUD, in the order they are tried. See
+    /// <see cref="MudAlias"/>. Written by typing "/alias" at the MUD rather than in a
+    /// dialog, because that is where the need for one turns up.
+    /// </summary>
+    public List<MudAlias> Aliases { get; set; } = new();
+
     /// <summary>How many triggers are kept. Far more than anyone lists, and a bound.</summary>
     public const int MaximumTriggers = 500;
+
+    /// <summary>How many aliases are kept.</summary>
+    public const int MaximumAliases = 200;
 
     /// <summary>How many remembered addresses are kept.</summary>
     public const int MaximumRecentTelnetHosts = 12;
@@ -224,6 +235,27 @@ public sealed class AppSettings
         Triggers.RemoveAll(trigger => trigger is null || string.IsNullOrWhiteSpace(trigger.Pattern));
         foreach (Trigger trigger in Triggers) trigger.Clamp();
         if (Triggers.Count > MaximumTriggers) Triggers.RemoveRange(MaximumTriggers, Triggers.Count - MaximumTriggers);
+
+        // An alias with nothing to type is not an alias. One pattern once: the first match
+        // is the one that wins when a line is filled in, so a second with the same pattern
+        // could never be reached. All of this is done in place, because the list is the
+        // one the window's alias book is holding.
+        Aliases ??= new List<MudAlias>();
+        Aliases.RemoveAll(alias => alias is null || string.IsNullOrWhiteSpace(alias.Pattern));
+        foreach (MudAlias alias in Aliases) alias.Clamp();
+        for (int i = Aliases.Count - 1; i >= 0; i--)
+        {
+            for (int j = 0; j < i; j++)
+            {
+                if (string.Equals(Aliases[i].Pattern, Aliases[j].Pattern,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    Aliases.RemoveAt(i);
+                    break;
+                }
+            }
+        }
+        if (Aliases.Count > MaximumAliases) Aliases.RemoveRange(MaximumAliases, Aliases.Count - MaximumAliases);
     }
 
     /// <summary>Longer than any command line or folder Windows would take, so it is not one.</summary>
@@ -251,6 +283,7 @@ public sealed class AppSettings
         SpeakMudStatus = SpeakMudStatus,
         Triggers = [.. Triggers.Select(trigger => trigger.Copy())],
         TriggersEnabled = TriggersEnabled,
+        Aliases = [.. Aliases.Select(alias => alias.Copy())],
     };
 }
 

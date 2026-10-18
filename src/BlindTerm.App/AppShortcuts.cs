@@ -35,6 +35,13 @@ internal static class AppShortcuts
     public const Keys ToggleMudSounds = Keys.Alt | Keys.M;
     public const Keys SpeakVitals = Keys.Alt | Keys.V;
     public const Keys SpeakRoom = Keys.Alt | Keys.X;
+    // Shift, on letters whose plain Alt chords are already spoken for -- Alt+D changes
+    // directory, Alt+S is the speech switch, Alt+L speaks the current line, and Alt+R is
+    // kept for menu access. Alt+Shift is still inside BlindTerm's Alt namespace.
+    public const Keys DropBreadcrumb = Keys.Alt | Keys.Shift | Keys.D;
+    public const Keys RetraceSteps = Keys.Alt | Keys.Shift | Keys.R;
+    public const Keys StopWalk = Keys.Alt | Keys.Shift | Keys.S;
+    public const Keys ToggleSessionLog = Keys.Alt | Keys.Shift | Keys.L;
     public const Keys EndOfTranscript = Keys.Alt | Keys.End;
     public const Keys CopyAll = Keys.Alt | Keys.A;
     public const Keys CopyCommandOutput = Keys.Alt | Keys.O;
@@ -61,6 +68,10 @@ internal static class AppShortcuts
         ToggleMudSounds,
         SpeakVitals,
         SpeakRoom,
+        DropBreadcrumb,
+        RetraceSteps,
+        StopWalk,
+        ToggleSessionLog,
         EndOfTranscript,
         CopyAll,
         CopyCommandOutput,
