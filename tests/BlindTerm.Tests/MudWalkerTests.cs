@@ -38,7 +38,7 @@ public class MudWalkerTests
             waitForArrival: _ => { order.Add("wait"); return Task.CompletedTask; },
             isBlocked: () => false);
 
-        MudWalkResult result = await walker.WalkAsync(Route("..2ne"));
+        MudWalkResult result = await walker.WalkAsync(Route("..nne"));
 
         // No wait after the last step: there is nothing left to arrive for.
         Assert.Equal(["send n", "wait", "send ne"], order);
