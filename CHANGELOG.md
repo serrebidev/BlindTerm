@@ -4,6 +4,20 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.27 - 2026-10-18
+
+- Say which version this is. The number the program calls itself was written out by hand beside
+  the number a release is built with, and only the second one was ever updated -- so every copy
+  of v0.7.26 was built saying it was v0.7.25, and the updater, which compares that against the
+  release list, believed it. The release already in front of you was offered as an update for
+  ever: choosing it downloaded and installed the files that were already running, the program
+  came back saying v0.7.25 again, and the same offer was waiting at the next check. Nothing
+  about installing an update was broken, which is why it left no error to find -- the sentence
+  the updater read was the wrong one. The stamp now comes from the single version number a
+  release is built with rather than from a second copy of it kept by hand, and a test fails if
+  one is ever written down beside it again, so a copy can no longer spend a release insisting it
+  is out of date.
+
 ## v0.7.26 - 2026-10-18
 
 - Walking at a MUD, the way other clients taught players to expect it. Type `.3n2e` to send
