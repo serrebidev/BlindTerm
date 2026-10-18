@@ -1,10 +1,43 @@
 using System.IO.Compression;
+using System.Text.RegularExpressions;
+using BlindTerm.Core;
 using BlindTerm.Core.Updates;
 
 namespace BlindTerm.Tests;
 
 public class UpdateTests
 {
+    [Fact]
+    public void TheVersionTheUpdaterComparesIsTheVersionBeingReleased()
+    {
+        // The number this program calls itself has to be the number the release it came from is
+        // named after, because that is the only thing standing between a copy and the offer of
+        // an update it already has. Written out by hand beside <Version>, the stamp spent a
+        // release being the older number, and the update that was chosen and installed was the
+        // one already running: nothing failed and nothing changed, which is unfalsifiable from
+        // inside the program -- so it is checked here instead.
+        string? props = FindRepositoryFile("Directory.Build.props");
+        Assert.NotNull(props);
+        string version = Regex.Match(File.ReadAllText(props), @"<Version>([^<]+)</Version>")
+            .Groups[1].Value;
+
+        Assert.False(string.IsNullOrWhiteSpace(version));
+        Assert.Equal(version, VersionInfo.Current);
+        Assert.Equal($"v{version}", VersionInfo.Display);
+    }
+
+    /// <summary>Walks up from the test binaries to the file as it is checked in.</summary>
+    private static string? FindRepositoryFile(string name)
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null;
+             directory = directory.Parent)
+        {
+            string candidate = Path.Combine(directory.FullName, name);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
     [Theory]
     [InlineData("1.0.1", "1.0.0", true)]
     [InlineData("v1.1.0", "1.0.9", true)]
