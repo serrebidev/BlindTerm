@@ -283,14 +283,16 @@ public sealed class TelnetProtocol
     /// Saying nothing after agreeing therefore agrees to receive nothing, which is how a client
     /// ends up negotiating a protocol it never sees a message from. The packages named here
     /// are the ones with something to tell a player who cannot see the screen: where they are,
-    /// what the exits are, and how the character is doing.
+    /// what the exits are, and how the character is doing. Client.Media is the sounds a MUD
+    /// asks for over GMCP rather than in its text, played by the same player as the ones
+    /// that arrive that way.
     /// </summary>
     private void IntroduceOverGmcp(List<byte> reply)
     {
         SendGmcp($"Core.Hello {{ \"client\": \"{_clientName}\", \"version\": \"{VersionInfo.Current}\" }}",
                  reply);
         SendGmcp(
-            """Core.Supports.Set [ "Char 1", "Char.Vitals 1", "Char.Status 1", "Room 1", "Comm.Channel 1" ]""",
+            """Core.Supports.Set [ "Char 1", "Char.Vitals 1", "Char.Status 1", "Room 1", "Comm.Channel 1", "Client.Media 1" ]""",
             reply);
     }
 

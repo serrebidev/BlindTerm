@@ -383,6 +383,22 @@ public sealed class TerminalHost : IDisposable
         get { lock (_gate) return _session is TelnetSession telnet ? telnet.Security : string.Empty; }
     }
 
+    /// <summary>
+    /// The written address of the connection this window holds, in the form it was
+    /// dialled in, or null when it holds none. Asked of the session rather than kept
+    /// beside it, so both ways of arriving at a connection -- dialled from a prompt, or a
+    /// window opened for one -- answer the same.
+    /// </summary>
+    public string? RemoteAddress
+    {
+        get
+        {
+            lock (_gate) return _session is TelnetSession telnet && telnet.Host.Length > 0
+                ? TelnetAddress.Format(telnet.Host, telnet.Port, telnet.IsSecure)
+                : null;
+        }
+    }
+
     /// <summary>Starts reading a connection that <see cref="ConnectAsync"/> opened.</summary>
     public void Begin()
     {

@@ -282,6 +282,22 @@ public sealed class MspPlayer : IDisposable
     /// <summary>Where this MUD has said its sounds live, if it has said.</summary>
     public string? SoundUrl { get { lock (_gate) return _soundUrl; } }
 
+    /// <summary>
+    /// Learns where this MUD's sounds live without playing anything.
+    ///
+    /// A Client.Media.Load says the address ahead of any sound being asked for, where the
+    /// MUD Sound Protocol only ever mentions one on a trigger itself. What is learned here
+    /// is used the same way: a later trigger with a bare file name is fetched from it.
+    /// </summary>
+    public void LearnUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        lock (_gate)
+        {
+            if (!_disposed) _soundUrl = url.Trim();
+        }
+    }
+
     /// <summary>Repeats still owed after the first play. -1 stays -1, and means for ever.</summary>
     private static int Repeats(int loops)
         => loops == MspTrigger.Forever ? MspTrigger.Forever : Math.Max(0, loops - 1);

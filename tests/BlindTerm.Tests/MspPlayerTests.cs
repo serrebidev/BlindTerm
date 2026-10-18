@@ -388,6 +388,25 @@ public class MspPlayerTests
     }
 
     [Fact]
+    public void AnAddressLearnedBeforeAnySoundIsUsedByTheOnesThatFollow()
+    {
+        // A Client.Media.Load names where a MUD's media lives before anything is asked
+        // to play, where the MUD Sound Protocol only ever names one on a trigger.
+        var output = new FakeOutput();
+        var asked = new List<MspTrigger>();
+        var player = new MspPlayer(output, Library())
+        {
+            Download = trigger => { asked.Add(trigger); return MspFetch.No(); },
+        };
+
+        player.LearnUrl("https://mud.example/media/");
+        player.Handle(Trigger("sword.wav"));
+
+        Assert.Equal("https://mud.example/media/", player.SoundUrl);
+        Assert.Equal("https://mud.example/media/", Assert.Single(asked).Url);
+    }
+
+    [Fact]
     public void ATriggerWithItsOwnAddressKeepsIt()
     {
         var output = new FakeOutput();

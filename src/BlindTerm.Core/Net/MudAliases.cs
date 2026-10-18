@@ -160,6 +160,25 @@ public enum MudClientCommand
 
     /// <summary>"/triggers": read back the ones written this way.</summary>
     ListTriggers,
+
+    /// <summary>"/status": read back the session itself -- where it is connected, and what is set up.</summary>
+    SessionStatus,
+}
+
+/// <summary>Which of the typed commands for managing timers a line is, if it is one.</summary>
+public enum MudTimerCommand
+{
+    /// <summary>Not one of them: an ordinary line for the MUD.</summary>
+    None,
+
+    /// <summary>"/timer name interval = command": write a timer, or "/timer name interval once = command" for a one-shot.</summary>
+    Define,
+
+    /// <summary>"/untimer name": take one away.</summary>
+    Remove,
+
+    /// <summary>"/timers": read back what has been made.</summary>
+    List,
 }
 
 /// <summary>
@@ -190,6 +209,9 @@ public static class MudClientCommands
         if (text.Equals("/triggers", StringComparison.OrdinalIgnoreCase))
             return MudClientCommand.ListTriggers;
 
+        if (text.Equals("/status", StringComparison.OrdinalIgnoreCase))
+            return MudClientCommand.SessionStatus;
+
         if (StartsWithWord(text, "/unalias"))
         {
             string named = text["/unalias".Length..].Trim();
@@ -219,6 +241,88 @@ public static class MudClientCommands
         }
 
         return MudClientCommand.None;
+    }
+
+    /// <summary>
+    /// Reads a line as one of the timer commands. On a definition, <paramref name="name"/>
+    /// is the timer's one-word name, <paramref name="seconds"/> its interval,
+    /// <paramref name="repeat"/> false when the word "once" was written, and
+    /// <paramref name="command"/> the line to send.
+    ///
+    /// An interval is a number of seconds, or a number with one letter after it: "45",
+    /// "45s", "2m", "1h". Anything that does not read whole -- no equals sign, no interval,
+    /// an interval outside what a timer may have -- is not a timer command at all, and
+    /// goes to the MUD like any other line, on the same rule as the alias definitions.
+    /// </summary>
+    public static MudTimerCommand ParseTimer(string? line, out string name, out int seconds,
+        out bool repeat, out string command)
+    {
+        name = string.Empty;
+        seconds = 0;
+        repeat = true;
+        command = string.Empty;
+        if (string.IsNullOrWhiteSpace(line)) return MudTimerCommand.None;
+        string text = line.Trim();
+
+        if (text.Equals("/timers", StringComparison.OrdinalIgnoreCase))
+            return MudTimerCommand.List;
+
+        if (StartsWithWord(text, "/untimer"))
+        {
+            string named = text["/untimer".Length..].Trim();
+            if (named.Length == 0) return MudTimerCommand.None;
+            name = named;
+            return MudTimerCommand.Remove;
+        }
+
+        if (!StartsWithWord(text, "/timer")) return MudTimerCommand.None;
+
+        string body = text["/timer".Length..].Trim();
+        int equals = body.IndexOf('=');
+        if (equals <= 0) return MudTimerCommand.None;
+        string send = body[(equals + 1)..].Trim();
+        if (send.Length == 0) return MudTimerCommand.None;
+
+        string[] left = body[..equals].Trim()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (left.Length is < 2 or > 3) return MudTimerCommand.None;
+        if (left.Length == 3)
+        {
+            if (!left[2].Equals("once", StringComparison.OrdinalIgnoreCase))
+                return MudTimerCommand.None;
+            repeat = false;
+        }
+        if (!TryParseInterval(left[1], out seconds)) return MudTimerCommand.None;
+
+        name = left[0];
+        command = send;
+        return MudTimerCommand.Define;
+    }
+
+    /// <summary>Reads "45", "45s", "2m" or "1h" as a number of seconds a timer may have.</summary>
+    private static bool TryParseInterval(string token, out int seconds)
+    {
+        seconds = 0;
+        if (token.Length == 0) return false;
+
+        int multiplier = 1;
+        string digits = token;
+        switch (char.ToUpperInvariant(token[^1]))
+        {
+            case 'S': digits = token[..^1]; break;
+            case 'M': digits = token[..^1]; multiplier = 60; break;
+            case 'H': digits = token[..^1]; multiplier = 3600; break;
+        }
+
+        if (digits.Length == 0
+            || !int.TryParse(digits, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out int amount))
+            return false;
+
+        long total = (long)amount * multiplier;
+        if (total < MudTimer.MinimumSeconds || total > MudTimer.MaximumSeconds) return false;
+        seconds = (int)total;
+        return true;
     }
 
     /// <summary>

@@ -102,6 +102,20 @@ public sealed class MainForm : Form
     /// </summary>
     private readonly MudAliasBook _aliases;
 
+    /// <summary>
+    /// The timers in force over the settings' own list, and when each next wants to fire.
+    /// The schedule is restarted when a session connects and whenever a timer is written
+    /// or taken away -- see <see cref="MudTimerSchedule"/>.
+    /// </summary>
+    private readonly MudTimerBook _timers;
+    private readonly MudTimerSchedule _timerSchedule;
+
+    /// <summary>Asks the timer schedule what is owed, four times a second.</summary>
+    private readonly System.Windows.Forms.Timer _mudTimerPump = new() { Interval = 250 };
+
+    /// <summary>Whether the timers are running in this window: only while it holds a MUD.</summary>
+    private bool _mudTimersArmed;
+
     /// <summary>Where a trigger's own sounds are played. Built the first time one asks.</summary>
     private SoundBoard? _triggerSounds;
 
@@ -189,6 +203,10 @@ public sealed class MainForm : Form
         _settings = settings;
         _settingsStore = settingsStore;
         _aliases = new MudAliasBook(settings.Aliases);
+        _timers = new MudTimerBook(settings.Timers);
+        _timerSchedule = new MudTimerSchedule(_timers);
+        _mudTimerPump.Tick += OnMudTimerTick;
+        _mudTimerPump.Start();
         _host.Announcer.SpeakInBackground = settings.SpeakInBackground;
         ReloadTriggers();
 
@@ -817,6 +835,11 @@ public sealed class MainForm : Form
         // A walk whose connection has ended is over, wherever it had got to.
         CancelWalk();
 
+        // The timers belong to the connection too: left armed, they would go on sending
+        // their lines to a session that is no longer there to receive them. The pump
+        // notices the session is gone as well, but the exit is the moment it is known.
+        _mudTimersArmed = false;
+
         // A connection dialled from a prompt ends the way a program run from a prompt ends:
         // by handing the window back to the shell that was underneath it, still where it was.
         // ReturnToShell says no when there was no shell, or when it died behind the
@@ -1313,10 +1336,52 @@ public sealed class MainForm : Form
     /// </summary>
     private void OnStatusReceived(GmcpMessage message)
     {
+        // Media is answered by the sound setting, not the status one, and is not news
+        // about the room: it is handled before either is consulted.
+        if (message.IsIn("Client.Media"))
+        {
+            OnGmcpMedia(message);
+            return;
+        }
         _mudStatusArrivals++;
         if (IsDisposed || Disposing || !_settings.MudStatus) return;
         if (_mud.News(message) is not { } line) return;
         _host.AppendExternal([$"[{line}]"], quiet: !_settings.SpeakMudStatus);
+    }
+
+    /// <summary>
+    /// Acts on a sound or a piece of music a MUD asked for over GMCP.
+    ///
+    /// It lands on the same player as a sound asked for in the text, built the same lazy
+    /// way and under the same setting, so a MUD's sounds behave one way however it asks
+    /// for them. A Load builds the player without playing anything: it exists so its
+    /// address is somewhere the player can remember it.
+    /// </summary>
+    private void OnGmcpMedia(GmcpMessage message)
+    {
+        if (IsDisposed || Disposing || !_settings.MudSounds) return;
+        if (!GmcpMediaRequest.TryParse(message, out GmcpMediaRequest? request) || request is null) return;
+
+        _sounds ??= BuildSoundPlayer();
+        _sounds.MasterVolume = _settings.SoundVolume;
+
+        switch (request.Kind)
+        {
+            case GmcpMediaKind.Load:
+                _sounds.LearnUrl(request.Url);
+                return;
+            case GmcpMediaKind.Play:
+                if (request.Trigger is { } play && _sounds.Handle(play) && !_soundTimer.Enabled)
+                    _soundTimer.Start();
+                return;
+            case GmcpMediaKind.Stop:
+                bool stopped = request.Trigger is { } stop && _sounds.Handle(stop);
+                if (request.BothKinds)
+                    stopped = _sounds.Handle(new MspTrigger(MspKind.Music, "Off",
+                        0, 1, 0, false, null, null)) || stopped;
+                if (stopped && !_soundTimer.Enabled) _soundTimer.Start();
+                return;
+        }
     }
 
     private void OnStatusReceived(MsdpMessage message)
@@ -1913,8 +1978,8 @@ public sealed class MainForm : Form
     /// <summary>
     /// Acts on a line typed at a MUD, which is not always the MUD's to read as it stands.
     ///
-    /// In order: one of BlindTerm's own commands for aliases and triggers, which is never
-    /// sent onwards; a
+    /// In order: one of BlindTerm's own commands for aliases, triggers and the session
+    /// itself, which is never sent onwards; one for timers; a
     /// route, which is walked; and otherwise an ordinary line, filled in against the
     /// aliases and split on its semicolons into the several commands it may be. Whatever
     /// is sent goes a command at a time through <see cref="SendMudCommand"/>, so the
@@ -1954,6 +2019,23 @@ public sealed class MainForm : Form
             case MudClientCommand.ListTriggers:
                 ListTypedTriggers();
                 return;
+            case MudClientCommand.SessionStatus:
+                SaySessionStatus();
+                return;
+        }
+
+        switch (MudClientCommands.ParseTimer(text, out string timerName, out int timerSeconds,
+                    out bool timerRepeat, out string timerCommand))
+        {
+            case MudTimerCommand.Define:
+                DefineTypedTimer(timerName, timerSeconds, timerCommand, timerRepeat);
+                return;
+            case MudTimerCommand.Remove:
+                RemoveTypedTimer(timerName);
+                return;
+            case MudTimerCommand.List:
+                ListTypedTimers();
+                return;
         }
 
         if (MudRoute.TryParse(text, out MudRoute? route) && route is not null)
@@ -1962,6 +2044,20 @@ public sealed class MainForm : Form
             return;
         }
 
+        SendMudText(text);
+    }
+
+    /// <summary>
+    /// Sends a line on to the MUD the way a typed one goes: filled in against the aliases,
+    /// and split on its semicolons into the several commands it may be.
+    ///
+    /// What a timer sends comes through here too, so a timer's line means the same thing as
+    /// the line typed -- a compass step in one is recorded in the breadcrumb trail exactly
+    /// as it is in the other. What a timer sends is not read as a client command: a timer
+    /// that could write aliases would be a script, and BlindTerm has none.
+    /// </summary>
+    private void SendMudText(string text)
+    {
         string line = _aliases.TryExpand(text, out string expanded) ? expanded : text;
         foreach (string part in line.Split(';',
                      StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -2043,6 +2139,110 @@ public sealed class MainForm : Form
         _host.AppendExternal(typed.Count == 0
             ? ["No typed triggers. Write one by typing /trigger, what to watch for, an equals sign and what to send."]
             : [.. typed.Select(trigger => $"{trigger.Pattern} sends {trigger.Send}")]);
+    }
+
+    /// <summary>Writes a typed timer, or rewrites the one already carrying its name.</summary>
+    private void DefineTypedTimer(string name, int seconds, string command, bool repeat)
+    {
+        bool replacing = _timers.All.Any(timer =>
+            string.Equals(timer.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (!replacing && _timers.All.Count >= AppSettings.MaximumTimers)
+        {
+            _host.AppendExternal(
+                ["There is no room for another timer. Remove one with /untimer first."]);
+            return;
+        }
+        _timers.Set(name, seconds, command, repeat);
+        _timerSchedule.Restart(DateTimeOffset.UtcNow);
+        TrySaveSettings();
+        _host.AppendExternal([repeat
+            ? $"Timer written: {name} sends {command} every {MudTimer.DescribeInterval(seconds)}."
+            : $"Timer written: {name} sends {command} once, {MudTimer.DescribeInterval(seconds)} after it starts."]);
+    }
+
+    /// <summary>Takes a typed timer away.</summary>
+    private void RemoveTypedTimer(string name)
+    {
+        if (!_timers.Remove(name))
+        {
+            _host.AppendExternal([$"There is no timer {name}."]);
+            return;
+        }
+        _timerSchedule.Restart(DateTimeOffset.UtcNow);
+        TrySaveSettings();
+        _host.AppendExternal([$"Timer removed: {name}"]);
+    }
+
+    /// <summary>Reads back the timers: when each fires, and what it sends.</summary>
+    private void ListTypedTimers()
+    {
+        _host.AppendExternal(_timers.All.Count == 0
+            ? ["No timers. Write one by typing /timer, a name, an interval like 45 or 2m, an equals sign and what to send."]
+            : [.. _timers.All.Select(timer => timer.Repeat
+                ? $"{timer.Name}: every {MudTimer.DescribeInterval(timer.Seconds)} sends {timer.Command}"
+                : $"{timer.Name}: once, {MudTimer.DescribeInterval(timer.Seconds)} after connecting, sends {timer.Command}")]);
+    }
+
+    /// <summary>
+    /// Sends what the timers owe.
+    ///
+    /// The countdowns start when this window takes up a MUD and stop when it puts one
+    /// down, which the pump notices for itself: a timer belongs to being connected, and
+    /// one left running in a shell window would send its commands to a prompt that has
+    /// never heard of the MUD they were written for. Nothing is said as a timer fires --
+    /// the MUD's answer to what it sent is the announcement, and a busy timer saying its
+    /// own name over it would be noise at exactly the wrong moment.
+    /// </summary>
+    private void OnMudTimerTick(object? sender, EventArgs e)
+    {
+        if (IsDisposed || Disposing) return;
+        if (_host.Kind != TerminalSessionKind.Remote)
+        {
+            _mudTimersArmed = false;
+            return;
+        }
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (!_mudTimersArmed)
+        {
+            _mudTimersArmed = true;
+            _timerSchedule.Restart(now);
+            return;
+        }
+        foreach (string command in _timerSchedule.CollectDue(now))
+            SendMudText(command);
+    }
+
+    /// <summary>
+    /// Reads back the session itself, for "/status": where it is connected, who the
+    /// character is, and what the window holds for it.
+    ///
+    /// Everything here is a fact the window already knows, gathered in one place because
+    /// finding it otherwise means opening three dialogs and a menu to answer a question
+    /// asked in the middle of a fight. Mudlet's players get the same from its package
+    /// commands; BlindTerm's get it typed, like everything else they manage here.
+    /// </summary>
+    private void SaySessionStatus()
+    {
+        var lines = new List<string>();
+
+        string connected = _host.RemoteAddress is { } address
+            ? $"Connected to {address}"
+            : "Connected to a MUD";
+        lines.Add(_host.Security.Length > 0
+            ? $"{connected} over {_host.Security}."
+            : $"{connected}, unencrypted.");
+        if (_mud.CharacterName is { } character) lines.Add($"Character: {character}.");
+        lines.Add($"Aliases: {_aliases.All.Count}. "
+                  + $"Triggers: {_settings.Triggers.Count} ({_settings.Triggers.Count(IsTypedTrigger)} typed). "
+                  + $"Timers: {_timers.All.Count}.");
+        lines.Add(_settings.MudSounds
+            ? $"MUD sounds: on, volume {_settings.SoundVolume}. Downloads: {(_settings.DownloadSounds ? "on" : "off")}."
+            : "MUD sounds: off.");
+        lines.Add(_sessionLog is not null
+            ? $"Session log: {_sessionLog.FilePath}"
+            : "Session log: off. Alt+Shift+L starts one.");
+
+        _host.AppendExternal(lines);
     }
 
     /// <summary>
@@ -2325,7 +2525,10 @@ public sealed class MainForm : Form
 
     private void StepHistory(int delta)
     {
-        if (CurrentHistory.Step(delta) is not { } recalled) return;
+        // What is in the line now goes with the step: text typed there turns the arrows
+        // into a search through the lines that begin with it, and an empty line steps
+        // the whole history as it always has.
+        if (CurrentHistory.Step(delta, _command.Text) is not { } recalled) return;
 
         // The recalled line is this window's and the far end has never seen it. If Tab had
         // handed the line to the shell's own editor, that has to be given up here: left

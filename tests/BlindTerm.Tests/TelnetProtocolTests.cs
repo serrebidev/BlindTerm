@@ -326,6 +326,7 @@ public class TelnetProtocolTests
         Assert.Contains("Core.Supports.Set", said, StringComparison.Ordinal);
         Assert.Contains("Room 1", said, StringComparison.Ordinal);
         Assert.Contains("Char.Vitals 1", said, StringComparison.Ordinal);
+        Assert.Contains("Client.Media 1", said, StringComparison.Ordinal);
     }
 
     [Fact]

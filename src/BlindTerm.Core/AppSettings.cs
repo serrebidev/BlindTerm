@@ -154,11 +154,20 @@ public sealed class AppSettings
     /// </summary>
     public List<MudAlias> Aliases { get; set; } = new();
 
+    /// <summary>
+    /// Named timers at a MUD, in the order they were written. See <see cref="MudTimer"/>.
+    /// Written by typing "/timer" at the MUD, like the aliases, and for the same reason.
+    /// </summary>
+    public List<MudTimer> Timers { get; set; } = new();
+
     /// <summary>How many triggers are kept. Far more than anyone lists, and a bound.</summary>
     public const int MaximumTriggers = 500;
 
     /// <summary>How many aliases are kept.</summary>
     public const int MaximumAliases = 200;
+
+    /// <summary>How many timers are kept.</summary>
+    public const int MaximumTimers = 50;
 
     /// <summary>How many remembered addresses are kept.</summary>
     public const int MaximumRecentTelnetHosts = 12;
@@ -256,6 +265,28 @@ public sealed class AppSettings
             }
         }
         if (Aliases.Count > MaximumAliases) Aliases.RemoveRange(MaximumAliases, Aliases.Count - MaximumAliases);
+
+        // A timer with nothing to call it or nothing to send is not a timer. One name
+        // once, keeping the first, as with the aliases: "/untimer" names one timer, and a
+        // second with the same name could never be the one it meant.
+        Timers ??= new List<MudTimer>();
+        Timers.RemoveAll(timer => timer is null
+                                  || string.IsNullOrWhiteSpace(timer.Name)
+                                  || string.IsNullOrWhiteSpace(timer.Command));
+        foreach (MudTimer timer in Timers) timer.Clamp();
+        for (int i = Timers.Count - 1; i >= 0; i--)
+        {
+            for (int j = 0; j < i; j++)
+            {
+                if (string.Equals(Timers[i].Name, Timers[j].Name,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    Timers.RemoveAt(i);
+                    break;
+                }
+            }
+        }
+        if (Timers.Count > MaximumTimers) Timers.RemoveRange(MaximumTimers, Timers.Count - MaximumTimers);
     }
 
     /// <summary>Longer than any command line or folder Windows would take, so it is not one.</summary>
@@ -284,6 +315,7 @@ public sealed class AppSettings
         Triggers = [.. Triggers.Select(trigger => trigger.Copy())],
         TriggersEnabled = TriggersEnabled,
         Aliases = [.. Aliases.Select(alias => alias.Copy())],
+        Timers = [.. Timers.Select(timer => timer.Copy())],
     };
 }
 
