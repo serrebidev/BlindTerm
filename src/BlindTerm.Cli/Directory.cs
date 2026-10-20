@@ -267,10 +267,20 @@ internal static class Directory
         // the README above it named four -- and the browser says this list out loud, as "From
         // Grapevine, MUDVerse, The Mud Connector", to somebody who is entitled to know where
         // the number they are being read was measured.
+        //
+        // And every directory that answered with listings, because a source whose listings
+        // were all merged into another's keeps no Source of its own either: GMUD's first
+        // listing is also on MUDVerse, so GMUD filled in its blanks and went uncredited.
+        (string Name, int Count)[] answered =
+        [
+            ("MUDVerse", fromMudVerse.Count), ("Grapevine", fromGrapevine.Count),
+            ("The Mud Connector", fromConnector.Count), ("GMUD", fromGmud.Count),
+        ];
         feed.Sources =
         [
             .. feed.Games.Select(game => game.Source)
                          .Concat(feed.Games.Select(game => game.StatisticsSource))
+                         .Concat(answered.Where(source => source.Count > 0).Select(source => source.Name))
                          .Where(name => !string.IsNullOrWhiteSpace(name))
                          .Distinct()
                          .OrderBy(name => name)
