@@ -26,8 +26,9 @@ public static partial class MudMerge
     /// The sources are passed richest first, and each one after fills in only what is still
     /// blank. Nobody overwrites anybody: MUDVerse has the genre and the ratings, Grapevine
     /// has the encrypted ports and the taglines, The Mud Connector has the addresses and a
-    /// connect status it checked while building the page. A game listed in all three ends up
-    /// with all three halves, and one listed in only the last still ends up connectable.
+    /// connect status it checked while building the page, GMUD has the newest submissions. A
+    /// game listed in all of them ends up with every half, and one listed in only the last
+    /// still ends up connectable.
     /// </summary>
     public static IReadOnlyList<MudGame> Describe(params IEnumerable<MudGame>[] sources)
     {

@@ -207,7 +207,7 @@ public sealed class GrapevineDirectory : IMudDirectory, IDisposable
     /// the next game can be reached. The whole description is not lost -- the sources that
     /// have one put it in the details.
     /// </summary>
-    private static string Trim(string description)
+    internal static string Trim(string description)
     {
         if (description.Length == 0) return description;
 

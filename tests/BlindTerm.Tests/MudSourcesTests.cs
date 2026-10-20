@@ -166,6 +166,83 @@ public class MudSourcesTests
         Assert.Contains("could not be read", failure.Message);
     }
 
+    /// <summary>GMUD's browse card and profile page, kept verbatim from gmud.org.</summary>
+    private const string GmudList = """
+    <main><h1>Browse MUD Servers</h1><form><input name="q" placeholder="Search servers" value=""></form><article class="server terminal-card"><div class="server-heading"><span class="server-rank">+</span><h3><a href="/servers/the-garden">The Garden</a></h3><span class="server-votes">[2 VOTES]</span></div><div class="terminal-rule"></div><div class="server-meta">GENRE: Philosophical Fantasy</div><p>A multiplayer text-based world where philosophy replaces combat. Explore, develop your character, and engage in arguments that challenge opposing ideas.</p><div class="server-footer"><a href="/servers/the-garden">[ EXPLORE SERVER → ]</a></div></article></main>
+    """;
+
+    private const string GmudProfile = """
+            <div class="profile-data">
+                <div><span>STATUS</span><strong>unknown</strong></div>
+                <div><span>HOST</span><strong>gmud.org</strong></div>
+                <div><span>PORT</span><strong>4000</strong></div>
+                <div><span>PROTOCOL</span><strong>TELNET</strong></div>
+            </div>
+                <a href="https://play.gmud.org" target="_blank" rel="noopener noreferrer">[ VISIT WEBSITE ]</a>
+    """;
+
+    [Fact]
+    public void GmudGivesItsListingOnTheBrowsePageAndItsAddressOnTheProfile()
+    {
+        MudGame garden = Assert.Single(GmudDirectory.ParseList(GmudList));
+        Assert.Equal("The Garden", garden.Name);
+        Assert.Equal("the-garden", garden.SourceId);
+        Assert.Equal("Philosophical Fantasy", garden.Genre);
+        Assert.Equal(2, garden.MonthlyVotes);
+        Assert.False(garden.CanConnect);
+
+        garden = GmudDirectory.WithProfile(garden, GmudProfile);
+        Assert.Equal("gmud.org", garden.Host);
+        Assert.Equal(4000, garden.Port);
+        Assert.Equal(MudAvailability.Unknown, garden.Availability);
+        Assert.Equal("https://play.gmud.org", garden.Website);
+        Assert.True(garden.CanConnect);
+
+        Assert.Throws<MudDirectoryException>(() => GmudDirectory.ParseList("<main></main>"));
+    }
+
+    [Fact]
+    public async Task GmudIsReadEndToEndAndSearchesLikeTheOtherDirectories()
+    {
+        using var gmud = new GmudDirectory("https://gmud.example",
+            new HttpClient(new ByPath(new()
+            {
+                ["/servers"] = GmudList,
+                ["/servers/the-garden"] = GmudProfile,
+            })), TimeSpan.Zero);
+
+        MudGame garden = Assert.Single(await gmud.GamesAsync());
+        Assert.Equal("gmud.org:4000", $"{garden.Host}:{garden.Port}");
+        Assert.Equal("https://gmud.example/servers/the-garden", garden.ListingUrl);
+
+        MudDirectoryFilters filters = await gmud.FiltersAsync();
+        Assert.Equal("Philosophical Fantasy", Assert.Single(filters.Themes).Name);
+
+        Assert.Single((await gmud.SearchAsync(new MudDirectoryQuery { Search = "philosophy" })).Games);
+        Assert.Empty((await gmud.SearchAsync(new MudDirectoryQuery { Search = "dragons" })).Games);
+    }
+
+    [Fact]
+    public async Task AGmudProfileThatFailsCostsOnlyThatAddress()
+    {
+        using var gmud = new GmudDirectory("https://gmud.example",
+            new HttpClient(new ByPath(new() { ["/servers"] = GmudList })), TimeSpan.Zero);
+
+        MudGame garden = Assert.Single(await gmud.GamesAsync());
+        Assert.Equal("The Garden", garden.Name);
+        Assert.False(garden.CanConnect);
+    }
+
+    /// <summary>Answers each path with its page, and anything else with a 404.</summary>
+    private sealed class ByPath(Dictionary<string, string> pages) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+            => Task.FromResult(pages.TryGetValue(request.RequestUri!.AbsolutePath, out string? body)
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/html") }
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
     [Fact]
     public void EachDirectoryFillsInWhatTheOnesBeforeItLeftBlank()
     {

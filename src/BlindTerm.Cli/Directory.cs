@@ -47,7 +47,7 @@ internal static class Directory
     public static int Run(string[] args)
     {
         string output = "mud-directory.json";
-        string? endpoint = null, previous = null, mudstats = null, grapevine = null, connector = null;
+        string? endpoint = null, previous = null, mudstats = null, grapevine = null, connector = null, gmud = null;
         bool quiet = false, skipStats = false, statsOnly = false;
 
         for (int i = 0; i < args.Length; i++)
@@ -60,6 +60,7 @@ internal static class Directory
                 case "--mudstats": mudstats = Next(args, ref i); break;
                 case "--grapevine": grapevine = Next(args, ref i); break;
                 case "--mudconnector": connector = Next(args, ref i); break;
+                case "--gmud": gmud = Next(args, ref i); break;
                 case "--no-mudstats": skipStats = true; break;
                 case "--mudstats-only": statsOnly = true; break;
                 case "--quiet": quiet = true; break;
@@ -83,7 +84,7 @@ internal static class Directory
                 return 2;
             }
 
-            MudFeed feed = Build(key, endpoint, mudstats, grapevine, connector, previous, skipStats, quiet)
+            MudFeed feed = Build(key, endpoint, mudstats, grapevine, connector, gmud, previous, skipStats, quiet)
                 .GetAwaiter().GetResult();
             if (feed.Games.Count == 0)
             {
@@ -170,7 +171,7 @@ internal static class Directory
     }
 
     private static async Task<MudFeed> Build(string key, string? endpoint, string? mudstatsSite,
-        string? grapevineSite, string? connectorSite, string? previous, bool skipStats, bool quiet)
+        string? grapevineSite, string? connectorSite, string? gmudSite, string? previous, bool skipStats, bool quiet)
     {
         // Longer than the app's 25 seconds. Since 2026-09 MUDVerse takes more than that over
         // page 1 of top_voted, most_reviewed and last_updated on every run, so those orderings
@@ -211,12 +212,14 @@ internal static class Directory
             () => new GrapevineDirectory(grapevineSite).GamesAsync());
         IReadOnlyList<MudGame> fromConnector = await Gather("The Mud Connector", quiet,
             () => new MudConnectorDirectory(connectorSite).GamesAsync());
+        IReadOnlyList<MudGame> fromGmud = await Gather("GMUD", quiet,
+            () => new GmudDirectory(gmudSite).GamesAsync());
 
-        List<MudGame> games = [.. MudMerge.Describe(fromMudVerse, fromGrapevine, fromConnector)];
+        List<MudGame> games = [.. MudMerge.Describe(fromMudVerse, fromGrapevine, fromConnector, fromGmud)];
         if (!quiet)
             Console.Error.WriteLine($"directory: {fromMudVerse.Count} from MUDVerse, "
                 + $"{fromGrapevine.Count} from Grapevine, {fromConnector.Count} from The Mud "
-                + $"Connector, {games.Count} distinct games");
+                + $"Connector, {fromGmud.Count} from GMUD, {games.Count} distinct games");
         if (!skipStats)
         {
             try

@@ -4,6 +4,18 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.29 - 2026-10-20
+
+- GMUD joins the MUD directory. [GMUD](https://gmud.org) is a new directory that lists a
+  server the moment its owner submits it, with no approval queue, so it is where a
+  brand-new MUD turns up first. Browse for MUDs now merges five directories instead of
+  four: each GMUD listing arrives with its address, genre, a one-line description, this
+  month's votes and its website, and is joined with the other directories' listings of the
+  same game the way they are joined with each other. Its genres can be picked in the genre
+  filter and its descriptions are searched. GMUD has no API, so its pages are read in the
+  scheduled job only, a second apart, and GMUD being down makes the list smaller rather
+  than absent.
+
 ## v0.7.28 - 2026-10-18
 
 - Timers, written the way aliases are. A trigger answers something the MUD said; a timer
