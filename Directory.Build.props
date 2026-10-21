@@ -4,7 +4,7 @@
          out by hand as well, and stayed a release behind from the moment this line changed:
          every copy of v0.7.26 was built saying it was v0.7.25, so the updater read the release
          list, found the release it was already running, and offered it again for ever. -->
-    <Version>0.7.29</Version>
+    <Version>0.7.30</Version>
     <Authors>SerrebiProjects</Authors>
     <Product>BlindTerm</Product>
     <Company>SerrebiProjects</Company>

@@ -4,6 +4,10 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.30 - 2026-10-21
+
+- Every directory that answered is credited in the published MUD list's sources. GMUD's listings merge into MUDVerse's, so GMUD previously went uncredited in the spoken source list even when it supplied listings; the list now names every directory that answered.
+
 ## v0.7.29 - 2026-10-20
 
 - GMUD joins the MUD directory. [GMUD](https://gmud.org) is a new directory that lists a
