@@ -1,6 +1,6 @@
 # BlindTerm build and local install
 
-This is the local build path for BlindTerm. It creates the package you can test without publishing anything to GitHub.
+This is the local build path for BlindTerm. It creates the package you can test without publishing anything to Forgejo.
 
 ## Prerequisites
 
@@ -43,4 +43,4 @@ The installer is currently unsigned for public distribution unless a signing cer
 
 After tests and the local build pass, commit the versioned files and create the matching Git tag. Push the branch to the `forgejo` remote first, then the tag, then publish one Forgejo release containing the portable ZIP, installer, and `BlindTerm-update.json`. The tag and release title use `v<version>` and `BlindTerm v<version>` respectively. Releases live at `https://git.serrebiradio.com/serrebi/BlindTerm/releases`.
 
-The cloud-release workflow (`.github/workflows/cloud-release.yml`) publishes through GitHub releases and stays unused while GitHub is suspended; until then every release ships from this machine to Forgejo instead.
+The cloud-release workflow (`.github/workflows/cloud-release.yml`) publishes through Forgejo releases and stays unused while GitHub is suspended; until then every release ships from this machine to Forgejo instead.

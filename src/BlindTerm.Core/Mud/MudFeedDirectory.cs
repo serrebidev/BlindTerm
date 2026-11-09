@@ -23,7 +23,7 @@ public sealed class MudFeedDirectory : IMudDirectory, IDisposable
     /// never touches BlindTerm's history or its project notifications.
     /// </summary>
     public const string DefaultFeedUrl =
-        "https://raw.githubusercontent.com/serrebidev/BlindTerm-directory/directory/mud-directory.json";
+        "https://git.serrebiradio.com/serrebi/BlindTerm-directory/raw/branch/directory/mud-directory.json";
 
     /// <summary>
     /// How old the copy on disk may be before BlindTerm asks for a newer one.

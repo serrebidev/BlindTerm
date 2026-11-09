@@ -1,13 +1,14 @@
 name: Cloud Release
 
 # Muse agent and cloud agents ONLY. On the Windows release host follow docs/BUILD.md
-# ("Publishing a release"): build.ps1 locally, tag, gh release create.
+# ("Publishing a release"): build.ps1 locally, tag, publish the Forgejo release.
 # BlindTerm is Windows-only (WinForms + ConPTY), so this builds Windows only.
 #
 # Before a real run, commit the release like the host does: bump <Version> in
 # Directory.Build.props and add the "## vX.Y.Z - date" CHANGELOG.md entry, in a
-# "Release vX.Y.Z: ..." commit on master. This workflow then tests, runs the
-# same build.ps1, tags v<Version>, and publishes the release (portable ZIP,
+# "Release vX.Y.Z: ..." commit on master, and push master to the forgejo remote
+# so the tag below resolves there. This workflow then tests, runs the same
+# build.ps1, tags v<Version>, and publishes the Forgejo release (portable ZIP,
 # installer, BlindTerm-update.json) with that CHANGELOG entry as its notes.
 #
 #   gh workflow run cloud-release.yml -f dry_run=true    # test + build, publish nothing
@@ -34,7 +35,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      GH_TOKEN: ${{ github.token }}
       DOTNET_NOLOGO: "1"
     steps:
       - name: Require master
@@ -98,20 +98,41 @@ jobs:
 
       - name: Tag and publish
         if: ${{ !inputs.dry_run }}
+        shell: pwsh
         env:
           V: ${{ steps.plan.outputs.version }}
           NOTES: ${{ steps.plan.outputs.notes }}
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "v$env:V" -m "BlindTerm v$env:V"
           git push origin "v$env:V"
           if ($LASTEXITCODE -ne 0) { throw "tag push failed" }
-          gh release create "v$env:V" "dist\BlindTerm-v$env:V.zip" "dist\BlindTerm-Setup-v$env:V.exe" dist\BlindTerm-update.json `
-            --verify-tag --title "BlindTerm v$env:V" --notes-file $env:NOTES --latest
-          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
-          $state = gh release view "v$env:V" --json isDraft | ConvertFrom-Json
-          if ($state.isDraft) { throw "v$env:V is still a draft" }
-          $latest = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name
+          # Releases live on Forgejo; the tag above keeps the GitHub mirror. The
+          # Forgejo release is created by API on this exact commit, so no git
+          # credentials for Forgejo are needed on the runner.
+          $api = "https://git.serrebiradio.com/api/v1/repos/serrebi/BlindTerm"
+          $headers = @{ Authorization = "token $env:FORGEJO_TOKEN"; "User-Agent" = "blindterm-release/1.0" }
+          $sha = (git rev-parse HEAD).Trim()
+          $json = @{
+            tag_name = "v$($env:V)"
+            target_commitish = $sha
+            name = "BlindTerm v$($env:V)"
+            body = [IO.File]::ReadAllText($env:NOTES)
+            draft = $false
+            prerelease = $false
+          } | ConvertTo-Json -Depth 3
+          $release = Invoke-RestMethod -Uri "$api/releases" -Method Post -Headers $headers `
+            -ContentType "application/json; charset=utf-8" -Body $json
+          foreach ($asset in @("dist\BlindTerm-v$($env:V).zip", "dist\BlindTerm-Setup-v$($env:V).exe", "dist\BlindTerm-update.json")) {
+            $name = [IO.Path]::GetFileName($asset)
+            $form = @{ attachment = Get-Item $asset }
+            Invoke-RestMethod -Uri ("$api/releases/$($release.id)/assets?name=" + [uri]::EscapeDataString($name)) `
+              -Method Post -Headers $headers -Form $form | Out-Null
+          }
+          $state = Invoke-RestMethod -Uri "$api/releases/tags/v$($env:V)" -Headers $headers
+          if ($state.draft) { throw "v$env:V is still a draft" }
+          $latest = (Invoke-RestMethod -Uri "$api/releases/latest" -Headers $headers).tag_name
           if ($latest -ne "v$env:V") { throw "/releases/latest is $latest, expected v$env:V" }
           "Published v$env:V as Latest."

@@ -21,7 +21,7 @@ public class MudFeedTests : IDisposable
     public void TheDefaultFeedLivesOutsideTheApplicationRepository()
     {
         Assert.Equal(
-            "https://raw.githubusercontent.com/serrebidev/BlindTerm-directory/directory/mud-directory.json",
+            "https://git.serrebiradio.com/serrebi/BlindTerm-directory/raw/branch/directory/mud-directory.json",
             MudFeedDirectory.DefaultFeedUrl);
     }
 

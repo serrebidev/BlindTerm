@@ -40,7 +40,7 @@ BlindTerm keeps ordinary output as a readable transcript in a native Windows edi
 
 ## Download and install
 
-Download the installer from the [latest release](https://github.com/serrebidev/BlindTerm/releases/latest) and run it, or download the ZIP and unpack it anywhere.
+Download the installer from the [latest release](https://git.serrebiradio.com/serrebi/BlindTerm/releases/latest) and run it, or download the ZIP and unpack it anywhere.
 
 To build and install from source on Windows instead:
 
@@ -305,9 +305,9 @@ The test suite covers the VT engine, transcript assembly, screen speech, key tra
 
 ## Updating
 
-The app contains an original update client designed for GitHub release manifests. It downloads `BlindTerm-update.json`, compares semantic versions, verifies the SHA-256 of the package, and hands the replacement to a short-lived update worker so the running executable is never overwritten in place.
+The app contains an original update client designed for Forgejo release manifests. It downloads `BlindTerm-update.json`, compares semantic versions, verifies the SHA-256 of the package, and hands the replacement to a short-lived update worker so the running executable is never overwritten in place.
 
-Releases are published on GitHub, and the manifest format is documented in [`docs/BUILD.md`](docs/BUILD.md).
+Releases are published on Forgejo, and the manifest format is documented in [`docs/BUILD.md`](docs/BUILD.md).
 
 ## Documentation
 

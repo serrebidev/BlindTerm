@@ -7,8 +7,8 @@ namespace BlindTerm.App;
 [SupportedOSPlatform("windows")]
 internal sealed class AboutForm : Form
 {
-    public const string RepositoryUrl = "https://github.com/serrebidev/BlindTerm";
-    public const string GitHubProfileUrl = "https://github.com/serrebidev";
+    public const string RepositoryUrl = "https://git.serrebiradio.com/serrebi/BlindTerm";
+    public const string ForgejoProfileUrl = "https://git.serrebiradio.com/serrebi";
     public const string TelegramUrl = "https://t.me/SerrebiProjects";
 
     public AboutForm()
@@ -39,15 +39,15 @@ internal sealed class AboutForm : Form
         };
         var repository = new LinkLabel
         {
-            Text = "BlindTerm GitHub repository",
+            Text = "BlindTerm Forgejo repository",
             AutoSize = true,
-            AccessibleName = "Open the BlindTerm GitHub repository",
+            AccessibleName = "Open the BlindTerm Forgejo repository",
             TabStop = true,
         };
         repository.LinkClicked += (_, _) => ExternalLinks.Open(this, RepositoryUrl);
 
-        var follow = LinkButton("&Follow me on GitHub", GitHubProfileUrl,
-            "Open Serrebi's GitHub profile, where you can follow the project author");
+        var follow = LinkButton("&Serrebi on Forgejo", ForgejoProfileUrl,
+            "Open Serrebi's Forgejo profile");
         var telegram = LinkButton("&Join Telegram", TelegramUrl,
             "Join the Serrebi Projects Telegram channel");
         var close = new Button

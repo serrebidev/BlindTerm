@@ -12,7 +12,7 @@ name: MUD directory
 #
 # One-time setup: add MUDVERSE_API_KEY from the API tab of a MUDVerse account
 # (https://www.mudverse.com/api), and MUD_DIRECTORY_DEPLOY_KEY for the write-enabled deploy
-# key on serrebidev/BlindTerm-directory. The job then runs on its own.
+# key on serrebi/BlindTerm-directory (Forgejo). The job then runs on its own.
 
 on:
   schedule:
@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 env:
-  MUD_DIRECTORY_REPOSITORY: serrebidev/BlindTerm-directory
+  MUD_DIRECTORY_REPOSITORY: serrebi/BlindTerm-directory
 
 concurrency:
   # Two of these pushing the same branch would race. Later wins; nothing is lost, because
@@ -54,7 +54,7 @@ jobs:
           fi
           # --previous carries over the MUDStats addresses already looked up, so each world's
           # page is fetched once ever rather than once every half hour.
-          PREVIOUS="https://raw.githubusercontent.com/${MUD_DIRECTORY_REPOSITORY}/directory/mud-directory.json"
+          PREVIOUS="https://git.serrebiradio.com/${MUD_DIRECTORY_REPOSITORY}/raw/branch/directory/mud-directory.json"
           dotnet run --project src/BlindTerm.Cli -c Release -- directory --out mud-directory.json --previous "$PREVIOUS" --quiet
 
       - name: Check MUDStats is still readable
@@ -87,7 +87,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$MUD_DIRECTORY_DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+          ssh-keyscan -t ed25519 git.serrebiradio.com >> ~/.ssh/known_hosts
           trap 'rm -f ~/.ssh/id_ed25519' EXIT
           # A fresh single-commit orphan branch, force-pushed. The file changes every half
           # hour; keeping history of that would grow the repository forever for no reader.
@@ -100,5 +100,5 @@ jobs:
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "MUD directory $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -q --force "git@github.com:${MUD_DIRECTORY_REPOSITORY}.git" directory
-          echo "Published to https://raw.githubusercontent.com/${MUD_DIRECTORY_REPOSITORY}/directory/mud-directory.json"
+          git push -q --force "git@git.serrebiradio.com:${MUD_DIRECTORY_REPOSITORY}.git" directory
+          echo "Published to https://git.serrebiradio.com/${MUD_DIRECTORY_REPOSITORY}/raw/branch/directory/mud-directory.json"
