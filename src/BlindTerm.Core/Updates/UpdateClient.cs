@@ -13,7 +13,7 @@ namespace BlindTerm.Core.Updates;
 /// </summary>
 public sealed class UpdateClient : IDisposable
 {
-    public const string Repository = "serrebidev/BlindTerm";
+    public const string Repository = "serrebi/BlindTerm";
     public const string ManifestName = "BlindTerm-update.json";
 
     private readonly HttpClient _http;
@@ -38,32 +38,24 @@ public sealed class UpdateClient : IDisposable
     public string? LastOffered { get; private set; }
 
     /// <summary>
-    /// Where the newest release's manifest lives, asked of the API rather than assumed.
+    /// Where the newest release's manifest lives, asked of the Forgejo API rather than assumed.
     ///
-    /// The obvious address is releases/latest/download, which is a redirect that GitHub caches
-    /// at the edge. For a while after a release is published that cache can still answer with
-    /// the *previous* release's manifest, which is read as "you are up to date" -- the release
-    /// is live, the tag is live, the API knows about it, and the one address the updater trusts
-    /// is still serving the day before. That is what happened to v0.7.11: for several minutes
-    /// after publishing, this URL returned v0.7.10's manifest.
-    ///
-    /// The API is not cached that way, so it is asked first and its tag used to build a direct
-    /// asset address. The redirect stays as the fallback for when the API cannot be reached or
-    /// is rate-limiting this machine.
+    /// The API's tag builds a direct asset address. Forgejo serves no
+    /// releases/latest/download redirect, so when the API cannot be reached or is
+    /// rate-limiting this machine there is no second address to try, and the check
+    /// reports that it could not look rather than guessing.
     /// </summary>
-    private async Task<string> ManifestUrlAsync(CancellationToken cancellationToken)
+    private async Task<string?> ManifestUrlAsync(CancellationToken cancellationToken)
     {
-        const string fallback = $"https://github.com/{Repository}/releases/latest/download/{ManifestName}";
         try
         {
             using var request = new HttpRequestMessage(
-                HttpMethod.Get, $"https://api.github.com/repos/{Repository}/releases/latest");
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+                HttpMethod.Get, $"https://git.serrebiradio.com/api/v1/repos/{Repository}/releases/latest");
 
             using var response = await _http
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return fallback;
+            if (!response.IsSuccessStatusCode) return null;
 
             await using Stream stream = await response.Content
                 .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -72,18 +64,15 @@ public sealed class UpdateClient : IDisposable
                 .ConfigureAwait(false);
 
             return string.IsNullOrWhiteSpace(release?.Tag)
-                ? fallback
-                : $"https://github.com/{Repository}/releases/download/{release.Tag}/{ManifestName}";
+                ? null
+                : $"https://git.serrebiradio.com/{Repository}/releases/download/{release.Tag}/{ManifestName}";
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException
                                    or TaskCanceledException or InvalidOperationException
                                    or NotSupportedException)
         {
-            // A check the caller cancelled is the caller's answer, not a reason to go on and
-            // make the second request the redirect costs.
             if (cancellationToken.IsCancellationRequested) throw;
-            // Falls through to the redirect, which is what this did before the API existed.
-            return fallback;
+            return null;
         }
     }
 
@@ -91,7 +80,10 @@ public sealed class UpdateClient : IDisposable
     {
         LastOffered = null;
 
-        using var response = await _http.GetAsync(await ManifestUrlAsync(cancellationToken).ConfigureAwait(false),
+        string? url = await ManifestUrlAsync(cancellationToken).ConfigureAwait(false);
+        if (url is null) return null;
+
+        using var response = await _http.GetAsync(url,
             HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) return null;
 

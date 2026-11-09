@@ -41,6 +41,6 @@ The installer is currently unsigned for public distribution unless a signing cer
 
 ## Publishing a release
 
-After tests and the local build pass, commit the versioned files and create the matching Git tag. Push the branch and tag, then publish one GitHub release containing the portable ZIP, installer, and `BlindTerm-update.json`. The tag and release title use `v<version>` and `BlindTerm v<version>` respectively.
+After tests and the local build pass, commit the versioned files and create the matching Git tag. Push the branch to the `forgejo` remote first, then the tag, then publish one Forgejo release containing the portable ZIP, installer, and `BlindTerm-update.json`. The tag and release title use `v<version>` and `BlindTerm v<version>` respectively. Releases live at `https://git.serrebiradio.com/serrebi/BlindTerm/releases`.
 
-Cloud agents without this Windows machine use `.github/workflows/cloud-release.yml` instead, which runs the same build on a GitHub Windows runner after the version and changelog commit is pushed; see `AGENTS.md`.
+The cloud-release workflow (`.github/workflows/cloud-release.yml`) publishes through GitHub releases and stays unused while GitHub is suspended; until then every release ships from this machine to Forgejo instead.

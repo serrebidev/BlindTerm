@@ -76,13 +76,13 @@ $installerHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.T
 $manifest = [ordered]@{
     version = "v$version"
     asset = Split-Path -Leaf $zip
-    download_url = "https://github.com/serrebidev/BlindTerm/releases/download/v$version/$(Split-Path -Leaf $zip)"
+    download_url = "https://git.serrebiradio.com/serrebi/BlindTerm/releases/download/v$version/$(Split-Path -Leaf $zip)"
     sha256 = $hash
     published_at = [DateTimeOffset]::UtcNow.ToString('o')
     notes_summary = $notes
     installer = [ordered]@{
         asset = Split-Path -Leaf $installer
-        download_url = "https://github.com/serrebidev/BlindTerm/releases/download/v$version/$(Split-Path -Leaf $installer)"
+        download_url = "https://git.serrebiradio.com/serrebi/BlindTerm/releases/download/v$version/$(Split-Path -Leaf $installer)"
         sha256 = $installerHash
     }
 }

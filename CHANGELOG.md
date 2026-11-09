@@ -4,6 +4,14 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.31 - 2026-11-09
+
+- Updates and releases move to Forgejo. The in-app updater now reads
+  `serrebi/BlindTerm` releases on `git.serrebiradio.com` instead of GitHub, and
+  the published manifest points its downloads there too. The SHA-256 check on
+  every download is unchanged. Copies at v0.7.30 and below still look to GitHub,
+  so this version is installed by hand once, from the Forgejo release.
+
 ## v0.7.30 - 2026-10-21
 
 - Every directory that answered is credited in the published MUD list's sources. GMUD's listings merge into MUDVerse's, so GMUD previously went uncredited in the spoken source list even when it supplied listings; the list now names every directory that answered.

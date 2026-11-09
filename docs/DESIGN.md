@@ -73,9 +73,9 @@ Every part of this is per-user and needs no elevation, and none of it can leave 
 
 ## Updating and packaging
 
-The app's update client reads a future GitHub Releases manifest named `BlindTerm-update.json`. It verifies the package hash before staging it. A separate `BlindTerm.Update.exe` waits for the main process to exit, replaces program files while preserving settings, and restarts the app.
+The app's update client reads a Forgejo Releases manifest named `BlindTerm-update.json`. It verifies the package hash before staging it. A separate `BlindTerm.Update.exe` waits for the main process to exit, replaces program files while preserving settings, and restarts the app.
 
-The current workflow is local only. It publishes a self-contained `win-x64` build, creates a ZIP and an Inno Setup installer, and writes a manifest to `dist\`. GitHub publishing is intentionally not part of the local install command.
+The current workflow is local only. It publishes a self-contained `win-x64` build, creates a ZIP and an Inno Setup installer, and writes a manifest to `dist\`. Release publishing is intentionally not part of the local install command.
 
 ## What is verified
 

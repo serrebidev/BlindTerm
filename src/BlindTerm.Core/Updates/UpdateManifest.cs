@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace BlindTerm.Core.Updates;
 
-/// <summary>Release metadata published beside a BlindTerm GitHub release.</summary>
+/// <summary>Release metadata published beside a BlindTerm Forgejo release.</summary>
 /// <remarks>
 /// Every field is nullable, and deliberately so. These are read from a file somebody else
 /// publishes, and JSON has a null where the property initializer below would have put an
