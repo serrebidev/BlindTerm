@@ -10,9 +10,14 @@ name: MUD directory
 # nothing else publishes, and merges the two. That half is a scrape of an undocumented
 # endpoint, so it is allowed to fail: the list still publishes without the activity figures.
 #
-# One-time setup: add MUDVERSE_API_KEY from the API tab of a MUDVerse account
-# (https://www.mudverse.com/api), and MUD_DIRECTORY_DEPLOY_KEY for the write-enabled deploy
-# key on serrebi/BlindTerm-directory (Forgejo). The job then runs on its own.
+# It runs on Forgejo Actions (git.serrebiradio.com), on the self-hosted runner on the same
+# server. It lives in .forgejo/workflows so that GitHub, if the account comes back, does not
+# run a second copy that races this one for the directory branch.
+#
+# One-time setup, under Settings > Actions > Secrets of serrebi/BlindTerm on Forgejo: add
+# MUDVERSE_API_KEY from the API tab of a MUDVerse account (https://www.mudverse.com/api), and
+# MUD_DIRECTORY_DEPLOY_KEY, the private half of the write-enabled deploy key on
+# serrebi/BlindTerm-directory. The job then runs on its own.
 
 on:
   schedule:
@@ -34,8 +39,9 @@ concurrency:
 
 jobs:
   publish:
-    # BlindTerm.Cli targets net9.0-windows, so this cannot run on Linux.
-    runs-on: windows-latest
+    # BlindTerm.Cli targets net10.0-windows, but the directory verb is plain HTTP and JSON, so
+    # it builds and runs on Linux once EnableWindowsTargeting lets the SDK accept the target.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -55,7 +61,7 @@ jobs:
           # --previous carries over the MUDStats addresses already looked up, so each world's
           # page is fetched once ever rather than once every half hour.
           PREVIOUS="https://git.serrebiradio.com/${MUD_DIRECTORY_REPOSITORY}/raw/branch/directory/mud-directory.json"
-          dotnet run --project src/BlindTerm.Cli -c Release -- directory --out mud-directory.json --previous "$PREVIOUS" --quiet
+          dotnet run --project src/BlindTerm.Cli -c Release -p:EnableWindowsTargeting=true -- directory --out mud-directory.json --previous "$PREVIOUS" --quiet
 
       - name: Check MUDStats is still readable
         # Not a failure of the run: the list publishes without activity figures if this half
@@ -63,7 +69,7 @@ jobs:
         # rather than the month somebody notices the averages have gone.
         continue-on-error: true
         shell: bash
-        run: dotnet run --project src/BlindTerm.Cli -c Release -- directory --mudstats-only
+        run: dotnet run --project src/BlindTerm.Cli -c Release -p:EnableWindowsTargeting=true -- directory --mudstats-only
 
       - name: Check it before publishing it
         shell: bash
@@ -72,7 +78,7 @@ jobs:
           # then show "no MUDs matched" for half an hour. The verb already refuses to write an
           # empty list; this is the second look, on the file that is actually about to ship.
           test -s mud-directory.json
-          python -c "import json,sys; d=json.load(open('mud-directory.json')); n=len(d['Games']); print(f'{n} games'); sys.exit(0 if n >= 50 else 1)"
+          python3 -c "import json,sys; d=json.load(open('mud-directory.json')); n=len(d['Games']); print(f'{n} games'); sys.exit(0 if n >= 50 else 1)"
 
       - name: Publish to the directory branch
         env:
@@ -97,8 +103,9 @@ jobs:
           git init -q
           git checkout -q -b directory
           git add mud-directory.json
-          git -c user.name="github-actions[bot]" \
-              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+          git -c user.name="forgejo-actions" \
+              -c user.email="forgejo-actions@noreply.git.serrebiradio.com" \
               commit -q -m "MUD directory $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -q --force "git@git.serrebiradio.com:${MUD_DIRECTORY_REPOSITORY}.git" directory
+          # Forgejo's SSH user is forgejo, not git.
+          git push -q --force "forgejo@git.serrebiradio.com:${MUD_DIRECTORY_REPOSITORY}.git" directory
           echo "Published to https://git.serrebiradio.com/${MUD_DIRECTORY_REPOSITORY}/raw/branch/directory/mud-directory.json"
