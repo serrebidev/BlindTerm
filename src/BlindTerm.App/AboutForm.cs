@@ -10,6 +10,9 @@ internal sealed class AboutForm : Form
     public const string RepositoryUrl = "https://git.serrebiradio.com/serrebi/BlindTerm";
     public const string ForgejoProfileUrl = "https://git.serrebiradio.com/serrebi";
     public const string TelegramUrl = "https://t.me/SerrebiProjects";
+    public const string GitHubUrl = "https://github.com/serrebidev/BlindTerm";
+    public const string GitHubProfileUrl = "https://github.com/serrebidev";
+    public const string ProjectsUrl = "https://projects.serrebiradio.com";
 
     public AboutForm()
     {
@@ -30,12 +33,15 @@ internal sealed class AboutForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 9f, FontStyle.Bold),
             AccessibleName = $"BlindTerm {VersionInfo.Display}",
         };
+        const string descriptionText = "An accessible terminal and MUD client built for screen-reader users.\n\n"
+            + "Author: serrebidev. GitHub: " + GitHubUrl + ". "
+            + "Projects: " + ProjectsUrl + ". Telegram: " + TelegramUrl + ". Full credits: CREDITS.md.";
         var description = new Label
         {
-            Text = "An accessible terminal and MUD client built for screen-reader users.",
+            Text = descriptionText,
             AutoSize = true,
             MaximumSize = new Size(520, 0),
-            AccessibleName = "An accessible terminal and MUD client built for screen-reader users.",
+            AccessibleName = descriptionText,
         };
         var repository = new LinkLabel
         {
@@ -48,6 +54,10 @@ internal sealed class AboutForm : Form
 
         var follow = LinkButton("&Serrebi on Forgejo", ForgejoProfileUrl,
             "Open Serrebi's Forgejo profile");
+        var github = LinkButton("&GitHub", GitHubUrl,
+            "Open BlindTerm on GitHub");
+        var projects = LinkButton("&Projects", ProjectsUrl,
+            "Open projects.serrebiradio.com");
         var telegram = LinkButton("&Join Telegram", TelegramUrl,
             "Join the Serrebi Projects Telegram channel");
         var close = new Button
@@ -66,6 +76,8 @@ internal sealed class AboutForm : Form
             WrapContents = true,
         };
         links.Controls.Add(follow);
+        links.Controls.Add(github);
+        links.Controls.Add(projects);
         links.Controls.Add(telegram);
 
         var closeRow = new FlowLayoutPanel
