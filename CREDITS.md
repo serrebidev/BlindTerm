@@ -9,3 +9,12 @@ Third-party works it stands on:
 - MUD directory sources for the MUD list: MUDVerse, MUDStats, Grapevine, The Mud Connector, and GMUD. The generated directory lives in [BlindTerm-directory](https://git.serrebiradio.com/serrebi/BlindTerm-directory).
 
 Questions and bug reports are welcome in the [SerrebiProjects Telegram group](https://t.me/SerrebiProjects). More serrebi projects: [projects.serrebiradio.com](https://projects.serrebiradio.com).
+
+
+## About this project
+
+- GitHub profile: [serrebidev](https://github.com/serrebidev)
+- Repository (GitHub): [https://github.com/serrebidev/BlindTerm](https://github.com/serrebidev/BlindTerm)
+- Repository (Forgejo): [https://git.serrebiradio.com/serrebi/BlindTerm](https://git.serrebiradio.com/serrebi/BlindTerm)
+- Projects site: [projects.serrebiradio.com](https://projects.serrebiradio.com)
+- Questions and bug reports: [SerrebiProjects Telegram group](https://t.me/SerrebiProjects)
