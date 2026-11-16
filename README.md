@@ -2,11 +2,15 @@
 
 A screen-reader-friendly Windows terminal for NVDA and JAWS, built for ordinary shell work and the full-screen programs that usually make terminals inaccessible.
 
+[![Join SerrebiProjects on Telegram](https://img.shields.io/badge/Telegram-SerrebiProjects-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/SerrebiProjects)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
 BlindTerm keeps ordinary output as a readable transcript in a native Windows edit control. NVDA and JAWS can navigate it by line, word, and character, follow it in braille, and use their normal reading commands. When nano, vim, htop, less, or an editor over SSH takes the alternate screen, BlindTerm changes mode: keys go to the program and speech follows the cursor instead of reading every repaint.
 
 **Questions, bugs, or release news?** Join the [SerrebiProjects Telegram group](https://t.me/SerrebiProjects), the fastest place to get help.
+
+More serrebi projects: [projects.serrebiradio.com](https://projects.serrebiradio.com)
 
 ## Features
 
@@ -323,3 +327,7 @@ Pull requests and accessibility testing are welcome. If something reads incorrec
 ## License
 
 BlindTerm is under the [MIT license](LICENSE). The bundled NVDA controller client remains under its own LGPL license; its license travels in `native\nvdaControllerClient-LICENSE.txt`.
+
+## Credits
+
+See [CREDITS.md](CREDITS.md) for where the ideas behind this project came from, and the third-party projects it builds on.
