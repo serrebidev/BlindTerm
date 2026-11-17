@@ -4,6 +4,11 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.32 - 2026-11-16
+
+- Help, About adds a Full credits button (Alt+F) beside the GitHub, Projects, Telegram and Forgejo buttons, so every link is a control Tab reaches and Enter opens. The description now just names the author instead of repeating each URL as text.
+- The README follows the shared layout, and CREDITS.md credits the libraries and upstream code BlindTerm uses.
+
 ## v0.7.31 - 2026-11-09
 
 - Updates and releases move to Forgejo. The in-app updater now reads
