@@ -13,6 +13,7 @@ internal sealed class AboutForm : Form
     public const string GitHubUrl = "https://github.com/serrebidev/BlindTerm";
     public const string GitHubProfileUrl = "https://github.com/serrebidev";
     public const string ProjectsUrl = "https://projects.serrebiradio.com";
+    public const string CreditsUrl = RepositoryUrl + "/src/branch/master/CREDITS.md";
 
     public AboutForm()
     {
@@ -33,9 +34,9 @@ internal sealed class AboutForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 9f, FontStyle.Bold),
             AccessibleName = $"BlindTerm {VersionInfo.Display}",
         };
+        // The links are buttons below, each a tab stop; the text only names the author.
         const string descriptionText = "An accessible terminal and MUD client built for screen-reader users.\n\n"
-            + "Author: serrebidev. GitHub: " + GitHubUrl + ". "
-            + "Projects: " + ProjectsUrl + ". Telegram: " + TelegramUrl + ". Full credits: CREDITS.md.";
+            + "Author: serrebidev.";
         var description = new Label
         {
             Text = descriptionText,
@@ -60,6 +61,8 @@ internal sealed class AboutForm : Form
             "Open projects.serrebiradio.com");
         var telegram = LinkButton("&Join Telegram", TelegramUrl,
             "Join the Serrebi Projects Telegram channel");
+        var credits = LinkButton("&Full credits", CreditsUrl,
+            "Open the full credits, CREDITS.md");
         var close = new Button
         {
             Text = "&Close",
@@ -79,6 +82,7 @@ internal sealed class AboutForm : Form
         links.Controls.Add(github);
         links.Controls.Add(projects);
         links.Controls.Add(telegram);
+        links.Controls.Add(credits);
 
         var closeRow = new FlowLayoutPanel
         {
