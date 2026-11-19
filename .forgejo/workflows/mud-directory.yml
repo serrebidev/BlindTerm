@@ -10,8 +10,9 @@ name: MUD directory
 # nothing else publishes, and merges the two. That half is a scrape of an undocumented
 # endpoint, so it is allowed to fail: the list still publishes without the activity figures.
 #
-# It runs on Forgejo Actions (git.serrebiradio.com), on the self-hosted runner on the same
-# server. It lives in .forgejo/workflows so that GitHub, if the account comes back, does not
+# It runs on Forgejo Actions (git.serrebiradio.com), on the MacBook Air runner (moved there
+# 2026-11-19; the PC runners it used before were offline too often). It lives in
+# .forgejo/workflows so that GitHub, if the account comes back, does not
 # run a second copy that races this one for the directory branch.
 #
 # One-time setup, under Settings > Actions > Secrets of serrebi/BlindTerm on Forgejo: add
@@ -40,8 +41,8 @@ concurrency:
 jobs:
   publish:
     # BlindTerm.Cli targets net10.0-windows, but the directory verb is plain HTTP and JSON, so
-    # it builds and runs on Linux once EnableWindowsTargeting lets the SDK accept the target.
-    runs-on: ubuntu-latest
+    # it builds and runs on macOS once EnableWindowsTargeting lets the SDK accept the target.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
 
