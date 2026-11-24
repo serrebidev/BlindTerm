@@ -51,6 +51,8 @@ public class MainFormMenuTests
                 item => Plain(item.Text) == "Check for updates...");
             Assert.Contains(help.DropDownItems.Cast<ToolStripItem>(),
                 item => Plain(item.Text) == "About BlindTerm...");
+            Assert.Contains(help.DropDownItems.Cast<ToolStripItem>(),
+                item => Plain(item.Text) == "Report an issue on GitHub...");
             Assert.DoesNotContain(Top(menu, "Terminal").DropDownItems.Cast<ToolStripItem>(),
                 item => Plain(item.Text) == "Check for updates...");
         });
@@ -153,6 +155,17 @@ public class MainFormMenuTests
 
     private static ToolStripMenuItem Top(MenuStrip menu, string name)
         => menu.Items.Cast<ToolStripMenuItem>().Single(item => Plain(item.Text) == name);
+
+    [Fact]
+    public void IssueLinkCarriesTitleBodyAndVersion()
+    {
+        string url = ReportIssue.IssueUrl("Photo & video", "Line 1\nПривет");
+        Assert.StartsWith(
+            "https://github.com/serrebidev/BlindTerm/issues/new?title=Photo%20%26%20video&body=Line%201%0A%D0%9F",
+            url);
+        Assert.Contains(Uri.EscapeDataString("BlindTerm " + VersionInfo.Display), url);
+        Assert.DoesNotContain(' ', url);
+    }
 
     private static string Plain(string? text) => (text ?? string.Empty).Replace("&", string.Empty);
 

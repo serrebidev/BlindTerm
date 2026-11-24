@@ -490,6 +490,7 @@ public sealed class MainForm : Form
         var help = new ToolStripMenuItem("&Help");
         _checkUpdatesItem.Click += async (_, _) => await CheckForUpdates();
         help.DropDownItems.Add(_checkUpdatesItem);
+        help.DropDownItems.Add(Item("Report an &issue on GitHub...", () => ReportIssue.Show(this)));
         help.DropDownItems.Add(new ToolStripSeparator());
         help.DropDownItems.Add(Item("&About BlindTerm...", ShowAbout));
 

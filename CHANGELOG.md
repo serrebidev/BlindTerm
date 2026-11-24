@@ -4,6 +4,10 @@ Readable release history for BlindTerm. This starts with the first build
 that was complete enough to install and use, rather than pretending the
 earlier prototypes were something anyone could have run.
 
+## v0.7.33 - 2026-11-24
+
+- Help, Report an issue on GitHub asks for a title and a description in accessible dialogs, then opens GitHub's new issue page with both filled in and your BlindTerm version and system added. Sign in on GitHub and press Create.
+
 ## v0.7.32 - 2026-11-16
 
 - Help, About adds a Full credits button (Alt+F) beside the GitHub, Projects, Telegram and Forgejo buttons, so every link is a control Tab reaches and Enter opens. The description now just names the author instead of repeating each URL as text.
